@@ -1,4 +1,4 @@
 # hover-lang 🛸
 The Hover Programming Language
 
-v0.1
+v0.3
