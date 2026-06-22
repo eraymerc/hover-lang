@@ -1,0 +1,111 @@
+analog module PMSM<double Rs, double Ld, double Lq, double flux_m, double p, double J, double B>
+    (output double omega_m_out, output double i_d_out, output double i_q_out, output double theta_e_out)
+    [wire va, wire vb, wire vc] // Girişler: Artık va, vb, vc yok. Vd ve Vq var.
+{
+
+    wire d_r, d_l, q_r, q_l, omega_node, theta_e_node, vd, vq;
+    // ── Mekanik ve Açısal Dinamikler ───────────────────────────
+    // Eylemsizlik: J*d(omega_m)/dt <-> C*dV/dt
+    C<J>()[omega_node, gnd];
+    
+    // Sürtünme: B*omega_m <-> R = 1/B
+    R<1/B>()[omega_node, gnd];
+
+    double omega_m = V(omega_node);
+    double omega_e = p * omega_m; // Elektriksel hız
+
+    // Elektriksel Açı (theta_e) İntegrasyonu
+    current_source<>(omega_e)[gnd, theta_e_node];
+    C<1.0>()[theta_e_node, gnd]; 
+    double theta_e = V(theta_e_node); 
+    theta_e_out = theta_e;
+
+    double val_va = V(va);
+    double val_vb = V(vb);
+    double val_vc = V(vc); 
+
+    // Calculate neutral point voltage
+    double v_n = (val_va + val_vb + val_vc) / 3.0;
+
+    // Phase-to-neutral voltages
+    double van = val_va - v_n;
+    double vbn = val_vb - v_n;
+
+    // Clarke Transform
+    double valpha = van;
+    double vbeta = (van + 2.0 * vbn) / (3.0**0.5);
+
+
+    double val_vd = valpha * cos(theta_e) + vbeta * sin(theta_e);
+    double val_vq = -valpha * sin(theta_e) + vbeta * cos(theta_e);
+    voltage_source<>(val_vd)[vd, gnd];
+    voltage_source<>(val_vq)[vq, gnd];
+
+    // ── Akım Ölçümleri ─────────────────────────────────────────
+    // Döngüsel bağımlılığı önlemek için akımları direnç üzerinden ölçüyoruz
+    double i_d = (V(vd) - V(d_r)) / Rs;
+    double i_q = (V(vq) - V(q_r)) / Rs;
+
+    // Çıkışlara ata
+    i_d_out = i_d;
+    i_q_out = i_q;
+
+    // ── Ters Dönüşüm (DQ'dan ABC'ye Akım Çekme) ────────────────
+    
+    // 1. Ters Park Dönüşümü (DQ -> Alpha/Beta)
+    double ialpha = i_d * cos(theta_e) - i_q * sin(theta_e);
+    double ibeta  = i_d * sin(theta_e) + i_q * cos(theta_e);
+
+    // 2. Ters Clarke Dönüşümü (Alpha/Beta -> ABC)
+    double i_a = ialpha;
+    double i_b = -0.5 * ialpha + ((3.0**0.5)/2.0) * ibeta;
+    double i_c = -0.5 * ialpha - ((3.0**0.5)/2.0) * ibeta;
+
+    // 3. Fiziksel pinlerden akım çek (va, vb, vc'den gnd'ye doğru)
+    current_source<>(i_a)[va, gnd];
+    current_source<>(i_b)[vb, gnd];
+    current_source<>(i_c)[vc, gnd];
+
+    // ── Elektrik (D ve Q Eksenleri Equivalent Devresi) ─────────
+    
+    // 1. Zıt EMK ve Çapraz Bağlaşma (Cross-Coupling) Etkileri
+    // D-Ekseni Zıt EMK'sı (Q ekseninin hızıyla oluşur)
+    double ed = -omega_e * Lq * i_q; 
+    
+    // Q-Ekseni Zıt EMK'sı (D ekseninin hızı ve Mıknatıs akısıyla oluşur)
+    double eq = (omega_e * Ld * i_d) + (omega_e * flux_m);
+
+    // 2. D-Ekseni Bobini Devresi
+    R<Rs>()[vd, d_r];
+    L<Ld>()[d_r, d_l];
+    voltage_source<>(ed)[d_l, gnd]; // Hıza bağlı gerilim düşümü
+
+    // 3. Q-Ekseni Bobini Devresi
+    R<Rs>()[vq, q_r];
+    L<Lq>()[q_r, q_l];
+    voltage_source<>(eq)[q_l, gnd]; // Hıza ve mıknatısa bağlı gerilim düşümü
+
+    // ── Elektromanyetik Tork Üretimi (IPMSM) ───────────────────
+    // 1.5 (Amplitude invariant transform katsayısı) * p * [Mıknatıs Torku + Relüktans Torku]
+    double torque = 1.5 * p * ((flux_m * i_q) + ((Ld - Lq) * i_d * i_q));
+    
+    // Yük Torku
+    double T_load = 0;
+    double k_load = 0.0015;  
+
+    if(time > 0.8 && time < 1.2){
+        T_load = 3;
+    }
+
+   // if (omega_m >= 0) {
+    //    T_load = k_load * omega_m * omega_m;
+    //} else {
+    //    T_load = -k_load * omega_m * omega_m;
+    //}
+
+    double total_torque = torque - T_load;
+    current_source<>(total_torque)[gnd, omega_node];
+
+    // Dönme hızını dışarı ver
+    omega_m_out = omega_m;
+}

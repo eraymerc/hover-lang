@@ -1,0 +1,40 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  limexp — exponential growth limiter, written entirely in Hover.
+//
+//  Caps exp(x)'s growth past a threshold by switching to a linear
+//  extrapolation that matches both the VALUE and SLOPE of exp(x) at the
+//  threshold -- d/dx exp(x) = exp(x), so the same constant (e^threshold)
+//  serves as both the seam value and the linear segment's slope. This
+//  keeps the function and its derivative CONTINUOUS at the seam: no kink,
+//  no new non-smoothness for Newton to trip over, which would defeat the
+//  purpose of a convergence aid.
+//
+//  Use this in place of a bare exp() call anywhere a Newton iteration
+//  might propose a wild intermediate value before settling -- exactly the
+//  situation that caused runaway blowup in BJT/diode-style models with
+//  exp(v/Vt) terms, confirmed directly in this project's own testing.
+//
+//  No compiler/elaborator changes needed: this is ordinary Hover source,
+//  using the same func mechanism already used for this project's own
+//  exp() helper. Just import this file and call limexp(x) instead of
+//  exp(x) wherever a model's exponential term is the suspected source of
+//  convergence trouble.
+//
+//  threshold=80.0 is chosen generously large -- exp(80) ~ 5.5e34, already
+//  far beyond any physically meaningful voltage/current ratio for a real
+//  circuit, so well-behaved iterations near the true solution are
+//  completely unaffected. Only a Newton guess that has gone genuinely
+//  far off the rails gets capped.
+// ─────────────────────────────────────────────────────────────────────────────
+
+func double limexp(double x) {
+    double threshold = 80.0;
+    double e = 2.718281828459045;
+
+    if (x < threshold) {
+        return e ** x;
+    }
+
+    double e_t = e ** threshold;
+    return e_t * (1.0 + (x - threshold));
+}
