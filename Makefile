@@ -16,6 +16,7 @@ ZIG ?= zig
 # Vendor Paths (The compilers that get shipped to the user)
 ZIG_LINUX_VENDOR := toolchain/zig-x86_64-linux
 ZIG_WIN_VENDOR   := toolchain/zig-x86_64-win
+STANDARD_LIB	 := standard_library
 
 # ── RUNTIME SOURCES ───────────────────────────────────────────────────────────
 
@@ -107,6 +108,7 @@ linux: $(LIB_LINUX)
 	
 	# 1. Copy Vendor Zig
 	cp -r $(ZIG_LINUX_VENDOR) $(DIR_LINUX)/toolchain/zig
+	cp -r $(STANDARD_LIB) $(DIR_LINUX)/standard_library
 	
 	# 2. Copy Runtime Headers & Library
 	cp -r $(RUNTIME_DIR) $(DIR_LINUX)/runtime
@@ -128,7 +130,8 @@ windows: $(LIB_WIN)
 	
 	# 1. Copy Vendor Zig
 	cp -r $(ZIG_WIN_VENDOR) $(DIR_WIN)/toolchain/zig
-	
+	cp -r $(STANDARD_LIB) $(DIR_WIN)/standard_library
+
 	# 2. Copy Runtime Headers & Library
 	cp -r $(RUNTIME_DIR) $(DIR_WIN)/runtime
 	rm -rf $(DIR_WIN)/runtime/build

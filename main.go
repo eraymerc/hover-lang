@@ -18,7 +18,7 @@ import (
 )
 
 func main() {
-	fmt.Println("Hover v0.5.0")
+	fmt.Println("Hover v0.6.0")
 
 	if len(os.Args) < 2 {
 		fmt.Println("Usage: ./hover <filename.hvr> [--dump-ast]")

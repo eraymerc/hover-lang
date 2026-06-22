@@ -189,11 +189,14 @@ runtime/build/windows/solvers/trapezoidal.o: \
   runtime/Eigen/src/Eigenvalues/GeneralizedEigenSolver.h \
   runtime/Eigen/src/Eigenvalues/./RealQZ.h \
   runtime/Eigen/src/Eigenvalues/MatrixBaseEigenvalues.h \
-  runtime/solvers/../vm/solver_strategy.hpp runtime/solvers/../vm/vm.hpp \
-  runtime/solvers/../vm/../mna/system.hpp \
+  runtime/solvers/../vm/solver_strategy.hpp \
+  runtime/solvers/newton_trust_region.hpp \
+  runtime/solvers/../mna/engine.hpp runtime/solvers/../mna/system.hpp \
+  runtime/solvers/../vm/vm.hpp runtime/solvers/../vm/../mna/system.hpp \
   runtime/solvers/../vm/../mna/engine.hpp \
   runtime/solvers/../vm/../mna/api.hpp \
-  runtime/solvers/../vm/snapshot.hpp runtime/solvers/../vm/logger.hpp
+  runtime/solvers/../vm/snapshot.hpp runtime/solvers/../vm/logger.hpp \
+  runtime/solvers/../vm/zcd.hpp
 runtime/solvers/trapezoidal.hpp:
 runtime/Eigen/Dense:
 runtime/Eigen/Core:
@@ -413,9 +416,13 @@ runtime/Eigen/src/Eigenvalues/GeneralizedEigenSolver.h:
 runtime/Eigen/src/Eigenvalues/./RealQZ.h:
 runtime/Eigen/src/Eigenvalues/MatrixBaseEigenvalues.h:
 runtime/solvers/../vm/solver_strategy.hpp:
+runtime/solvers/newton_trust_region.hpp:
+runtime/solvers/../mna/engine.hpp:
+runtime/solvers/../mna/system.hpp:
 runtime/solvers/../vm/vm.hpp:
 runtime/solvers/../vm/../mna/system.hpp:
 runtime/solvers/../vm/../mna/engine.hpp:
 runtime/solvers/../vm/../mna/api.hpp:
 runtime/solvers/../vm/snapshot.hpp:
 runtime/solvers/../vm/logger.hpp:
+runtime/solvers/../vm/zcd.hpp:
