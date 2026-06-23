@@ -31,12 +31,8 @@ func (g *generator) emitExpr(expr ast.Expression, logic elaborator.LogicObject) 
 	switch n := expr.(type) {
 
 	case *ast.NumberExpression:
-		// Untyped literal — see hoverTypeToCType's "number" case: literals
-		// default to CDouble. The C++ literal text itself is still just the
-		// numeric value; no suffix is added, since the surrounding context
-		// (an assignment, an argument slot) is what may cast it afterward.
 		val := elaborator.ParseEngineering(n.Value)
-		return fmt.Sprintf("%.17g", val), CDouble
+		return formatDoubleLiteral(val), CDouble
 
 	case *ast.IdentifierExpression:
 		code := resolveIdent(n.Value, logic)

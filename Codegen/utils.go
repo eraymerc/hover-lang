@@ -133,3 +133,13 @@ func knownSolverNamesSorted() string {
 	sort.Strings(names)
 	return strings.Join(names, ", ")
 }
+
+// helper:
+func formatDoubleLiteral(val float64) string {
+	s := fmt.Sprintf("%.17g", val)
+	// ensure it reads as a double literal in C++, not an int
+	if !strings.ContainsAny(s, ".eEnN") { // no decimal, no exponent, not inf/nan
+		s += ".0"
+	}
+	return s
+}

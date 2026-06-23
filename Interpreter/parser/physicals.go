@@ -97,6 +97,7 @@ func (p *parser) parseModuleStatement() ast.Statement {
 	if p.currentTokenType() == token.LBRACKET {
 		p.nextToken()
 		for p.currentTokenType() != token.RBRACKET && p.hasTokens() {
+			startPos := p.pos
 			if p.currentToken().Literal == "wire" {
 				p.nextToken() // consume 'wire' if present
 			}
@@ -105,6 +106,10 @@ func (p *parser) parseModuleStatement() ast.Statement {
 			stmt.PhysPorts = append(stmt.PhysPorts, portName)
 			if p.currentTokenType() == token.COMMA {
 				p.nextToken()
+			}
+			if p.pos == startPos {
+				p.addError("unexpected token in port list: " + p.currentToken().Literal)
+				p.nextToken() // force progress
 			}
 		}
 		p.expect(token.RBRACKET)
