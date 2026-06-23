@@ -73,9 +73,10 @@ func hoverTypeToCType(hoverType string) CType {
 // mirroring semantic.getBaseType's behavior on the codegen side.
 func baseHoverType(t string) string {
 	if idx := strings.IndexByte(t, '['); idx != -1 {
-		return t[:idx]
+		t = t[:idx]
 	}
-	return t
+	t = strings.TrimRight(t, "*")
+	return strings.TrimSpace(t)
 }
 
 // promote computes the result CType of applying a binary operator to two

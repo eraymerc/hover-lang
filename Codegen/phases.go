@@ -83,9 +83,12 @@ func (g *generator) emitPhaseLog(vmSignals []string) {
 		// int64_t/uint64_t/float all convert to double implicitly without
 		// warning, per the explicit-cast-at-every-type-boundary philosophy
 		// applied consistently throughout this type system.
-		sigType := g.typeOf(mangled)
-		castExpr := emitCast(mangled, sigType, CDouble)
-		g.line(`vm->values[%s] = %s;`, cStr(sig), castExpr)
+		ht := g.typeOf(mangled)
+		if ht.isArray() || ht.isPointer() {
+			g.line(`// skipped: %s is an array/pointer (not scalar-loggable)`, sig)
+			continue
+		}
+		g.line(`vm->values[%s] = %s;`, cStr(sig), emitCast(mangled, ht.elem, CDouble))
 	}
 	g.pop()
 	g.raw(`}`)
@@ -113,7 +116,7 @@ func (g *generator) emitPhaseLog(vmSignals []string) {
 // whatever value a probe leaves in a plain local is overwritten on the
 // very next real phase call regardless.
 func (g *generator) emitStateVarSnapshot() {
-	stateVars := g.collectStateVars()
+	stateNames := g.collectStateInits()
 	dottedNames := g.collectStateVarDottedNames()
 
 	// save_state_vars: state global -> vm->values[dottedName]
@@ -123,11 +126,12 @@ func (g *generator) emitStateVarSnapshot() {
 	g.raw(`static void save_state_vars(VM *vm) {`)
 	g.push()
 	g.line("(void)(vm);")
-	for mangled := range stateVars {
-		dotted := dottedNames[mangled]
-		ctype := g.typeOf(mangled)
-		castExpr := emitCast(mangled, ctype, CDouble)
-		g.line(`vm->values[%s] = %s;`, cStr(dotted), castExpr)
+	for mangled := range stateNames {
+		ht := g.typeOf(mangled)
+		if ht.isArray() || ht.isPointer() {
+			continue
+		}
+		g.line(`vm->values[%s] = %s;`, cStr(dottedNames[mangled]), emitCast(mangled, ht.elem, CDouble))
 	}
 	g.pop()
 	g.raw(`}`)
@@ -138,11 +142,12 @@ func (g *generator) emitStateVarSnapshot() {
 	g.raw(`static void restore_state_vars(VM *vm) {`)
 	g.push()
 	g.line("(void)(vm);")
-	for mangled := range stateVars {
-		dotted := dottedNames[mangled]
-		ctype := g.typeOf(mangled)
-		castExpr := emitCast(fmt.Sprintf(`vm->values[%s]`, cStr(dotted)), CDouble, ctype)
-		g.line(`%s = %s;`, mangled, castExpr)
+	for mangled := range stateNames {
+		ht := g.typeOf(mangled)
+		if ht.isArray() || ht.isPointer() {
+			continue
+		}
+		g.line(`%s = %s;`, mangled, emitCast(fmt.Sprintf(`vm->values[%s]`, cStr(dottedNames[mangled])), CDouble, ht.elem))
 	}
 	g.pop()
 	g.raw(`}`)
@@ -168,7 +173,7 @@ func (g *generator) emitPhaseB() {
 		// plain double — explicit cast even though int64_t/uint64_t/float
 		// convert implicitly without warning, per the explicit-cast
 		// philosophy applied consistently throughout this type system.
-		sigType := g.typeOf(sig)
+		sigType := g.typeOf(sig).elem
 		castSig := emitCast(sig, sigType, CDouble)
 		switch strings.ToLower(phys.Type) {
 		case "voltage_source":

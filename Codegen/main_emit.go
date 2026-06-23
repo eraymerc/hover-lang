@@ -2,6 +2,10 @@ package codegen
 
 import (
 	"fmt"
+	"strings"
+
+	ast "hover/Interpreter/ast"
+	"hover/Interpreter/elaborator"
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -32,20 +36,58 @@ func (g *generator) emitStateVars() {
 	g.raw(`// Every variable is file-scope so it is visible across phase functions.`)
 	g.raw(`// State vars keep value between timesteps; locals are overwritten each step.`)
 
-	stateVars := g.collectStateVars()
-	allVars := g.collectAllVars()
-
-	for _, name := range allVars {
-		ctype := g.typeOf(name)
-		if initVal, isState := stateVars[name]; isState {
-			g.raw(fmt.Sprintf("static %s %s = %s; // state",
-				ctype.String(), name, formatTypedLiteral(initVal, ctype)))
+	stateInits := g.collectStateInits()
+	for _, name := range g.collectAllVars() {
+		ht := g.typeOf(name)
+		if init, isState := stateInits[name]; isState {
+			g.raw(fmt.Sprintf("static %s = %s; // state", ht.cVarDecl(name), formatInitializer(ht, init)))
+		} else if ht.isArray() {
+			g.raw(fmt.Sprintf("static %s = {}; // zero-init", ht.cVarDecl(name)))
 		} else {
-			g.raw(fmt.Sprintf("static %s %s = %s;",
-				ctype.String(), name, formatTypedLiteral(0.0, ctype)))
+			g.raw(fmt.Sprintf("static %s = %s;", ht.cVarDecl(name), formatTypedLiteral(0.0, ht.elem)))
 		}
 	}
 	g.raw(``)
+}
+
+// formatInitializer builds the constant initializer (right of '=') for a
+// file-scope static. Arrays accept a brace list {a, b, ...} or a single scalar
+// that fills every element (the `double[2] arr = 1e-6` feature). nil -> {}.
+func formatInitializer(ht hoverType, init ast.Expression) string {
+	if !ht.isArray() {
+		if num, ok := init.(*ast.NumberExpression); ok {
+			return formatTypedLiteral(elaborator.ParseEngineering(num.Value), ht.elem)
+		}
+		return formatTypedLiteral(0.0, ht.elem)
+	}
+	return formatArrayLiteral(ht.elem, ht.dims, init)
+}
+
+// formatArrayLiteral builds a (possibly nested) C++ brace initializer for an
+// array of the given element type and dimensions. Handles nested brace lists
+// ({{1,2},{2,3}}) and scalar-fill at any level (double[2][2] = 1e-6).
+func formatArrayLiteral(elem CType, dims []int, init ast.Expression) string {
+	if len(dims) == 0 {
+		if num, ok := init.(*ast.NumberExpression); ok {
+			return formatTypedLiteral(elaborator.ParseEngineering(num.Value), elem)
+		}
+		return formatTypedLiteral(0.0, elem)
+	}
+	switch v := init.(type) {
+	case *ast.ArrayExpression:
+		parts := make([]string, 0, len(v.Elements))
+		for _, el := range v.Elements {
+			parts = append(parts, formatArrayLiteral(elem, dims[1:], el))
+		}
+		return "{" + strings.Join(parts, ", ") + "}"
+	case *ast.NumberExpression: // scalar-fill at this dimension level
+		parts := make([]string, dims[0])
+		for i := range parts {
+			parts[i] = formatArrayLiteral(elem, dims[1:], v)
+		}
+		return "{" + strings.Join(parts, ", ") + "}"
+	}
+	return "{}"
 }
 
 // formatTypedLiteral formats a float64 value as the correct C++ literal

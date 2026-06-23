@@ -58,6 +58,10 @@ func (g *generator) emitExpr(expr ast.Expression, logic elaborator.LogicObject) 
 			// CUInt. No cast needed — bitwise NOT on an already-integer
 			// C++ value is just ~ directly.
 			return fmt.Sprintf("(~(%s))", innerCode), innerType
+		case "*":
+			return fmt.Sprintf("(*(%s))", innerCode), innerType
+		case "&":
+			return fmt.Sprintf("(&(%s))", innerCode), innerType
 		}
 		return innerCode, innerType
 
@@ -209,6 +213,15 @@ func (g *generator) emitExpr(expr ast.Expression, logic elaborator.LogicObject) 
 		idxCode, idxType := g.emitExpr(n.Index, logic)
 		idxCast := emitCast(idxCode, idxType, CInt)
 		return fmt.Sprintf("%s[(int)(%s)]", arrCode, idxCast), arrType
+
+	case *ast.ArrayExpression:
+		parts := make([]string, len(n.Elements))
+		elemT := CDouble
+		for i, el := range n.Elements {
+			c, t := g.emitExpr(el, logic)
+			parts[i], elemT = c, t
+		}
+		return "{" + strings.Join(parts, ", ") + "}", elemT
 	}
 
 	return "0.0", CDouble
@@ -228,7 +241,7 @@ func (g *generator) identifierType(name string, logic elaborator.LogicObject) CT
 		return CDouble
 	}
 	mangled := resolveWrite(name, logic)
-	return g.typeOf(mangled)
+	return g.typeOf(mangled).elem
 }
 
 // emitUserFunctionCall resolves and emits a call to a user-defined Hover
@@ -271,13 +284,14 @@ func (g *generator) emitUserFunctionCall(fnName string, argExprs []ast.Expressio
 	for i, arg := range argExprs {
 		argCode, argType := g.emitExpr(arg, logic)
 		if i < len(fnDecl.Parameters) {
-			paramType := hoverTypeToCType(fnDecl.Parameters[i].Type)
-			argCode = emitCast(argCode, argType, paramType)
+			pht := parseHoverType(fnDecl.Parameters[i].Type)
+			if !pht.isArray() && !pht.isPointer() {
+				argCode = emitCast(argCode, argType, pht.elem) // arrays/pointers decay; no scalar cast
+			}
 		}
 		args = append(args, argCode)
 	}
-
-	returnType := hoverTypeToCType(fnDecl.ReturnType)
+	returnType := parseHoverType(fnDecl.ReturnType).elem
 	return fmt.Sprintf("%s(%s)", cName, strings.Join(args, ", ")), returnType
 }
 

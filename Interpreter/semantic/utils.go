@@ -56,7 +56,22 @@ func isStructuralInit(expr ast.Expression) bool {
 
 func getBaseType(t string) string {
 	if idx := strings.Index(t, "["); idx != -1 {
-		return t[:idx]
+		t = t[:idx]
 	}
-	return t
+	return strings.TrimRight(t, "*")
+}
+
+// stripOneArrayDim removes the OUTERMOST array dimension, mirroring what one
+// `[i]` does in C: "double[2][2]" -> "double[2]" -> "double".
+func stripOneArrayDim(t string) string {
+	open := strings.Index(t, "[")
+	if open == -1 {
+		return t
+	}
+	closeIdx := strings.Index(t[open:], "]")
+	if closeIdx == -1 {
+		return t
+	}
+	closeIdx += open
+	return t[:open] + t[closeIdx+1:]
 }

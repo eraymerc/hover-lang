@@ -83,11 +83,15 @@ func (p *parser) parseTypeString() string {
 		p.nextToken()
 	}
 	t += p.currentToken().Literal
-	p.nextToken() // consume double, int, wire
-	if p.currentTokenType() == token.LBRACKET {
+	p.nextToken() // base keyword
+	for p.currentTokenType() == token.ASTERISK {
+		t += "*"
+		p.nextToken()
+	}
+	for p.currentTokenType() == token.LBRACKET {
 		p.nextToken()
 		t += "[" + p.currentToken().Literal + "]"
-		p.nextToken() // consume number
+		p.nextToken()
 		p.expect(token.RBRACKET)
 	}
 	return t

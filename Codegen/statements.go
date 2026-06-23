@@ -1,6 +1,7 @@
 package codegen
 
 import (
+	"fmt"
 	ast "hover/Interpreter/ast"
 	"hover/Interpreter/elaborator"
 )
@@ -34,35 +35,33 @@ func (g *generator) emitStmt(stmt ast.Statement, logic elaborator.LogicObject, i
 
 	case *ast.LocalDeclStatement:
 		if s.Type == "wire" {
-			return // wires are not runtime variables
+			return
 		}
-		declaredType := hoverTypeToCType(s.Type)
+		ht := parseHoverType(s.Type)
 		for _, d := range s.Decls {
 			target := resolveWrite(d.Name, logic)
 			if s.IsState {
-				// State: managed by init_state(), skip here
+				continue // initialized at file scope by emitStateVars
+			}
+			if ht.isArray() {
+				if inFunc {
+					g.line("%s;", ht.cVarDecl(target))
+				}
+				if d.Value != nil {
+					g.emitArrayInitAssigns(target, ht, d.Value, logic)
+				}
 				continue
 			}
 			if inFunc {
-				// Inside a function: declare as a true C local variable,
-				// with its real declared type rather than a uniform double.
 				if d.Value != nil {
 					valCode, valType := g.emitExpr(d.Value, logic)
-					valCode = emitCast(valCode, valType, declaredType)
-					g.line("%s %s = %s;", declaredType.String(), target, valCode)
+					g.line("%s = %s;", ht.cVarDecl(target), emitCast(valCode, valType, ht.elem))
 				} else {
-					g.line("%s %s = 0;", declaredType.String(), target)
+					g.line("%s = 0;", ht.cVarDecl(target))
 				}
-			} else {
-				// Inside a phase block: variable is already a file-scope
-				// global declared with its real type (see emitStateVars in
-				// main_emit.go) — emit plain assignment, casting the RHS to
-				// match, no re-declaration.
-				if d.Value != nil {
-					valCode, valType := g.emitExpr(d.Value, logic)
-					valCode = emitCast(valCode, valType, declaredType)
-					g.line("%s = %s;", target, valCode)
-				}
+			} else if d.Value != nil {
+				valCode, valType := g.emitExpr(d.Value, logic)
+				g.line("%s = %s;", target, emitCast(valCode, valType, ht.elem))
 			}
 		}
 
@@ -157,4 +156,34 @@ func (g *generator) currentFunctionReturnType(logic elaborator.LogicObject) CTyp
 		}
 	}
 	return CDouble
+}
+
+// emitArrayInitAssigns fills a 1-D array element-by-element from a Hover
+// initializer (brace list, or scalar-fill). Multidimensional runtime init is
+// not flattened here (flat indexing is only valid for 1-D); file-scope
+// multidim still gets brace/scalar-fill via formatInitializer.
+func (g *generator) emitArrayInitAssigns(target string, ht hoverType, init ast.Expression, logic elaborator.LogicObject) {
+	g.emitArrayElemAssigns(target, "", ht.elem, ht.dims, init, logic)
+}
+
+// emitArrayElemAssigns recursively emits fully-subscripted per-element
+// assignments (target[0][1] = ...), handling nested brace lists and
+// scalar-fill at any dimension level. This is what makes in-function/in-phase
+// multidimensional initialization work (state-level init goes through
+// formatArrayLiteral instead).
+func (g *generator) emitArrayElemAssigns(target, subscript string, elem CType, dims []int, init ast.Expression, logic elaborator.LogicObject) {
+	if len(dims) == 0 {
+		code, t := g.emitExpr(init, logic)
+		g.line("%s%s = %s;", target, subscript, emitCast(code, t, elem))
+		return
+	}
+	if arr, ok := init.(*ast.ArrayExpression); ok {
+		for i, el := range arr.Elements {
+			g.emitArrayElemAssigns(target, fmt.Sprintf("%s[%d]", subscript, i), elem, dims[1:], el, logic)
+		}
+		return
+	}
+	for i := 0; i < dims[0]; i++ { // scalar-fill
+		g.emitArrayElemAssigns(target, fmt.Sprintf("%s[%d]", subscript, i), elem, dims[1:], init, logic)
+	}
 }

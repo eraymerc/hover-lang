@@ -129,6 +129,18 @@ func (e *Elaborator) flattenModule(mod *ast.ModuleDeclStatement, prefix string, 
 				Domain: domain,
 			})
 
+		case *ast.ExpressionStatement:
+			argRefs := e.findReads(s.Expression, prefix, ports)
+			e.output.Logic = append(e.output.Logic, LogicObject{
+				Source: s,
+				Reads:  argRefs,
+				Writes: argRefs,
+				Prefix: prefix,
+				Params: copyMapSF(params),
+				Ports:  copyMapSS(ports),
+				Domain: domain,
+			})
+
 		case *ast.IfStatement, *ast.WhileStatement:
 			e.output.Logic = append(e.output.Logic, LogicObject{
 				Source: s,

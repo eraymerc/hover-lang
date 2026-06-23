@@ -12,44 +12,41 @@ import (
 // read-only passes over g.prog.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// collectStateVars returns all mangled names that are declared as 'state'
-// across all LogicObjects, deduped, mapped to their initial value.
-func (g *generator) collectStateVars() map[string]float64 {
-	seen := make(map[string]float64)
+// collectStateInits maps every mangled 'state' variable to its initializer
+// EXPRESSION (nil if the declaration had none). Presence in the map means
+// "this name is a state var", so callers use the two-value lookup
+// `init, isState := m[name]` even when init is nil.
+//
+// This replaces the old float64-valued collectStateVars: an init value can be
+// an array literal ({1,2}) or a scalar-fill (1e-6), neither of which fits in a
+// single float64 — that limitation is exactly what left `state double[2] arr`
+// initialized to 0. Snapshot code that only needs the set of state names just
+// ranges over this map's keys.
+func (g *generator) collectStateInits() map[string]ast.Expression {
+	inits := make(map[string]ast.Expression)
 	for _, logic := range g.prog.Logic {
 		decl, ok := logic.Source.(*ast.LocalDeclStatement)
 		if !ok || !decl.IsState {
 			continue
 		}
 		for _, d := range decl.Decls {
-			mangled := mangle(logic.Prefix + "." + d.Name)
-			initVal := 0.0
-			if d.Value != nil {
-				if num, ok := d.Value.(*ast.NumberExpression); ok {
-					initVal = elaborator.ParseEngineering(num.Value)
-				}
-			}
-			seen[mangled] = initVal
+			inits[mangle(logic.Prefix+"."+d.Name)] = d.Value
 		}
 	}
-	return seen
+	return inits
 }
 
-// collectStateVarDottedNames returns, for every mangled 'state' variable
-// name collectStateVars would produce, the original dotted Hover name it
-// came from (e.g. "main_ct_counter" -> "main.ct.counter"). This exists
-// because mangle() (names.go) is a one-way transform — it replaces '.'
-// with '_', which is NOT safely invertible in general, since Hover
-// identifiers can themselves contain underscores (e.g. "ctrl_out"). A
-// blind "_" -> "." reverse mapping would corrupt such names. Tracking the
-// real dotted name here, at the same point mangle() is first applied,
-// avoids ever needing to invert it.
+// collectStateVarDottedNames returns, for every mangled 'state' variable name,
+// the original dotted Hover name it came from (e.g. "main_ct_counter" ->
+// "main.ct.counter"). mangle() (names.go) is a one-way transform — it replaces
+// '.' with '_', which is not safely invertible since Hover identifiers can
+// themselves contain underscores. Tracking the dotted name here, at the point
+// mangle() is first applied, avoids ever needing to invert it.
 //
-// Used by emitStateVarSnapshot (phases.go) as the vm->values map key for
-// state save/restore — that key must match exactly what phase_log already
-// uses for the same variable (also the unmangled dotted form), or the ZCD
-// snapshot/restore mechanism and the .save() logging mechanism would
-// silently disagree about a variable's identity.
+// Used by emitStateVarSnapshot (phases.go) as the vm->values map key for state
+// save/restore — that key must match exactly what phase_log uses for the same
+// variable, or ZCD snapshot/restore and .save() logging would disagree about a
+// variable's identity.
 func (g *generator) collectStateVarDottedNames() map[string]string {
 	dotted := make(map[string]string)
 	for _, logic := range g.prog.Logic {
@@ -59,19 +56,17 @@ func (g *generator) collectStateVarDottedNames() map[string]string {
 		}
 		for _, d := range decl.Decls {
 			dottedName := logic.Prefix + "." + d.Name
-			mangled := mangle(dottedName)
-			dotted[mangled] = dottedName
+			dotted[mangle(dottedName)] = dottedName
 		}
 	}
 	return dotted
 }
 
-// collectAllVars collects ALL non-wire variable names across all logic
-// blocks — both state and non-state locals. All of them become file-scope
-// statics so they stay visible across phase-function boundaries (each
-// phase is its own C function, so a Hover local declared in one statement
-// must still be readable from a later statement even though the elaborator
-// split them into separate LogicObjects).
+// collectAllVars collects ALL non-wire variable names across all logic blocks
+// — both state and non-state locals. All become file-scope statics so they
+// stay visible across phase-function boundaries (each phase is its own C
+// function, so a Hover local declared in one statement must still be readable
+// from a later statement even though the elaborator split them apart).
 func (g *generator) collectAllVars() []string {
 	seen := make(map[string]bool)
 	var vars []string
@@ -94,18 +89,11 @@ func (g *generator) collectAllVars() []string {
 				}
 			}
 		case *ast.AssignmentStatement:
-			// Bare assignments to a name with no prior LocalDeclStatement
-			// must still get a global declared for them — this is the
-			// case for idt()/ddt()'s injected hidden-node assignments
-			// (elaborator/macros.go), which write to a fresh identifier
-			// that's never wrapped in a LocalDeclStatement at all. Without
-			// this case, collectAllVars never sees that name, so
-			// emitStateVars never declares its file-scope global, and the
-			// generated C++ fails to compile with "was not declared in
-			// this scope" the moment idt()/ddt() is actually exercised
-			// (confirmed by direct testing — this bug pre-existed for
-			// idt() too, just never surfaced because no prior test
-			// exercised it standalone).
+			// Bare assignments with no prior LocalDeclStatement must still get
+			// a global declared (idt()/ddt()'s injected hidden-node writes —
+			// elaborator/macros.go — target a fresh identifier that is never
+			// wrapped in a LocalDeclStatement). Without this they'd never be
+			// declared and the generated C++ would fail to compile.
 			if id, ok := s.Left.(*ast.IdentifierExpression); ok {
 				mangled := resolveWrite(id.Value, logic)
 				if !seen[mangled] {
@@ -138,22 +126,18 @@ func (g *generator) collectAllVars() []string {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TYPE TABLE
-// Maps every mangled variable name to its declared CType, built once and
-// cached on the generator (see generator.typeTable in generator.go). This
-// is the symbol table the rest of codegen consults to know what C++ type
-// a variable was declared with, since storage is no longer uniformly
-// double — emitExpr needs this for every identifier it resolves, and
-// emitStmt needs it to decide whether an assignment requires an explicit
-// cast.
 //
-// Walks the exact same statement shapes as collectAllVars (LocalDeclStatement
-// inside Block/If/While), but records the declared CType alongside the name
-// instead of just the name. The two collectors are kept separate rather than
-// merged into one, since collectAllVars's plain []string return is still
-// the simplest shape for callers that only need ordered names (emitStateVars'
-// declaration-order iteration) without also needing the type.
-func (g *generator) collectVarTypes() map[string]CType {
-	types := make(map[string]CType)
+// collectVarTypes maps every mangled variable name to its full hoverType —
+// element CType plus pointer/array shape (see declarator.go). This single
+// collector supersedes the former pair (an element-only map[string]CType and a
+// raw-string map[string]string) which walked identical AST shapes for two
+// views of the same fact: the hoverType carries both, so callers that want the
+// element type read .elem and callers emitting declarations use cVarDecl /
+// isArray / etc. directly.
+// ─────────────────────────────────────────────────────────────────────────────
+
+func (g *generator) collectVarTypes() map[string]hoverType {
+	types := make(map[string]hoverType)
 
 	var walk func(stmt ast.Statement, logic elaborator.LogicObject)
 	walk = func(stmt ast.Statement, logic elaborator.LogicObject) {
@@ -165,25 +149,17 @@ func (g *generator) collectVarTypes() map[string]CType {
 			if s.Type == "wire" {
 				return
 			}
-			ctype := hoverTypeToCType(s.Type)
+			ht := parseHoverType(s.Type)
 			for _, d := range s.Decls {
-				mangled := resolveWrite(d.Name, logic)
-				types[mangled] = ctype
+				types[resolveWrite(d.Name, logic)] = ht
 			}
 		case *ast.AssignmentStatement:
-			// Mirrors collectAllVars' AssignmentStatement case (see that
-			// comment for the full idt()/ddt() rationale). A bare
-			// assignment with no declaration has no explicit Hover type
-			// to read, but every such case in practice (idt/ddt hidden
-			// nodes, and any other bare-assigned name) is a plain
-			// physical quantity — CDouble is correct here, and typeOf's
-			// existing CDouble fallback would produce the same result if
-			// this case were omitted, so this is a correctness/clarity
-			// improvement rather than a behavior change.
+			// Bare-assigned names (idt/ddt hidden nodes) have no declared type;
+			// they are always plain physical scalars — default to double.
 			if id, ok := s.Left.(*ast.IdentifierExpression); ok {
 				mangled := resolveWrite(id.Value, logic)
 				if _, exists := types[mangled]; !exists {
-					types[mangled] = CDouble
+					types[mangled] = parseHoverType("double")
 				}
 			}
 		case *ast.BlockStatement:
@@ -207,23 +183,19 @@ func (g *generator) collectVarTypes() map[string]CType {
 		walk(logic.Source, logic)
 	}
 
-	// Function parameters also need a CType — they're locals inside their
-	// own function body, resolved the same way (resolveIdent → mangled
-	// cName.paramName → mangle()), but they never appear in g.prog.Logic
-	// since they're not LogicObjects. Walk g.prog.Functions and
-	// g.prog.AliasedFunctions to add them too.
+	// Function parameters are locals inside their own function body, resolved
+	// as cName.paramName -> mangle(); they never appear in g.prog.Logic, so
+	// walk g.prog.Functions and g.prog.AliasedFunctions to record them too.
 	for _, fn := range g.prog.Functions {
 		for _, p := range fn.Parameters {
-			mangled := mangle(fn.Name + "." + p.Name)
-			types[mangled] = hoverTypeToCType(p.Type)
+			types[mangle(fn.Name+"."+p.Name)] = parseHoverType(p.Type)
 		}
 	}
 	for alias, byName := range g.prog.AliasedFunctions {
 		for _, fn := range byName {
 			cName := mangle(alias + "." + fn.Name)
 			for _, p := range fn.Parameters {
-				mangled := mangle(cName + "." + p.Name)
-				types[mangled] = hoverTypeToCType(p.Type)
+				types[mangle(cName+"."+p.Name)] = parseHoverType(p.Type)
 			}
 		}
 	}
@@ -231,17 +203,16 @@ func (g *generator) collectVarTypes() map[string]CType {
 	return types
 }
 
-// typeOf looks up the CType for a mangled variable name, defaulting to
-// CDouble if the name isn't found (e.g. a name resolveIdent produced for
-// something not tracked by collectVarTypes, such as a static param literal
-// — those never reach typeOf since resolveIdent returns a literal string
-// for them directly, never an identifier name to look up).
-func (g *generator) typeOf(mangledName string) CType {
+// typeOf looks up the full hoverType for a mangled variable name, defaulting
+// to a plain double if the name isn't tracked (e.g. a static-param literal,
+// which resolveIdent emits directly and never routes through here). Read .elem
+// for the element CType.
+func (g *generator) typeOf(mangledName string) hoverType {
 	if g.typeTable == nil {
 		g.typeTable = g.collectVarTypes()
 	}
 	if t, ok := g.typeTable[mangledName]; ok {
 		return t
 	}
-	return CDouble
+	return parseHoverType("double")
 }

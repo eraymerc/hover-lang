@@ -64,6 +64,12 @@ func (a *Analyzer) checkExpression(exp ast.Expression) string {
 					"Cast explicitly with (int) if truncation is intended.",
 				r))
 		}
+		if node.Operator == "&" {
+			return r + "*"
+		}
+		if node.Operator == "*" {
+			return getBaseType(r)
+		}
 		return r
 	case *ast.CallExpression:
 		a.checkExpression(node.Function)
@@ -77,11 +83,11 @@ func (a *Analyzer) checkExpression(exp ast.Expression) string {
 		if !isNumeric(iType) && iType != "wire" {
 			a.addError(node, fmt.Sprintf("Array index must be numeric, got '%s'", iType))
 		}
-
-		if !strings.Contains(lType, "[") && lType != "unknown" && lType != "wire" {
+		if !strings.Contains(lType, "[") && !strings.HasSuffix(lType, "*") &&
+			lType != "unknown" && lType != "wire" {
 			a.addError(node, fmt.Sprintf("Cannot index non-array type '%s'", lType))
 		}
-		return getBaseType(lType)
+		return stripOneArrayDim(lType)
 	}
 	return "unknown"
 }

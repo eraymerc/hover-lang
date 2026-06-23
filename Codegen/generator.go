@@ -49,7 +49,8 @@ type generator struct {
 	// typeTable caches collectVarTypes()'s result — built lazily on first
 	// use via typeOf (see collect.go), since multiple emit* functions need
 	// it and it's a non-trivial AST walk we don't want repeated per call.
-	typeTable map[string]CType
+	// was: typeTable map[string]CType
+	typeTable map[string]hoverType
 
 	// unresolvedFunctions collects every function name emitUserFunctionCall
 	// couldn't resolve, in the order first encountered (deduplicated). The
