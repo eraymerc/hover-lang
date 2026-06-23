@@ -141,3 +141,30 @@ func emitCast(expr string, fromType, targetType CType) string {
 	}
 	return "(" + targetType.String() + ")(" + expr + ")"
 }
+
+// cName returns the C-natural type keyword (used only at the FFI boundary,
+// where headers use real `int`, not the int64_t Hover stores internally).
+func (c CType) cName() string {
+	switch c {
+	case CDouble:
+		return "double"
+	case CFloat:
+		return "float"
+	case CInt:
+		return "int"
+	case CUInt:
+		return "unsigned int"
+	}
+	return "double"
+}
+
+// castToHover casts a C expression of element type `from` into the Hover target
+// type. Pointer targets get a C-style (reinterpret) cast — this bridges FFI
+// pointer-type discrepancies (e.g. an extern `int*` return stored in Hover's
+// `int64_t*`) and is a no-op for matching types. Scalars use the normal cast.
+func castToHover(expr string, from CType, target hoverType) string {
+	if target.isPointer() {
+		return "(" + target.cReturnType() + ")(" + expr + ")"
+	}
+	return emitCast(expr, from, target.elem)
+}

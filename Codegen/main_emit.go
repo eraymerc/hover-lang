@@ -17,7 +17,25 @@ func (g *generator) emitHeader() {
 	g.raw(`#include "hover_runtime.h"`)
 	g.raw(`#include <math.h>`)
 	g.raw(`#include <cstdint>`)
+	seen := map[string]bool{}
+	for _, inc := range g.prog.CIncludes {
+		if seen[inc] {
+			continue
+		}
+		seen[inc] = true
+		g.raw(formatInclude(inc))
+	}
 	g.raw(``)
+}
+
+// formatInclude renders an importc target: angle form passes through
+// (`importc "<cmath>"` -> `#include <cmath>`), everything else is quoted.
+func formatInclude(path string) string {
+	p := strings.TrimSpace(path)
+	if strings.HasPrefix(p, "<") {
+		return "#include " + p
+	}
+	return "#include \"" + p + "\""
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -39,8 +57,9 @@ func (g *generator) emitStateVars() {
 	stateInits := g.collectStateInits()
 	for _, name := range g.collectAllVars() {
 		ht := g.typeOf(name)
-		if init, isState := stateInits[name]; isState {
-			g.raw(fmt.Sprintf("static %s = %s; // state", ht.cVarDecl(name), formatInitializer(ht, init)))
+		if si, isState := stateInits[name]; isState {
+			g.raw(fmt.Sprintf("static %s = %s; // state",
+				ht.cVarDecl(name), g.formatStateInitializer(ht, si)))
 		} else if ht.isArray() {
 			g.raw(fmt.Sprintf("static %s = {}; // zero-init", ht.cVarDecl(name)))
 		} else {
@@ -190,4 +209,34 @@ func (g *generator) emitMain() error {
 	g.raw("}")
 
 	return nil
+}
+
+// formatStateInitializer produces the file-scope static initializer for a state
+// variable. Constants and array literals are folded as before. A pointer/scalar
+// initialized from an EXTERN call (the opaque-pointer pattern) is emitted as the
+// real call: a static initialized from an extern function runs once at startup
+// and needs no vm. Any other non-constant initializer can't run safely at file
+// scope (a Hover-function call would need vm before main), so it falls back to 0.
+func (g *generator) formatStateInitializer(ht hoverType, si stateInit) string {
+	if ht.isArray() {
+		return formatArrayLiteral(ht.elem, ht.dims, si.value)
+	}
+	switch v := si.value.(type) {
+	case nil:
+		if ht.isPointer() {
+			return "0"
+		}
+		return formatTypedLiteral(0.0, ht.elem)
+	case *ast.NumberExpression:
+		return formatTypedLiteral(elaborator.ParseEngineering(v.Value), ht.elem)
+	case *ast.CallExpression:
+		if decl := g.lookupFunctionDecl(callExpressionName(v.Function)); decl != nil && decl.IsExtern {
+			code, ct := g.emitExpr(v, si.logic)
+			return castToHover(code, ct, ht)
+		}
+	}
+	if ht.isPointer() {
+		return "0"
+	}
+	return formatTypedLiteral(0.0, ht.elem)
 }

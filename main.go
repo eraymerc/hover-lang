@@ -225,6 +225,45 @@ func main() {
 		}
 	}
 
+	// ── FFI: resolve `importc` headers ───────────────────────────────────────
+	// Quoted headers are resolved relative to the entry .hvr file's directory.
+	// That directory goes on the include path, and any sibling source file
+	// providing the extern definitions (foo.hpp -> foo.cpp/.c/.cc/.cxx) is
+	// auto-linked, so `importc "wrappers.hpp"` needs no Makefile edit.
+	// Angle headers (<stdio.h>) are system headers and need no -I.
+	entryDir, _ := filepath.Abs(filepath.Dir(entryFile))
+	ffiIncludeSet := map[string]bool{}
+	var ffiIncludeDirs []string
+	var ffiSources []string
+	seenSrc := map[string]bool{}
+
+	for _, inc := range flatProg.CIncludes {
+		h := strings.TrimSpace(inc)
+		if h == "" || strings.HasPrefix(h, "<") {
+			continue // system header — found automatically
+		}
+		headerPath := h
+		if !filepath.IsAbs(headerPath) {
+			headerPath = filepath.Join(entryDir, h)
+		}
+		dir := filepath.Dir(headerPath)
+		if !ffiIncludeSet[dir] {
+			ffiIncludeSet[dir] = true
+			ffiIncludeDirs = append(ffiIncludeDirs, dir)
+		}
+		base := strings.TrimSuffix(headerPath, filepath.Ext(headerPath))
+		for _, ext := range []string{".cpp", ".c", ".cc", ".cxx"} {
+			cand := base + ext
+			if _, err := os.Stat(cand); err == nil && !seenSrc[cand] {
+				seenSrc[cand] = true
+				ffiSources = append(ffiSources, cand)
+			}
+		}
+	}
+	if len(ffiSources) > 0 {
+		fmt.Printf("[Compile] Linking FFI sources: %s\n", strings.Join(ffiSources, ", "))
+	}
+
 	compileArgs := []string{
 		"c++",
 		"-std=c++17",
@@ -238,12 +277,13 @@ func main() {
 		compileArgs = append(compileArgs, "-target", "x86_64-linux-gnu")
 	}
 
-	compileArgs = append(compileArgs,
-		"sim.cpp",
-		"-I./runtime",
-		runtimeLib,
-		"-o", exeName,
-	)
+	compileArgs = append(compileArgs, "sim.cpp")
+	compileArgs = append(compileArgs, ffiSources...) // FFI definitions
+	compileArgs = append(compileArgs, "-I./runtime")
+	for _, dir := range ffiIncludeDirs { // FFI header locations
+		compileArgs = append(compileArgs, "-I"+dir)
+	}
+	compileArgs = append(compileArgs, runtimeLib, "-o", exeName)
 
 	compileCmd := exec.Command(zigPath, compileArgs...)
 	compileCmd.Stdout = os.Stdout
@@ -252,8 +292,6 @@ func main() {
 		fmt.Printf("[Compile] Compilation failed: %v\n", err)
 		os.Exit(1)
 	}
-
-	fmt.Printf("[Compile] Successfully built %s\n", exeName)
 
 	// ── 7. Run ───────────────────────────────────────────────────────────────
 	fmt.Println("[Run] Starting simulation...")

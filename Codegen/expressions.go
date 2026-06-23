@@ -280,19 +280,33 @@ func (g *generator) emitUserFunctionCall(fnName string, argExprs []ast.Expressio
 		return fmt.Sprintf("%s(%s)", cName, strings.Join(args, ", ")), CDouble
 	}
 
-	args := []string{"vm"}
+	args := []string{}
+	if !fnDecl.IsExtern {
+		args = append(args, "vm") // extern C funcs take no VM
+	}
 	for i, arg := range argExprs {
 		argCode, argType := g.emitExpr(arg, logic)
 		if i < len(fnDecl.Parameters) {
 			pht := parseHoverType(fnDecl.Parameters[i].Type)
-			if !pht.isArray() && !pht.isPointer() {
-				argCode = emitCast(argCode, argType, pht.elem) // arrays/pointers decay; no scalar cast
+			switch {
+			case fnDecl.IsExtern:
+				// reconcile Hover storage with the header's real C types
+				argCode = "(" + pht.cFFIType() + ")(" + argCode + ")"
+			case pht.isArray() || pht.isPointer():
+				// Hover array/pointer decays; no scalar cast
+			default:
+				argCode = emitCast(argCode, argType, pht.elem)
 			}
 		}
 		args = append(args, argCode)
 	}
+
+	callName := cName
+	if fnDecl.IsExtern {
+		callName = fnDecl.Name // raw C name, never mangled
+	}
 	returnType := parseHoverType(fnDecl.ReturnType).elem
-	return fmt.Sprintf("%s(%s)", cName, strings.Join(args, ", ")), returnType
+	return fmt.Sprintf("%s(%s)", callName, strings.Join(args, ", ")), returnType
 }
 
 // lookupFunctionDecl finds the *ast.FuncDeclStatement for a bare or

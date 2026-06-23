@@ -9,11 +9,14 @@ import (
 
 // ─────────────────────────────────────────────────────────────────────────────
 // USER-DEFINED FUNCTIONS
+//
+// `extern func` declarations (FuncDeclStatement.IsExtern) are skipped here:
+// their definition lives in a C/C++ header pulled in by `importc`, so Hover
+// must NOT emit a forward declaration or a body for them. They are still
+// present in g.prog.Functions so calls can resolve their signature — see
+// emitUserFunctionCall, which emits them as raw C calls (no vm, no mangling).
 // ─────────────────────────────────────────────────────────────────────────────
 
-// emitFunctions emits every user-defined function reachable from the entry
-// file — both bare (entry file's own functions plus bare imports) and aliased
-// (import "x.hvr" as Y; → Y.funcName).
 func (g *generator) emitFunctions() {
 	hasAliased := false
 	for _, byName := range g.prog.AliasedFunctions {
@@ -27,23 +30,35 @@ func (g *generator) emitFunctions() {
 	}
 	g.raw(`// ── USER-DEFINED FUNCTIONS ───────────────────────────────────────────────────`)
 
-	// Forward-declare every function before emitting any body, so a function
-	// whose body calls another resolves regardless of Go map iteration order.
+	// Forward declarations (skip extern — header provides them).
 	for _, fn := range g.prog.Functions {
+		if fn.IsExtern {
+			continue
+		}
 		g.emitForwardDecl(fn.Name, fn)
 	}
 	for alias, byName := range g.prog.AliasedFunctions {
 		for _, fn := range byName {
+			if fn.IsExtern {
+				continue
+			}
 			g.emitForwardDecl(mangle(alias+"."+fn.Name), fn)
 		}
 	}
 	g.raw("")
 
+	// Bodies (skip extern — header provides them).
 	for _, fn := range g.prog.Functions {
+		if fn.IsExtern {
+			continue
+		}
 		g.emitOneFunction(fn.Name, fn)
 	}
 	for alias, byName := range g.prog.AliasedFunctions {
 		for _, fn := range byName {
+			if fn.IsExtern {
+				continue
+			}
 			g.emitOneFunction(mangle(alias+"."+fn.Name), fn)
 		}
 	}
@@ -51,8 +66,7 @@ func (g *generator) emitFunctions() {
 
 // emitForwardDecl emits a single C++ function prototype. Parameters and the
 // return type carry their full declared shape (arrays decay to pointers as
-// parameters, exactly like C; an array return degrades to the element type
-// since C/C++ can't return arrays).
+// parameters, exactly like C; an array return degrades to the element type).
 func (g *generator) emitForwardDecl(cName string, fn *ast.FuncDeclStatement) {
 	params := []string{"VM *vm"}
 	for _, p := range fn.Parameters {
@@ -82,9 +96,6 @@ func (g *generator) emitOneFunction(cName string, fn *ast.FuncDeclStatement) {
 	g.raw(fmt.Sprintf("static %s %s(%s) {", ret.cReturnType(), cName, strings.Join(params, ", ")))
 	g.push()
 
-	// Renamed local alias per parameter. Scalars copy; arrays/pointers alias
-	// the caller's storage (array params decay to pointers, C-style), so the
-	// body can index and mutate them and the caller sees the change.
 	for _, p := range fn.Parameters {
 		localName := fmt.Sprintf("%s_%s", cName, p.Name)
 		g.line("%s", parseHoverType(p.Type).cDecayedLocalDecl(localName, p.Name))

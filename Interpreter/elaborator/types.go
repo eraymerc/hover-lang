@@ -40,6 +40,8 @@ type ElaboratedProgram struct {
 	// imports, reachable only as Y.funcName — never merged into Functions
 	// above. Keyed first by alias, then by function name.
 	AliasedFunctions map[string]map[string]*ast.FuncDeclStatement
+	CIncludes        []string // importc headers, in discovery order (deduped at codegen)
+
 }
 
 // ImportedFile is one file's parsed program plus its own (non-transitive)
@@ -186,6 +188,9 @@ func (e *Elaborator) registerFileDecls(program *ast.Program) {
 		if f, ok := stmt.(*ast.FuncDeclStatement); ok {
 			e.output.Functions[f.Name] = f
 		}
+		if ic, ok := stmt.(*ast.ImportCStatement); ok {
+			e.output.CIncludes = append(e.output.CIncludes, ic.Path)
+		}
 	}
 }
 
@@ -197,6 +202,9 @@ func (e *Elaborator) mergeBareFile(program *ast.Program) error {
 	for _, stmt := range program.Statements {
 		if m, ok := stmt.(*ast.ModuleDeclStatement); ok {
 			if existing, exists := e.modules[m.Name]; exists {
+				if existing == m {
+					continue // same declaration via two import paths (diamond) — fine
+				}
 				return fmt.Errorf("module '%s' declared at line %d collides with an existing module '%s' (already declared at line %d) — use an aliased import (`as Name`) to avoid this",
 					m.Name, m.Line(), existing.Name, existing.Line())
 			}
@@ -204,17 +212,20 @@ func (e *Elaborator) mergeBareFile(program *ast.Program) error {
 		}
 		if f, ok := stmt.(*ast.FuncDeclStatement); ok {
 			if existing, exists := e.output.Functions[f.Name]; exists {
+				if existing == f {
+					continue // same declaration via diamond import — fine
+				}
+				if f.IsExtern && existing.IsExtern {
+					continue // duplicate extern declaration — harmless
+				}
 				return fmt.Errorf("function '%s' declared at line %d collides with an existing function '%s' (already declared at line %d) — use an aliased import (`as Name`) to avoid this",
 					f.Name, f.Line(), existing.Name, existing.Line())
 			}
 			e.output.Functions[f.Name] = f
 		}
-		// Directives from imported files are intentionally NOT merged —
-		// .tran/.save/.solver/.zcd/.op only make sense once, declared by
-		// the entry file (or whichever file is meant to own the top-level
-		// simulation configuration). An imported file's directives, if
-		// any, are silently ignored rather than merged, since merging
-		// them would make simulation behavior depend on import order.
+		if ic, ok := stmt.(*ast.ImportCStatement); ok {
+			e.output.CIncludes = append(e.output.CIncludes, ic.Path)
+		}
 	}
 	return nil
 }
@@ -241,6 +252,9 @@ func (e *Elaborator) registerAliasedFile(alias string, program *ast.Program) err
 		}
 		if f, ok := stmt.(*ast.FuncDeclStatement); ok {
 			e.output.AliasedFunctions[alias][f.Name] = f
+		}
+		if ic, ok := stmt.(*ast.ImportCStatement); ok {
+			e.output.CIncludes = append(e.output.CIncludes, ic.Path)
 		}
 	}
 	return nil

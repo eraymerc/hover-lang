@@ -55,30 +55,27 @@ func (g *generator) emitStmt(stmt ast.Statement, logic elaborator.LogicObject, i
 			if inFunc {
 				if d.Value != nil {
 					valCode, valType := g.emitExpr(d.Value, logic)
-					g.line("%s = %s;", ht.cVarDecl(target), emitCast(valCode, valType, ht.elem))
+					g.line("%s = %s;", ht.cVarDecl(target), castToHover(valCode, valType, ht))
 				} else {
 					g.line("%s = 0;", ht.cVarDecl(target))
 				}
 			} else if d.Value != nil {
 				valCode, valType := g.emitExpr(d.Value, logic)
-				g.line("%s = %s;", target, emitCast(valCode, valType, ht.elem))
+				g.line("%s = %s;", target, castToHover(valCode, valType, ht))
 			}
 		}
 
 	case *ast.AssignmentStatement:
-		lhs := ""
-		lhsType := CDouble
 		if id, ok := s.Left.(*ast.IdentifierExpression); ok {
-			lhs = resolveWrite(id.Value, logic)
-			lhsType = g.identifierType(id.Value, logic)
+			lhs := resolveWrite(id.Value, logic)
+			lhsHT := g.typeOf(lhs)
+			rhsCode, rhsType := g.emitExpr(s.Right, logic)
+			g.line("%s = %s;", lhs, castToHover(rhsCode, rhsType, lhsHT))
 		} else {
 			lhsCode, lhsT := g.emitExpr(s.Left, logic)
-			lhs = lhsCode
-			lhsType = lhsT
+			rhsCode, rhsType := g.emitExpr(s.Right, logic)
+			g.line("%s = %s;", lhsCode, emitCast(rhsCode, rhsType, lhsT))
 		}
-		rhsCode, rhsType := g.emitExpr(s.Right, logic)
-		rhsCode = emitCast(rhsCode, rhsType, lhsType)
-		g.line("%s = %s;", lhs, rhsCode)
 
 	case *ast.IfStatement:
 		condCode, condType := g.emitExpr(s.Condition, logic)

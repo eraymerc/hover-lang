@@ -22,15 +22,20 @@ import (
 // single float64 — that limitation is exactly what left `state double[2] arr`
 // initialized to 0. Snapshot code that only needs the set of state names just
 // ranges over this map's keys.
-func (g *generator) collectStateInits() map[string]ast.Expression {
-	inits := make(map[string]ast.Expression)
+type stateInit struct {
+	value ast.Expression
+	logic elaborator.LogicObject
+}
+
+func (g *generator) collectStateInits() map[string]stateInit {
+	inits := make(map[string]stateInit)
 	for _, logic := range g.prog.Logic {
 		decl, ok := logic.Source.(*ast.LocalDeclStatement)
 		if !ok || !decl.IsState {
 			continue
 		}
 		for _, d := range decl.Decls {
-			inits[mangle(logic.Prefix+"."+d.Name)] = d.Value
+			inits[mangle(logic.Prefix+"."+d.Name)] = stateInit{value: d.Value, logic: logic}
 		}
 	}
 	return inits

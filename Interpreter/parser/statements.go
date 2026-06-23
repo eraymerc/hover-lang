@@ -15,6 +15,10 @@ func (p *parser) parse_statement() ast.Statement {
 		return p.parseModuleStatement()
 	case token.IMPORT:
 		return p.parseImportStatement()
+	case token.IMPORTC:
+		return p.parseImportCStatement()
+	case token.EXTERN:
+		return p.parseExternFuncDecl()
 	case token.FUNC:
 		return p.parseFuncDecl()
 	case token.STATE, token.DOUBLE, token.INT, token.FLOAT, token.UNSIGNED, token.WIRE:
@@ -168,4 +172,47 @@ func (p *parser) parseReturnStatement() ast.Statement {
 	stmt.ReturnValue = p.parse_expression(default_bp)
 	p.expect(token.SEMI)
 	return stmt
+}
+
+func (p *parser) parseImportCStatement() ast.Statement {
+	stmt := &ast.ImportCStatement{Token: p.nextToken()} // consume 'importc'
+	stmt.Path = p.currentToken().Literal
+	p.expect(token.STRING)
+	if p.currentTokenType() == token.SEMI { // trailing ';' optional
+		p.nextToken()
+	}
+	return stmt
+}
+
+func (p *parser) parseExternFuncDecl() ast.Statement {
+	externTok := p.nextToken() // consume 'extern'
+	if p.currentTokenType() != token.FUNC {
+		p.addError("expected 'func' after 'extern'")
+		return nil
+	}
+	p.nextToken() // consume 'func'
+
+	stmt := &ast.FuncDeclStatement{Token: externTok, IsExtern: true}
+	stmt.ReturnType = p.parseTypeString()
+	stmt.Name = p.currentToken().Literal
+	p.expect(token.IDENT)
+
+	p.expect(token.LPAREN)
+	for p.currentTokenType() != token.RPAREN && p.hasTokens() {
+		param := ast.FuncParam{}
+		param.Type = p.parseTypeString()
+		if p.currentTokenType() == token.IDENT { // param name optional (C-style)
+			param.Name = p.currentToken().Literal
+			p.nextToken()
+		}
+		stmt.Parameters = append(stmt.Parameters, param)
+		if p.currentTokenType() == token.COMMA {
+			p.nextToken()
+		}
+	}
+	p.expect(token.RPAREN)
+	if p.currentTokenType() == token.SEMI { // trailing ';' optional
+		p.nextToken()
+	}
+	return stmt // Body stays nil
 }

@@ -73,7 +73,9 @@ const (
 	INPUT
 	OUTPUT
 	IMPORT
+	IMPORTC
 	AS
+	EXTERN
 
 	// Types
 	WIRE
@@ -132,7 +134,9 @@ var tokens = [...]string{
 	INPUT:    "INPUT",
 	OUTPUT:   "OUTPUT",
 	IMPORT:   "IMPORT",
+	IMPORTC:  "IMPORTC",
 	AS:       "AS",
+	EXTERN:   "EXTERN",
 	WIRE:     "WIRE",
 	DOUBLE:   "DOUBLE",
 	INT:      "INT",
@@ -162,7 +166,9 @@ var keywords = map[string]Type{
 	"input":    INPUT,
 	"output":   OUTPUT,
 	"import":   IMPORT,
+	"importc":  IMPORTC,
 	"as":       AS,
+	"extern":   EXTERN,
 	"wire":     WIRE,
 	"double":   DOUBLE,
 	"int":      INT,

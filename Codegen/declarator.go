@@ -152,3 +152,14 @@ func (h hoverType) cDecayedLocalDecl(name, init string) string {
 	return fmt.Sprintf("%s (%s%s)%s = %s;",
 		h.elem.String(), strings.Repeat("*", stars), name, suffix, init)
 }
+
+// cFFIType renders the type as a C header would (C-natural element name plus
+// pointer stars), for casting arguments passed to extern C functions. Arrays
+// are treated as a single pointer (extern array params decay like C).
+func (h hoverType) cFFIType() string {
+	stars := h.stars
+	if h.isArray() {
+		stars++
+	}
+	return h.elem.cName() + strings.Repeat("*", stars)
+}

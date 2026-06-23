@@ -200,6 +200,7 @@ type FuncDeclStatement struct {
 	Name       string
 	Parameters []FuncParam
 	Body       *BlockStatement
+	IsExtern   bool // `extern func` — no body; defined in an importc header
 }
 
 type FuncParam struct {
@@ -309,3 +310,17 @@ func (is *ImportStatement) String() string {
 	}
 	return "import \"" + is.Path + "\";"
 }
+
+// ImportCStatement is `importc "header.hpp";` / `importc "<cmath>";` — a direct
+// pass-through to the C++ code generator that injects a #include. The target is
+// NOT parsed as a Hover file. Path holds the string-literal contents (e.g.
+// `native_math.h` or `<cmath>`); codegen decides quote vs angle form.
+type ImportCStatement struct {
+	Token token.Token
+	Path  string
+}
+
+func (ic *ImportCStatement) statementNode()       {}
+func (ic *ImportCStatement) TokenLiteral() string { return ic.Token.Literal }
+func (ic *ImportCStatement) Line() int            { return ic.Token.Line }
+func (ic *ImportCStatement) String() string       { return "importc \"" + ic.Path + "\";" }

@@ -118,15 +118,15 @@ func (a *Analyzer) checkStatement(stmt ast.Statement) {
 		a.currentScope = parent
 	case *ast.FuncDeclStatement:
 		a.currentScope.Define(&Symbol{Name: node.Name, Type: "func"})
+		if node.Body == nil { // extern: nothing to analyze
+			return
+		}
 		parent := a.currentScope
 		a.currentScope = NewScope(parent)
-		prev := a.inLogicBlock
-		a.inLogicBlock = true
 		for _, p := range node.Parameters {
 			a.currentScope.Define(&Symbol{Name: p.Name, Type: p.Type})
 		}
 		a.checkStatement(node.Body)
-		a.inLogicBlock = prev
 		a.currentScope = parent
 	case *ast.ModuleInstStatement, *ast.PhysicalPrimitiveStatement:
 		if _, isPhys := node.(*ast.PhysicalPrimitiveStatement); isPhys && a.currentDomain == token.DIGITAL {
