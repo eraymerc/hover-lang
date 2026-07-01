@@ -1,18 +1,54 @@
 package loader
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 )
 
-// resolveImportPath resolves an import's path string relative to the
-// directory of the file that contains the import statement.
+// stdlibRoot is the standard library directory, always a "standard_library"
+// folder next to the hover executable — not the current working directory,
+// and not the source file's directory. This is what makes `import <...>`
+// location-independent.
+func stdlibRoot() (string, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	if real, e := filepath.EvalSymlinks(exe); e == nil {
+		exe = real
+	}
+	return filepath.Join(filepath.Dir(exe), "standard_library"), nil
+}
+
+// resolveImportPath turns an import into an absolute file path.
 //
-// Example: if currentFileDir is "/proj/foo" and importPath is "./bar/ex2.hvr",
-// the result is the cleaned absolute path "/proj/foo/bar/ex2.hvr".
-func resolveImportPath(currentFileDir string, importPath string) string {
-	joined := filepath.Join(currentFileDir, importPath)
-	return filepath.Clean(joined)
+//	import <a/b.hvr>   ->  {binaryDir}/standard_library/a/b.hvr
+//	import "./a/b.hvr" ->  {importerDir}/a/b.hvr
+//
+// stdlibRoot: the standard_library dir shipped next to the hover binary
+// (Makefile copies it there), independent of cwd or source location.
+func resolveImportPath(currentFileDir, importPath string, isSystem bool) string {
+	if isSystem {
+		if root, err := stdlibRoot(); err == nil {
+			return filepath.Clean(filepath.Join(root, filepath.FromSlash(strings.TrimLeft(importPath, "/"))))
+		}
+		// fall through to relative if the binary can't be located
+	}
+	return filepath.Clean(filepath.Join(currentFileDir, importPath))
+}
+
+func extractAnglePath(s string) (literal, rest string, ok bool) {
+	start := strings.IndexByte(s, '<')
+	if start == -1 {
+		return "", "", false
+	}
+	end := strings.IndexByte(s[start+1:], '>')
+	if end == -1 {
+		return "", "", false
+	}
+	end = start + 1 + end
+	return strings.TrimSpace(s[start+1 : end]), s[end+1:], true
 }
 
 // scannedImport is a raw import found by scanSourceForImports, before any
@@ -21,6 +57,7 @@ type scannedImport struct {
 	PathLiteral string // the string literal contents, e.g. "./bar/ex2.hvr"
 	Alias       string // "" if no "as Name" clause
 	Line        int    // 1-based line number where the import appears
+	IsSystem    bool   // true for `import <...>` (standard library), false for `import "..."`
 }
 
 // scanSourceForImports performs a minimal lexical scan for `import "...";`
@@ -56,7 +93,15 @@ func scanSourceForImports(source string) []scannedImport {
 			continue
 		}
 
-		pathLit, afterPath, ok := extractStringLiteral(rest)
+		trimmed := strings.TrimSpace(rest)
+		var pathLit, afterPath string
+		var isSystem, ok bool
+		if strings.HasPrefix(trimmed, "<") {
+			pathLit, afterPath, ok = extractAnglePath(trimmed)
+			isSystem = true
+		} else {
+			pathLit, afterPath, ok = extractStringLiteral(trimmed)
+		}
 		if !ok {
 			continue
 		}
@@ -75,6 +120,7 @@ func scanSourceForImports(source string) []scannedImport {
 			PathLiteral: pathLit,
 			Alias:       alias,
 			Line:        i + 1,
+			IsSystem:    isSystem,
 		})
 	}
 

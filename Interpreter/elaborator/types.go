@@ -152,7 +152,7 @@ func NewWithImports(files map[string]*ImportedFile, entryPath string) (*Elaborat
 	//    we only ever look at entry.Imports, never recurse into another
 	//    file's import list).
 	for _, imp := range entry.Imports {
-		resolvedPath := resolveImportPathFor(entryPath, imp.Path)
+		resolvedPath := resolveImportPathFor(entryPath, imp.Path, imp.IsSystem)
 		imported, ok := files[resolvedPath]
 		if !ok {
 			return nil, fmt.Errorf("line %d: import %q could not be resolved (looked for %s) — was it loaded?",

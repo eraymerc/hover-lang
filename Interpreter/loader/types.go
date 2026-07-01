@@ -7,6 +7,7 @@ type ImportEntry struct {
 	ResolvedPath string // absolute, cleaned filesystem path
 	RawPath      string // the path as written in source, for error messages
 	Line         int    // line of the import statement, for error messages
+	IsSystem     bool   // true for `import <...>` (standard library), false for `import "..."`
 }
 
 // LoadResult is the output of Load(). It contains every file reachable from

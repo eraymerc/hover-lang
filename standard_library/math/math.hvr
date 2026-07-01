@@ -1,5 +1,8 @@
 importc "<math.h>"
 
+// ---------------------------------------------------------
+// Trigonometric functions
+// ---------------------------------------------------------
 extern func double sin(double x);
 extern func double cos(double x);
 extern func double tan(double x);
@@ -7,23 +10,76 @@ extern func double asin(double x);
 extern func double acos(double x);
 extern func double atan(double x);
 extern func double atan2(double y, double x);
+
+// ---------------------------------------------------------
+// Hyperbolic functions
+// ---------------------------------------------------------
 extern func double sinh(double x);
 extern func double cosh(double x);
 extern func double tanh(double x);
 extern func double asinh(double x);
 extern func double acosh(double x);
 extern func double atanh(double x);
+
+// ---------------------------------------------------------
+// Exponential and logarithmic functions
+// ---------------------------------------------------------
 extern func double exp(double x);
+extern func double exp2(double x);
+extern func double expm1(double x);
 extern func double log(double x);
 extern func double log10(double x);
+extern func double log2(double x);
+extern func double log1p(double x);
+
+// Advanced exponential/logarithmic manipulation
+extern func double frexp(double arg, int* exp);
+extern func double ldexp(double arg, int exp);
+extern func double modf(double arg, double* iptr);
+extern func double scalbn(double arg, int exp);
+extern func int ilogb(double arg);
+extern func double logb(double arg);
+
+// ---------------------------------------------------------
+// Power and absolute-value functions
+// ---------------------------------------------------------
+extern func double pow(double base, double exponent);
 extern func double sqrt(double x);
-extern func double pow(double x, double y);
-extern func double abs(double x);
+extern func double cbrt(double x);
+extern func double hypot(double x, double y);
+extern func double fabs(double x);
+
+// ---------------------------------------------------------
+// Error and gamma functions
+// ---------------------------------------------------------
+extern func double erf(double x);
+extern func double erfc(double x);
+extern func double tgamma(double x);
+extern func double lgamma(double x);
+
+// ---------------------------------------------------------
+// Rounding and remainder functions
+// ---------------------------------------------------------
 extern func double ceil(double x);
 extern func double floor(double x);
+extern func double trunc(double x);
 extern func double round(double x);
+extern func int lround(double x);       // Assumes standard 32-bit/64-bit int mapping in Hover
+extern func double nearbyint(double x);
+extern func double rint(double x);
+extern func int lrint(double x);
 extern func double fmod(double x, double y);
-extern func double mod(double x, double y);
-extern func double sign(double x);
-extern func double max(double x, double y);
-extern func double min(double x, double y);
+extern func double remainder(double x, double y);
+extern func double remquo(double x, double y, int* quo);
+
+// ---------------------------------------------------------
+// Floating-point manipulation functions
+// ---------------------------------------------------------
+extern func double copysign(double x, double y);
+extern func double nextafter(double from, double to);
+extern func double fdim(double x, double y);
+extern func double fmax(double x, double y);
+extern func double fmin(double x, double y);
+
+// Fused multiply-add (x * y + z)
+extern func double fma(double x, double y, double z);

@@ -73,13 +73,13 @@ func loadFile(filePath string, result *LoadResult, visiting map[string]bool, vis
 
 	entries := make([]ImportEntry, 0, len(scanned))
 	for _, imp := range scanned {
-		resolved := resolveImportPath(fileDir, imp.PathLiteral)
-
+		resolved := resolveImportPath(fileDir, imp.PathLiteral, imp.IsSystem)
 		entries = append(entries, ImportEntry{
 			Alias:        imp.Alias,
 			ResolvedPath: resolved,
 			RawPath:      imp.PathLiteral,
 			Line:         imp.Line,
+			IsSystem:     imp.IsSystem,
 		})
 
 		if err := loadFile(resolved, result, visiting, visited); err != nil {

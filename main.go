@@ -100,7 +100,21 @@ func main() {
 	// a module/function that doesn't exist in an aliased import surfaces
 	// as an elaboration error ("undeclared module") rather than a semantic
 	// one, since semantic.Analyzer has no concept of cross-file imports.
+
 	analyzer := semantic.NewAnalyzer()
+	// Make functions from the entry file's own imports (e.g. sin from
+	// <math/math.hvr>) visible to the entry-file-only semantic pass. Real
+	// visibility is still enforced by the elaborator; this only prevents
+	// false "undeclared" errors.
+	for _, imp := range loadResult.Imports[loadResult.EntryPath] {
+		if imp.Alias != "" {
+			continue // aliased funcs are called as Alias.f, not bare globals
+		}
+		if f, ok := importedFiles[imp.ResolvedPath]; ok {
+			analyzer.RegisterImportedFunctions(f.Program)
+		}
+	}
+
 	if errors := analyzer.Analyze(entryProgram); len(errors) > 0 {
 		fmt.Printf("[Semantic] %d error(s):\n", len(errors))
 		for _, e := range errors {

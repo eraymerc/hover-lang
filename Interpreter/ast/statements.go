@@ -296,9 +296,10 @@ func (ds *DirectiveStatement) String() string {
 }
 
 type ImportStatement struct {
-	Token token.Token
-	Path  string
-	Alias string
+	Token    token.Token
+	Path     string
+	Alias    string
+	IsSystem bool // true for `import <...>` (standard library), false for `import "..."`
 }
 
 func (is *ImportStatement) statementNode()       {}

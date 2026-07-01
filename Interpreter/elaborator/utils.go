@@ -1,6 +1,7 @@
 package elaborator
 
 import (
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -61,7 +62,22 @@ func splitQualifiedName(name string) (alias string, bare string, isQualified boo
 // loader package here, to avoid the elaborator depending on file-system
 // layout concerns beyond this one calculation; the loader remains the
 // single source of truth for the actual file discovery and cycle checks.
-func resolveImportPathFor(currentFilePath string, importPath string) string {
-	dir := filepath.Dir(currentFilePath)
-	return filepath.Clean(filepath.Join(dir, importPath))
+func resolveImportPathFor(currentFilePath, importPath string, isSystem bool) string {
+	if isSystem {
+		if root, err := stdlibRoot(); err == nil {
+			return filepath.Clean(filepath.Join(root, filepath.FromSlash(strings.TrimLeft(importPath, "/"))))
+		}
+	}
+	return filepath.Clean(filepath.Join(filepath.Dir(currentFilePath), importPath))
+}
+
+func stdlibRoot() (string, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	if real, e := filepath.EvalSymlinks(exe); e == nil {
+		exe = real
+	}
+	return filepath.Join(filepath.Dir(exe), "standard_library"), nil
 }
