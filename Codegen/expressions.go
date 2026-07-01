@@ -188,18 +188,6 @@ func (g *generator) emitExpr(expr ast.Expression, logic elaborator.LogicObject) 
 				return code, ctype
 			}
 			return "0.0", CDouble
-		case "sin":
-			if len(n.Arguments) > 0 {
-				argCode, argType := g.emitExpr(n.Arguments[0], logic)
-				return fmt.Sprintf("sin(%s)", emitCast(argCode, argType, CDouble)), CDouble
-			}
-			return "0.0", CDouble
-		case "cos":
-			if len(n.Arguments) > 0 {
-				argCode, argType := g.emitExpr(n.Arguments[0], logic)
-				return fmt.Sprintf("cos(%s)", emitCast(argCode, argType, CDouble)), CDouble
-			}
-			return "0.0", CDouble
 		default:
 			return g.emitUserFunctionCall(fnName, n.Arguments, logic)
 		}

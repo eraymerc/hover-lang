@@ -22,8 +22,6 @@ func NewAnalyzer() *Analyzer {
 	globalScope.Define(&Symbol{Name: "time", Type: "double"})
 	globalScope.Define(&Symbol{Name: "dt", Type: "double"})
 	globalScope.Define(&Symbol{Name: "gnd", Type: "wire"})
-	globalScope.Define(&Symbol{Name: "sin", Type: "func"})
-	globalScope.Define(&Symbol{Name: "cos", Type: "func"})
 	globalScope.Define(&Symbol{Name: "V", Type: "func"})
 	globalScope.Define(&Symbol{Name: "I", Type: "func"})
 	globalScope.Define(&Symbol{Name: "idt", Type: "func"})
