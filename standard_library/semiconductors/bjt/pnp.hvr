@@ -1,0 +1,48 @@
+import <math/math.hvr>;
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  PNP Ebers-Moll Bipolar Junction Transistor
+//
+//  Polarity: 
+//  Inverted relative to the NPN. Forward active operation requires the 
+//  emitter to be at a higher potential than the base (V_eb > 0).
+//
+//  Like the NPN model, this relies on Hover's trust-region solver for 
+//  numerical stability and uses the pure `exp()` function for the junction
+//  physics. The physical clamps bound the V_eb and V_cb voltages to 
+//  realistic forward and reverse breakdown limits.
+// ─────────────────────────────────────────────────────────────────────────────
+
+analog module PNP<double Is, double Bf, double Br, double Vt>()
+    [wire base, wire collector, wire emitter]
+{
+    double v_b = V(base);
+    double v_e = V(emitter);
+    double v_c = V(collector);
+
+    // Reversed polarities for PNP: Emitter-Base and Collector-Base
+    double veb = v_e - v_b;
+    double vcb = v_c - v_b;
+
+    // Physical bounds clamping
+    if (veb > 0.75) { veb = 0.75; }
+    if (vcb > 0.75) { vcb = 0.75; }
+    if (veb < -5.0) { veb = -5.0; }
+    if (vcb < -5.0) { vcb = -5.0; }
+
+    // Pure Ebers-Moll physics equations using standard exp()
+    double i_eb = (Is / Bf) * (exp(veb / Vt) - 1.0);
+    double i_cb = (Is / Br) * (exp(vcb / Vt) - 1.0);
+    double i_ec = Is * (exp(veb / Vt) - exp(vcb / Vt));
+
+    // Stamp currents into the MNA matrix
+    // Note the reversed directional flow compared to NPN
+    current_source<>(i_eb)[emitter, base];
+    current_source<>(i_cb)[collector, base];
+    current_source<>(i_ec)[emitter, collector];
+
+    // Fixed parasitic junction capacitances
+    C<10p>() [emitter,   base];
+    C<4p>()  [collector, base];
+    C<2p>()  [emitter,   collector];
+}

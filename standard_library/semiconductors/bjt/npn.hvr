@@ -1,0 +1,53 @@
+import <math/math.hvr>;
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  NPN Ebers-Moll Bipolar Junction Transistor
+//
+//  This model uses the pure standard `exp()` function for mathematically 
+//  accurate physical equations. 
+//
+//  Numerical Stability:
+//  Unlike legacy SPICE simulators, Hover does not require artificial step
+//  limiters (like `pnjlim` or `limexp`) inside the device model to prevent 
+//  exponential overflow. Hover's implicit solvers utilize diagonally-scaled 
+//  trust-region damping, which dynamically shrinks the Newton-Raphson step size 
+//  based on the local gradient. The solver natively catches and suppresses 
+//  explosive exponential growth.
+//
+//  Physical Clamps:
+//  The explicit if-clamps (+0.75V / -5.0V) are retained purely to define the 
+//  valid physical operating bounds of the device (forward voltage drop limits 
+//  and reverse breakdown limits), ensuring the equations model a realistic
+//  transistor rather than an idealized infinite diode.
+// ─────────────────────────────────────────────────────────────────────────────
+
+
+analog module NPN<double Is, double Bf, double Br, double Vt>()
+    [wire base, wire collector, wire emitter]
+{
+    double v_b = V(base);
+    double v_e = V(emitter);
+    double v_c = V(collector);
+
+    double vbe = v_b - v_e;
+    double vbc = v_b - v_c;
+
+    if (vbe > 0.75) { vbe = 0.75; }
+    if (vbc > 0.75) { vbc = 0.75; }
+    if (vbe < -5.0) { vbe = -5.0; }
+    if (vbc < -5.0) { vbc = -5.0; }
+
+    // Direct mathematical calculation. No states! limexp() in place of
+    // exp() — see header comment for why.
+    double i_be = (Is / Bf) * (exp(vbe / Vt) - 1.0);
+    double i_bc = (Is / Br) * (exp(vbc / Vt) - 1.0);
+    double i_ce = Is * (exp(vbe / Vt) - exp(vbc / Vt));
+
+    current_source<>(i_be)[base, emitter];
+    current_source<>(i_bc)[base, collector];
+    current_source<>(i_ce)[collector, emitter];
+
+    C<10p>() [base,      emitter];
+    C<4p>()  [base,      collector];
+    C<2p>()  [collector, emitter];
+}

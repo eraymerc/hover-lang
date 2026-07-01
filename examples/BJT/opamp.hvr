@@ -1,0 +1,102 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  HVR Testbench — Transistor-Level Discrete Op-Amp
+//  Validates: Hierarchical design, closed-loop negative feedback, 
+//             Miller compensation, and Class-AB diode biasing.
+// ─────────────────────────────────────────────────────────────────────────────
+
+.save(main.v_in, main.v_out);
+.op;                        // Solve DC bias point first — diff pair + class-AB
+                             // bias string need to settle before the 5ms/5-cycle
+                             // transient window we're actually trying to observe.
+.tran(0, 5m, 1u, 10u); // 5 ms run, 5 cycles of 1kHz
+.solver(bdf2);
+
+import <semiconductors/bjt/npn.hvr> as NPN;
+import <semiconductors/bjt/pnp.hvr> as PNP;
+import <semiconductors/diode.hvr> as Diode;
+import <math/math.hvr>;
+
+// ═══════════════════════════════════════════════════════════════
+//  MACRO-MODEL: 3-STAGE DISCRETE OP-AMP
+// ═══════════════════════════════════════════════════════════════
+
+module DiscreteOpAmp<>() [wire non_inv, wire inv, wire vcc, wire vee, wire out] 
+{
+    wire tail, c1, c2, vas_out, d_mid, d_bot;
+
+    // ─── 1. DIFFERENTIAL INPUT STAGE ───
+    // Compares the non-inverting and inverting inputs
+    module q1 = NPN.NPN<0.01p, 150, 3, 0.026>() [non_inv, c1, tail];
+    module q2 = NPN.NPN<0.01p, 150, 3, 0.026>() [inv, c2, tail];
+    
+    R<10k>() [tail, vee]; // Tail current sink to negative rail
+    R<10k>() [vcc, c1];   // Collector load 1 (Drives the next stage)
+    R<10k>() [vcc, c2];   // Collector load 2
+
+    // ─── 2. VOLTAGE AMPLIFIER STAGE (VAS) ───
+    // Provides the massive open-loop voltage gain.
+    // Base tapped from c1 (non_inv side), NOT c2. The diff pair inverts
+    // once (base->collector) and the VAS inverts again (base->collector),
+    // so tapping from c1 makes "inv" end-to-end inverting and "non_inv"
+    // end-to-end non-inverting, as their names require. Tapping from c2
+    // (the inv-side collector) makes the two inversions cancel, turning
+    // "inv" into a non-inverting pin and the outer feedback network into
+    // positive feedback instead of negative feedback.
+    module q3 = PNP.PNP<0.01p, 150, 3, 0.026>() [c1, vas_out, vcc];
+
+    // Miller Compensation Capacitor (crucial for closed-loop AC stability)
+    // Must bridge the VAS's actual input/output pair: vas_out <-> c1.
+    C<30p>() [vas_out, c1]; 
+
+    // ─── 3. CLASS-AB DIODE BIAS NETWORK ───
+    // Q3 pushes current through these two diodes to VEE.
+    // This creates a ~1.4V drop to bias the output transistors on the edge of conduction.
+    module d1 = Diode.Diode<1p, 1.0, 0.026>() [vas_out, d_mid];
+    module d2 = Diode.Diode<1p, 1.0, 0.026>() [d_mid, d_bot];
+    R<4.7k>() [d_bot, vee]; // Pull-down resistor to complete the VAS circuit
+
+    // ─── 4. PUSH-PULL OUTPUT STAGE ───
+    // NPN pushes current from VCC to the output load
+    module q4 = NPN.NPN<0.01p, 150, 3, 0.026>() [vas_out, vcc, out];
+    
+    // PNP pulls current from the output load to VEE
+    module q5 = PNP.PNP<0.01p, 150, 3, 0.026>() [d_bot, vee, out];
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+//  AC VOLTAGE SOURCE
+// ═══════════════════════════════════════════════════════════════
+
+analog module AC_Source<double amplitude, double freq>() [wire out, wire gnd] {
+    double v_sig = amplitude * sin(2.0 * 3.14159265359 * freq * time);
+    voltage_source<>(v_sig)[out, gnd];
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  TOP-LEVEL CIRCUIT: INVERTING AMPLIFIER TESTBENCH
+// ═══════════════════════════════════════════════════════════════
+
+module main<>() []
+{
+    wire vcc, vee, v_in, v_out, inv_node;
+
+    // 1. Power Rails (+15V, -15V)
+    voltage_source<15>()  [vcc, gnd];
+    voltage_source<-15>() [vee, gnd];
+
+    // 2. Input Signal: 100 mV peak, 1 kHz Sine Wave
+    module sig = AC_Source<100m, 1k>() [v_in, gnd];
+
+    // 3. Instantiate the Discrete Op-Amp
+    // Notice how clean the top-level schematic remains!
+    module opamp = DiscreteOpAmp<>() [gnd, inv_node, vcc, vee, v_out];
+
+    // 4. Closed-Loop Negative Feedback Network
+    // Set up as an Inverting Amplifier: Gain = -Rf / Rin = -10k / 1k = -10
+    R<1k>()  [v_in, inv_node];    // Rin (Input resistor)
+    R<10k>() [inv_node, v_out];   // Rf  (Feedback resistor)
+
+    // 5. Output Load
+    R<2k>()  [v_out, gnd];        // 2 kOhm load resistor
+}

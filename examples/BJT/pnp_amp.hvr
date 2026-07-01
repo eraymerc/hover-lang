@@ -1,0 +1,51 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  HVR Testbench — Common-Emitter PNP Amplifier
+//  Validates: Active linear amplification, PNP polarity physics, and AC Gain
+// ─────────────────────────────────────────────────────────────────────────────
+
+.save(main.q1_base, main.q1_collector, main.v_in);
+.tran(0, 30m, 1u, 10u); // 30 ms run
+.solver(bdf2);
+
+import <semiconductors/bjt/pnp.hvr> as bjt;
+import <math/math.hvr>;
+
+// ═══════════════════════════════════════════════════════════════
+//  AC VOLTAGE SOURCE
+// ═══════════════════════════════════════════════════════════════
+
+analog module AC_Source<double dc_bias, double ac_amp, double freq>() [wire out, wire gnd] {
+    double v_sig = dc_bias + ac_amp * sin(2.0 * 3.14159265359 * freq * time);
+    voltage_source<>(v_sig)[out, gnd];
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  TOP-LEVEL CIRCUIT
+// ═══════════════════════════════════════════════════════════════
+
+module main<>() []
+{
+    wire vee, q1_base, q1_collector, q1_emitter, v_in, mid;
+
+    // 1. Power Supply Rail (-20V DC for PNP)
+    // We use a negative supply so the ground acts as the "high" potential for the emitter.
+    voltage_source<-20>()[vee, gnd];
+
+    // 2. Input Source: -1.03V DC Bias + 20mV AC Sine Wave (1 kHz)
+    // The negative bias pulls the base below ground, forward-biasing the emitter-base junction.
+    module signal_source = AC_Source<-1.03, 20m, 1k>()[v_in, gnd];
+
+    // 3. Passive Amplifier Network (Perfect Mirror of the NPN Circuit)
+    R<110k>() [vee, q1_base];          // Rb - Pulls base towards negative rail
+    R<10k>()  [vee, q1_collector];     // Rc - Collector load resistor to negative rail
+    R<10k>()  [q1_base, gnd];          // Base bias resistor to ground
+    R<1k>()   [q1_emitter, gnd];       // Re - Emitter degeneration to ground
+    
+    C<0.34u>() [v_in, q1_base];        // AC coupling capacitor
+    
+    R<74>()   [q1_emitter, mid];       // AC bypass path
+    C<16u>()  [mid, gnd];
+
+    // 4. Transistor Under Test (PNP equivalent, like a 2N3906 or 2N2907)
+    module Q1 = bjt.PNP<0.01p, 150, 3, 0.026>() [q1_base, q1_collector, q1_emitter];
+}

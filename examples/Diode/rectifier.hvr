@@ -1,0 +1,53 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  HVR Testbench — Full-Bridge Rectifier
+//  Validates: AC to DC conversion, diode commutation, and capacitive filtering
+// ─────────────────────────────────────────────────────────────────────────────
+
+.save(main.ac_in1, main.ac_in2, main.dc_out);
+.tran(0, 100m, 1u, 10u); // 100 ms run to capture 5 full cycles of 50 Hz
+.solver(bdf2);
+
+import <semiconductors/diode.hvr> as diode;
+import <math/math.hvr>;
+
+// ═══════════════════════════════════════════════════════════════
+//  AC VOLTAGE SOURCE
+// ═══════════════════════════════════════════════════════════════
+
+analog module AC_Source<double amplitude, double freq>() [wire out_p, wire out_n] {
+    // Generates a continuous sinusoidal voltage.
+    // Starts at 0V at t=0, so .op is not strictly necessary.
+    double v_sig = amplitude * sin(2.0 * 3.14159265359 * freq * time);
+    voltage_source<>(v_sig)[out_p, out_n];
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  TOP-LEVEL CIRCUIT
+// ═══════════════════════════════════════════════════════════════
+
+module main<>() []
+{
+    wire ac_in1, ac_in2, dc_out;
+
+    // 1. AC Input Source: 24V peak (~17V RMS), 50 Hz
+    module v_ac = AC_Source<24.0, 50.0>() [ac_in1, ac_in2];
+
+    // High-value reference resistor to prevent the AC source from 
+    // floating completely free of ground, satisfying MNA requirements.
+    R<1Meg>() [ac_in2, gnd];
+
+    // 2. Diode Bridge (Using parameters similar to a 1N400x series power diode)
+    // Parameters: Is = 1pA, n = 1.0, Vt = 0.026V
+    
+    // Positive half-cycle path
+    module D1 = diode.Diode<1p, 1.0, 0.026>() [ac_in1, dc_out]; // Conducts to output
+    module D2 = diode.Diode<1p, 1.0, 0.026>() [gnd, ac_in2];    // Returns to source
+
+    // Negative half-cycle path
+    module D3 = diode.Diode<1p, 1.0, 0.026>() [ac_in2, dc_out]; // Conducts to output
+    module D4 = diode.Diode<1p, 1.0, 0.026>() [gnd, ac_in1];    // Returns to source
+
+    // 3. Load & Output Filter
+    R<1k>() [dc_out, gnd];       // R_load - 1 kOhm bleeder/load
+    C<10u>() [dc_out, gnd];      // C_filter - 10 uF smoothing capacitor
+}

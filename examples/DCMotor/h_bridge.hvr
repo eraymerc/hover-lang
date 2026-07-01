@@ -1,0 +1,213 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  HVR Testbench — BJT H-Bridge Driving a DC Motor
+//  Validates: Complementary PNP/NPN switching, dead-time sequencing,
+//             flyback protection, and an electromechanical motor model.
+// ─────────────────────────────────────────────────────────────────────────────
+
+.save(main.motor_a, main.motor_b, main.omega_node, main.loadCmd,
+      main.cmd_TL, main.cmd_BL, main.cmd_TR, main.cmd_BR);
+.op;    // Settle the bridge/motor bias point before the switching sequence.
+.zcd;   // HBridgeControl's outputs step discretely at t_switch +/- deadtime --
+        // this isolates those edges instead of stepping across them.
+.tran(0, 400m, 1u, 20u);
+.solver(bdf2);
+
+import <semiconductors/bjt/npn.hvr> as NPN;
+import <semiconductors/bjt/pnp.hvr> as PNP;
+import <semiconductors/diode.hvr> as Diode;
+import <math/math.hvr>;
+
+// ═══════════════════════════════════════════════════════════════
+//  DC MOTOR MODEL (electromechanical analogy)
+// ═══════════════════════════════════════════════════════════════
+//
+// Electrical:   V(p)-V(n) = ia*Ra + La*dia/dt + Ke*w
+// Mechanical:   J*dw/dt   = Kt*ia - B*w - Tload
+//
+// I() is not implemented in this language version, so ia can't be read
+// directly off L or R. Instead a small sense resistor (1 milliohm, chosen
+// negligible next to Ra) turns ia into a voltage difference recoverable
+// with two V()-style reads baked into a VCCS's own control ports.
+//
+// The mechanical equation is mapped onto an equivalent electrical one and
+// left entirely to the MNA solver -- no state, no idt(), no self-reference:
+//   J      -> capacitance (energy storage = inertia)
+//   B      -> 1/Rdamp     (viscous damping / friction)
+//   Kt*ia  -> VCCS current sourced from the sense-resistor voltage
+//   Tload  -> driven in via loadCmd from the LoadTorque digital block below
+//             (a fixed-sign current_source would bias omega toward one
+//             direction instead of opposing whichever way it's spinning)
+//
+// omega_node's voltage IS shaft speed (rad/s), directly .save-able.
+
+module DCMotor<double Ra, double La, double gm_torque, double Ke,
+               double Jcap, double Rdamp>
+(input double loadCmd)
+[wire p, wire n, wire omega_node]
+{
+    wire a, b, s;
+
+    // ── Electrical armature loop: p --Ra--> a --La--> b --Rsense--> s --EMF--> n
+    R<Ra>() [p, a];
+    L<La>() [a, b];
+    R<1m>() [b, s];   // current-sense resistor: ia = (V(b)-V(s)) / 1m
+
+    // Back-EMF: opposes the applied voltage, proportional to shaft speed.
+    // gm_torque below is pre-multiplied by 1/Rsense, so this VCVS's gain
+    // stays the physical Ke directly.
+    VCVS<Ke>() [s, n, omega_node, gnd];
+
+    // ── Mechanical side ──
+    C<Jcap>()  [omega_node, gnd];               // rotor inertia
+    R<Rdamp>() [omega_node, gnd];                // viscous damping / friction
+    VCCS<gm_torque>() [omega_node, gnd, b, s];   // Kt*ia torque current
+                                                  // (gm_torque = Kt / 1m)
+
+    // Load torque is driven in from outside (see LoadTorque digital module
+    // below) rather than fixed here, because a fixed-sign current_source
+    // biases the mechanical node one direction permanently -- it opposes
+    // forward rotation correctly but then ADDS to (rather than opposes)
+    // reverse rotation, which is what was pinning omega_node above zero.
+    current_source<>(loadCmd) [gnd, omega_node];
+}
+
+// Recomputes the opposing load current every step based on the *current*
+// sign of omega, so it always fights whichever direction the rotor is
+// actually spinning -- unlike a constant current_source, this can't bias
+// the system toward one sign.
+digital module LoadTorque<double Tload>
+(input double omega, output double loadCmd) []
+{
+    if (omega > 0.0) {
+        loadCmd = -Tload;
+    } else if (omega < 0.0) {
+        loadCmd = Tload;
+    } else {
+        loadCmd = 0.0;
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  H-BRIDGE CONTROL LOGIC (digital)
+// ═══════════════════════════════════════════════════════════════
+//
+// Diagonal pairs switch together: (TL,BR) for forward, (TR,BL) for
+// reverse. A dead-time window around t_switch forces ALL four switches
+// off before the opposite diagonal turns on, so both switches in a leg
+// (e.g. TL and BL) are never commanded on simultaneously -- avoids
+// shoot-through across the supply.
+
+digital module HBridgeControl<double vcc_val, double t_switch, double deadtime>
+(output double cmd_TL, output double cmd_BL,
+ output double cmd_TR, output double cmd_BR) []
+{
+    double onTL = 0.0;
+    double onBL = 0.0;
+    double onTR = 0.0;
+    double onBR = 0.0;
+
+    if (time < t_switch - deadtime) {
+        onTL = 1.0;   // forward: top-left + bottom-right
+        onBR = 1.0;
+    } else if (time < t_switch + deadtime) {
+        // dead-time: everything off, let the flyback diodes clear
+        // the armature inductor's current before reversing.
+    } else {
+        onTR = 1.0;   // reverse: top-right + bottom-left
+        onBL = 1.0;
+    }
+
+    // High-side PNP bases: pulled toward 0V to turn ON, toward vcc for OFF.
+    cmd_TL = vcc_val * (1.0 - onTL);
+    cmd_TR = vcc_val * (1.0 - onTR);
+
+    // Low-side NPN bases: pulled toward 5V to turn ON, toward 0V for OFF.
+    cmd_BL = 5.0 * onBL;
+    cmd_BR = 5.0 * onBR;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  H-BRIDGE POWER STAGE (structural)
+// ═══════════════════════════════════════════════════════════════
+//
+//        vcc ──┬───────────────┬── vcc
+//               │ Qtl (PNP)     │ Qtr (PNP)
+//    railTL─Rb─base       base─Rb─railTR
+//               ├─ motor_a   motor_b ─┤
+//    railBL─Rb─base       base─Rb─railBR
+//               │ Qbl (NPN)     │ Qbr (NPN)
+//        gnd ──┴───────────────┴── gnd
+//
+// Plus a 4-diode recirculation network across motor_a/motor_b, since
+// these BJTs (unlike MOSFETs) have no intrinsic body diode to catch the
+// inductive kick when a switch opens.
+
+module HBridge<double Rbase>
+(input double cmd_TL, input double cmd_BL,
+ input double cmd_TR, input double cmd_BR)
+[wire vcc, wire motor_a, wire motor_b]
+{
+    wire railTL, railBL, railTR, railBR;
+    wire baseTL, baseBL, baseTR, baseBR;
+
+    // Base-drive rails, each just relaying the digital command as a node
+    // voltage, then current-limited into the actual base through Rbase.
+    voltage_source<>(cmd_TL) [railTL, gnd];
+    voltage_source<>(cmd_BL) [railBL, gnd];
+    voltage_source<>(cmd_TR) [railTR, gnd];
+    voltage_source<>(cmd_BR) [railBR, gnd];
+
+    R<Rbase>() [railTL, baseTL];
+    R<Rbase>() [railBL, baseBL];
+    R<Rbase>() [railTR, baseTR];
+    R<Rbase>() [railBR, baseBR];
+
+    // High side (PNP): emitter=vcc, collector=motor terminal.
+    module qTL = PNP.PNP<0.01p, 150, 3, 0.026>() [baseTL, motor_a, vcc];
+    module qTR = PNP.PNP<0.01p, 150, 3, 0.026>() [baseTR, motor_b, vcc];
+
+    // Low side (NPN): collector=motor terminal, emitter=gnd.
+    module qBL = NPN.NPN<0.01p, 150, 3, 0.026>() [baseBL, motor_a, gnd];
+    module qBR = NPN.NPN<0.01p, 150, 3, 0.026>() [baseBR, motor_b, gnd];
+
+    // Flyback / recirculation diodes: clamp each motor terminal to
+    // [gnd - Vf, vcc + Vf] regardless of switch state.
+    module dA_hi = Diode.Diode<1p, 1.0, 0.026>() [motor_a, vcc];
+    module dA_lo = Diode.Diode<1p, 1.0, 0.026>() [gnd, motor_a];
+    module dB_hi = Diode.Diode<1p, 1.0, 0.026>() [motor_b, vcc];
+    module dB_lo = Diode.Diode<1p, 1.0, 0.026>() [gnd, motor_b];
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  TOP-LEVEL TESTBENCH
+// ═══════════════════════════════════════════════════════════════
+
+module main<>() []
+{
+    wire vcc, motor_a, motor_b, omega_node;
+    state double cmd_TL = 0, cmd_BL = 0, cmd_TR = 0, cmd_BR = 0;
+    state double loadCmd = 0;
+
+    // 12V supply rail
+    voltage_source<12>() [vcc, gnd];
+
+    // Direction sequencer: forward until 200ms, 4ms dead-time, then reverse.
+    module ctrl = HBridgeControl<12, 200m, 2m>
+                  (cmd_TL, cmd_BL, cmd_TR, cmd_BR) [];
+
+    // 1k base resistors
+    module bridge = HBridge<1k>
+                    (cmd_TL, cmd_BL, cmd_TR, cmd_BR) [vcc, motor_a, motor_b];
+
+    // Read shaft speed from the previous solve, then compute a load
+    // current that opposes whichever direction it's currently spinning.
+    state double omega = V(omega_node);
+    module loadTorque = LoadTorque<10m>(omega, loadCmd) [];
+
+    // Ra=2ohm, La=5mH, gm_torque=50 (=Kt/1milliohm, Kt=0.05 N*m/A),
+    // Ke=0.05 V*s/rad, J=200uF-equivalent (0.0002 kg*m^2),
+    // Rdamp=500ohm (=1/B, B=0.002 N*m*s/rad); load torque driven in
+    // separately via loadCmd (see LoadTorque above).
+    module motor = DCMotor<2, 5m, 50, 0.05, 200u, 500>(loadCmd)
+                   [motor_a, motor_b, omega_node];
+}

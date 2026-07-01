@@ -1,0 +1,39 @@
+import <math/math.hvr>;
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Ideal Diode (Shockley Model)
+//
+//  This model implements the fundamental Shockley diode equation. 
+//
+//  Numerical Stability:
+//  As with the bipolar models, this diode relies entirely on Hover's
+//  built-in diagonally-scaled trust-region solver to prevent exponential
+//  overflow during Newton-Raphson iterations. It uses the pure, unadulterated 
+//  `exp()` function for mathematically perfect physical accuracy.
+//
+//  Physical Clamps:
+//  The clamps (+0.85V and -100.0V) are not numerical hacks; they represent
+//  the literal physical limits of a standard PN junction before the series 
+//  resistance completely dominates or avalanche breakdown occurs.
+// ─────────────────────────────────────────────────────────────────────────────
+
+analog module Diode<double Is, double n, double Vt>()
+    [wire anode, wire cathode]
+{
+    // Fetch the voltage across the diode
+    double vd = V(anode) - V(cathode);
+
+    // Physical bounds clamping (forward voltage drop and reverse breakdown)
+    if (vd > 0.85)   { vd = 0.85; }
+    if (vd < -100.0) { vd = -100.0; }
+
+    // Pure Shockley physics equation using standard exp()
+    // id = Is * (e^(Vd / (n * Vt)) - 1)
+    double i_d = Is * (exp(vd / (n * Vt)) - 1.0);
+
+    // Stamp current into the MNA matrix
+    current_source<>(i_d)[anode, cathode];
+
+    // Fixed parasitic junction capacitance for transient/AC realism
+    C<2p>() [anode, cathode];
+}
