@@ -5,4 +5,6 @@ hover_win/
 sim.cpp
 sim
 sim.exe
-*.csv
+/simulation_output.csv
+/hover
+/hover.exe
