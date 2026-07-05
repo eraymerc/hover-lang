@@ -1,0 +1,42 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  HVR Testbench — LED Model, Red Instance
+//  Validates: Steep-exponential junction limiting via nr_prev(), and an
+//             optical output signal exposed as a driven "virtual" node.
+// ─────────────────────────────────────────────────────────────────────────────
+
+.save(main.nodeA, main.led_anode, main.light_out);
+.op;
+.tran(0, 5m, 1u, 50u);
+.solver(bdf2);
+
+import <math/math.hvr>;
+import <optoelectronics/leds/led.hvr>;
+
+// ═══════════════════════════════════════════════════════════════
+//  RED LED PRESET
+// ═══════════════════════════════════════════════════════════════
+//
+// Is=1e-18, n=1.9, Vt=0.026  ->  Vf ~1.85V at ~20mA (typical AlGaInP red)
+// Vf_clamp=2.5   generous headroom above expected operating Vf
+// eta=50         arbitrary relative-light-output scale factor
+
+// ═══════════════════════════════════════════════════════════════
+//  TOP-LEVEL TESTBENCH — simple 5V/220ohm indicator drive
+// ═══════════════════════════════════════════════════════════════
+//
+//   vcc(5V) --R<220>--> nodeA --R<1>--> led_anode --[LED]--> gnd
+//                                 ^ 1ohm sense resistor: forward current
+//                                   = (V(nodeA)-V(led_anode)) / 1
+
+module main<>() []
+{
+    wire vcc, nodeA, led_anode, light_out;
+
+    voltage_source<5>() [vcc, gnd];
+
+    R<220>() [vcc, nodeA];
+    R<1>()   [nodeA, led_anode];   // current-sense resistor
+
+    module ledRed = LED<1e-18, 1.9, 0.026, 2.5, 50>()
+                    [led_anode, gnd, light_out];
+}

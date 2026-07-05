@@ -1,0 +1,48 @@
+// ═══════════════════════════════════════════════════════════════
+//  LED DEVICE MODEL (generic — reusable for any color)
+// ═══════════════════════════════════════════════════════════════
+//
+// Same diode equation as a rectifier diode (Is*(e^(V/nVt) - 1)), but LEDs
+// typically run a much smaller Is and a higher ideality factor n than a
+// silicon diode, which pushes Vf up into the 1.8-3V range depending on
+// color and makes the exponential noticeably steeper right at turn-on.
+// That steepness is exactly the case the manual's nr_prev() junction
+// limiting (13.1) is built for, so this model uses it rather than a bare
+// hard clamp: each NR iteration's voltage guess is bounded to move at
+// most one thermal-voltage-scaled step from the previous iterate.
+//
+// light_out is a second, purely-informational port: luminous intensity
+// driven onto it as a voltage, proportional to forward current. Units are
+// illustrative ("relative light output"), not a calibrated photometric
+// quantity — scale eta yourself if you need real lm/mW numbers.
+
+analog module LED<double Is, double n, double Vt, double Vf_clamp, double eta>()
+[wire anode, wire cathode, wire light_out]
+{
+    double vNew = V(anode) - V(cathode);
+    double vOld = nr_prev(V(anode) - V(cathode));
+    double nVt = n * Vt;
+
+    // Per-iteration junction limiting (manual 13.1): bound how far the
+    // working voltage guess can move from the previous NR iterate.
+    double dv = vNew - vOld;
+    if (dv > nVt) { dv = nVt; }
+    if (dv < -nVt) { dv = -nVt; }
+    double vLim = vOld + dv;
+
+    // Hard clamp too — covers the very first iteration (no NR history
+    // yet, nr_prev() just returns the cold-start guess) and deep reverse
+    // bias, where the unclamped exponential would otherwise overflow.
+    if (vLim > Vf_clamp) { vLim = Vf_clamp; }
+    if (vLim < -5.0) { vLim = -5.0; }
+
+    double id = Is * (2.71828 ** (vLim / nVt) - 1.0);
+    current_source<>(id) [anode, cathode];
+
+    // Optical output. The diode equation's own exponential already gives
+    // a realistic sharp turn-on near Vf, so no separate threshold term is
+    // layered on top — light just tracks forward current directly.
+    double luminous_intensity = 0.0;
+    if (id > 0.0) { luminous_intensity = eta * id; }
+    voltage_source<>(luminous_intensity) [light_out, gnd];
+}

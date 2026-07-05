@@ -61,6 +61,10 @@ func dokAdd(m *sparse.DOK, i, j int, val float64) {
 // --- STAMPING FUNCTIONS ---
 
 func (sys *System) StampResistor(n1, n2 int, resistance float64) {
+	if resistance == 0 {
+		fmt.Printf("[MNA MATRICES] error: Zero resistance would cause singularity\n")
+		return
+	}
 	g := 1.0 / resistance
 	if n1 >= 0 {
 		dokAdd(sys.G, n1, n1, g)
@@ -75,6 +79,10 @@ func (sys *System) StampResistor(n1, n2 int, resistance float64) {
 }
 
 func (sys *System) StampCapacitor(n1, n2 int, capacitance float64) {
+	if capacitance == 0 {
+		fmt.Printf("[MNA MATRICES] error: Zero capacitance would cause singularity\n")
+		return
+	}
 	if n1 >= 0 {
 		dokAdd(sys.C, n1, n1, capacitance)
 	}
@@ -105,6 +113,10 @@ func (sys *System) StampIdealVoltageSource(n1, n2 int, voltage float64, branchId
 
 // True MNA Inductor (treated as a branch with -L in the C matrix)
 func (sys *System) StampInductor(n1, n2 int, inductance float64, branchIdx int) {
+	if inductance == 0 {
+		fmt.Printf("[MNA MATRICES] error: Zero inductance would cause singularity\n")
+		return
+	}
 	if n1 >= 0 {
 		dokAdd(sys.G, n1, branchIdx, 1.0)
 		dokAdd(sys.G, branchIdx, n1, 1.0)
@@ -139,8 +151,8 @@ func (sys *System) StampCurrentSource(n1, n2 int, current float64, name string) 
 // I_out = gm * (V_nc1 - V_nc2), current flows into n1 and out of n2.
 // Pure G stamp — no new branch variable needed.
 //
-//   G[n1][nc1] += gm    G[n1][nc2] -= gm
-//   G[n2][nc1] -= gm    G[n2][nc2] += gm
+//	G[n1][nc1] += gm    G[n1][nc2] -= gm
+//	G[n2][nc1] -= gm    G[n2][nc2] += gm
 func (sys *System) StampVCCS(n1, n2, nc1, nc2 int, gm float64) {
 	if n1 >= 0 {
 		if nc1 >= 0 {
@@ -166,8 +178,9 @@ func (sys *System) StampVCCS(n1, n2, nc1, nc2 int, gm float64) {
 //
 // KCL rows:    G[n1][br] += 1    G[n2][br] -= 1
 // Branch eq:   G[br][n1] += 1    G[br][n2] -= 1
-//              G[br][nc1] -= k   G[br][nc2] += k
-//              B[br] = 0  (already zero)
+//
+//	G[br][nc1] -= k   G[br][nc2] += k
+//	B[br] = 0  (already zero)
 func (sys *System) StampVCVS(n1, n2, nc1, nc2 int, k float64, branchIdx int) {
 	if n1 >= 0 {
 		dokAdd(sys.G, n1, branchIdx, 1.0)
@@ -191,8 +204,8 @@ func (sys *System) StampVCVS(n1, n2, nc1, nc2 int, k float64, branchIdx int) {
 // sensBranchIdx must already exist (stamp a 0 V source on the sensing wire first).
 // No new branch variable needed for the output.
 //
-//   G[n1][sensBr] += beta
-//   G[n2][sensBr] -= beta
+//	G[n1][sensBr] += beta
+//	G[n2][sensBr] -= beta
 func (sys *System) StampCCCS(n1, n2, sensBranchIdx int, beta float64) {
 	if n1 >= 0 {
 		dokAdd(sys.G, n1, sensBranchIdx, beta)
@@ -209,8 +222,9 @@ func (sys *System) StampCCCS(n1, n2, sensBranchIdx int, beta float64) {
 //
 // KCL rows:    G[n1][br] += 1    G[n2][br] -= 1
 // Branch eq:   G[br][n1] += 1    G[br][n2] -= 1
-//              G[br][sensBr] -= r
-//              B[br] = 0  (already zero)
+//
+//	G[br][sensBr] -= r
+//	B[br] = 0  (already zero)
 func (sys *System) StampCCVS(n1, n2, sensBranchIdx int, r float64, branchIdx int) {
 	if n1 >= 0 {
 		dokAdd(sys.G, n1, branchIdx, 1.0)

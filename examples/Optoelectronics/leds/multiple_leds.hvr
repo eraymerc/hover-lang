@@ -1,0 +1,48 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  HVR Testbench — LED Model, Red + Green Instances
+//  Validates: Steep-exponential junction limiting via nr_prev(), and an
+//             optical output signal exposed as a driven "virtual" node.
+// ─────────────────────────────────────────────────────────────────────────────
+.save(
+    main.red_a, 
+    main.green_a,
+    main.red_anode, 
+    main.red_light_out, 
+    main.green_anode, 
+    main.green_light_out
+);
+.op;
+.tran(0, 5m, 1u, 50u);
+.solver(bdf2);
+import <math/math.hvr>;
+import <optoelectronics/leds/led.hvr>;
+import <optoelectronics/leds/led_colors.hvr>;
+// ═══════════════════════════════════════════════════════════════
+//  TOP-LEVEL TESTBENCH — independent 5V/220ohm drive per LED
+// ═══════════════════════════════════════════════════════════════
+//
+//   Each color gets its OWN limiting resistor straight from vcc, not a
+//   shared one. Different-Vf diodes in parallel off a single resistor
+//   current-hog toward the lower-Vf device (see conversation) -- separate
+//   branches avoid that entirely, since each LED's current is set only
+//   by its own resistor and its own Vf.
+//
+//   vcc(5V) --R<220>--> red_a   --R<1>--> red_anode   --[LED_RED]--> gnd
+//   vcc(5V) --R<220>--> green_a --R<1>--> green_anode --[LED_GREEN]--> gnd
+//                          ^ 1ohm sense resistors: forward current
+//                            = (V(*_a) - V(*_anode)) / 1
+module main<>() []
+{
+    wire vcc, red_a, green_a, red_anode, green_anode, red_light_out, green_light_out;
+    voltage_source<5>() [vcc, gnd];
+
+    R<220>() [vcc, red_a];
+    R<1>()   [red_a, red_anode];       // current-sense resistor
+    module ledRed = LED_RED<>()
+                        [red_anode, gnd, red_light_out];
+
+    R<220>() [vcc, green_a];
+    R<1>()   [green_a, green_anode];   // current-sense resistor
+    module ledGreen = LED_GREEN<>()
+                        [green_anode, gnd, green_light_out];
+}

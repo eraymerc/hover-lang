@@ -1,0 +1,44 @@
+import <optoelectronics/leds/led.hvr>;
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  LED Color Presets — Blue, White, Green, Yellow
+//  Same generic LED<Is, n, Vt, Vf_clamp, eta> device model as LED_RED, just
+//  re-solved for each color's typical forward voltage at a 20mA drive point.
+//
+//  Is was picked by inverting the diode equation, Is = Idrive / e^(Vf/(n*Vt)),
+//  for the listed target Vf at 20mA. n=1.9-2.0 for the lower-bandgap
+//  AlGaInP/GaP colors (red/yellow/green), n=3.0 for the InGaN colors
+//  (blue/white), which typically run a higher ideality factor in practice.
+//  Vf_clamp sits ~0.7V above the target Vf, same margin as LED_RED's 2.5
+//  clamp above its 1.85V target.
+// ─────────────────────────────────────────────────────────────────────────────
+
+module LED_RED<>()[wire led_anode, wire led_cathode, wire light_out]{
+    module led_red = LED<1e-18, 1.9, 0.026, 2.5, 50>()
+                    [led_anode, led_cathode, light_out];
+}
+
+
+// Yellow: Vf ~2.1V @ 20mA (AlGaInP/GaAsP)
+module LED_YELLOW<>()[wire led_anode, wire led_cathode, wire light_out]{
+module led_yellow = LED<6e-20, 2.0, 0.026, 2.8, 50>()
+                    [led_anode, led_cathode, light_out];
+}
+
+// Green: Vf ~2.2V @ 20mA (traditional GaP green)
+module LED_GREEN<>()[wire led_anode, wire led_cathode, wire light_out]{
+module led_green = LED<8e-21, 2.0, 0.026, 2.9, 50>()
+                    [led_anode, led_cathode, light_out];
+}
+
+// Blue: Vf ~3.1V @ 20mA (InGaN)
+module LED_BLUE<>()[wire led_anode, wire led_cathode, wire light_out]{
+module led_blue = LED<1.1e-19, 3.0, 0.026, 3.8, 50>()
+                    [led_anode, led_cathode, light_out];
+}
+
+// White: Vf ~3.2V @ 20mA (phosphor-converted InGaN)
+module LED_WHITE<>()[wire led_anode, wire led_cathode, wire light_out]{
+module led_white = LED<3e-20, 3.0, 0.026, 3.9, 50>()
+                    [led_anode, led_cathode, light_out];
+}

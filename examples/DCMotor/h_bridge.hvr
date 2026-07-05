@@ -196,7 +196,7 @@ module main<>() []
                   (cmd_TL, cmd_BL, cmd_TR, cmd_BR) [];
 
     // 1k base resistors
-    module bridge = HBridge<1k>
+    module bridge = HBridge<1>
                     (cmd_TL, cmd_BL, cmd_TR, cmd_BR) [vcc, motor_a, motor_b];
 
     // Read shaft speed from the previous solve, then compute a load
