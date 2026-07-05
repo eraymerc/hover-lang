@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Transient Analysis Viewer Pro</title>
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+
+    <style>
+        :root {
+            --bg-color: #f4f4f4;
+            --panel-bg: #ffffff;
+            --text-color: #333333;
+            --border-color: #cccccc;
+            --btn-bg: #e0e0e0;
+            --btn-hover: #d0d0d0;
+            --accent: #2196F3;
+            --input-bg: #ffffff;
+        }
+
+        [data-theme="dark"] {
+            --bg-color: #1a1a1a;
+            --panel-bg: #252526;
+            --text-color: #e0e0e0;
+            --border-color: #3e3e42;
+            --btn-bg: #333333;
+            --btn-hover: #444444;
+            --accent: #007acc;
+            --input-bg: #1e1e1e;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+            transition: background-color 0.3s;
+        }
+
+        #sidebar {
+            width: 320px;
+            background-color: var(--panel-bg);
+            border-right: 1px solid var(--border-color);
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            overflow-y: auto;
+        }
+
+        #main-content { flex-grow: 1; display: flex; flex-direction: column; padding: 20px; }
+        #plot-container { flex-grow: 1; background-color: var(--panel-bg); border: 1px solid var(--border-color); border-radius: 8px; }
+
+        h3 { margin: 0 0 10px 0; font-size: 15px; border-bottom: 1px solid var(--border-color); padding-bottom: 5px; color: var(--text-color); }
+        
+        button {
+            background-color: var(--btn-bg); color: var(--text-color); border: 1px solid var(--border-color);
+            padding: 8px 12px; border-radius: 4px; cursor: pointer; font-size: 13px; transition: 0.2s;
+        }
+        button:hover { background-color: var(--btn-hover); }
+        button.primary { background-color: var(--accent); color: #fff; border: none; }
+        button.primary:hover { opacity: 0.9; }
+
+        input[type="text"], input[type="number"], select {
+            width: 100%; padding: 8px; box-sizing: border-box; background-color: var(--input-bg);
+            color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px; margin-bottom: 5px; font-size: 13px;
+        }
+
+        .checkbox-group { display: flex; flex-direction: column; gap: 5px; max-height: 150px; overflow-y: auto; }
+        .checkbox-group label { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
+        
+        .output-console {
+            background-color: #0d0d0d; color: #4CAF50; font-family: 'Consolas', monospace;
+            padding: 10px; border-radius: 4px; min-height: 60px; font-size: 12px; white-space: pre-wrap; word-break: break-all;
+        }
+        .row-flex { display: flex; gap: 5px; }
+    </style>
+</head>
+<body>
+
+    <div id="sidebar">
+        <div>
+            <button id="theme-toggle" style="width: 100%;">Toggle Dark Mode</button>
+        </div>
+
+        <div>
+            <h3>1. Load Data</h3>
+            <input type="file" id="csv-file" accept=".csv" style="font-size: 12px;"/>
+        </div>
+
+        <div>
+            <h3>2. Variables</h3>
+            <div id="variables-list" class="checkbox-group">
+                <span style="font-size: 12px; color: gray;">Upload CSV first...</span>
+            </div>
+        </div>
+
+        <div>
+            <h3>3. Math Engine</h3>
+            <select id="saved-expressions" style="margin-bottom: 5px;">
+                <option value="">-- Saved Expressions --</option>
+            </select>
+            <input type="text" id="math-input" placeholder="Expression (e.g., main.q1_base * 2)" />
+            <input type="text" id="math-name" placeholder="Save As (e.g., V_delta)" />
+            <div class="row-flex">
+                <button class="primary" id="btn-math" style="flex: 2;">Calculate Curve</button>
+                <button id="btn-save-math" style="flex: 1;">Save</button>
+            </div>
+        </div>
+
+        <div>
+            <h3>4. Analysis Tools (Time Bound)</h3>
+            <select id="analysis-target" style="margin-bottom: 5px;"></select>
+            
+            <div class="row-flex" style="margin-bottom: 5px;">
+                <input type="number" id="time-start" placeholder="Start Time (s)" />
+                <input type="number" id="time-end" placeholder="End Time (s)" />
+            </div>
+
+            <div class="row-flex">
+                <button id="btn-fft" style="flex: 1;">Plot FFT</button>
+                <button id="btn-thd" style="flex: 1;">Calc THD</button>
+            </div>
+            <button id="btn-reset-plot" style="width: 100%; margin-top: 5px;">Reset to Time Plot</button>
+        </div>
+
+        <div>
+            <h3>Console</h3>
+            <div id="console-output" class="output-console">System Ready.</div>
+        </div>
+    </div>
+
+    <div id="main-content">
+        <div id="plot-container"></div>
+    </div>
+
+    <script>
+        let dataStore = {}; 
+        let activeColumns = new Set();
+        let timeKey = 'Time';
+
+        const themeToggle = document.getElementById('theme-toggle');
+        const consoleOut = document.getElementById('console-output');
+        
+        function logMsg(msg) { consoleOut.textContent = msg; }
+
+        themeToggle.addEventListener('click', () => {
+            const isDark = document.body.getAttribute('data-theme') === 'dark';
+            document.body.setAttribute('data-theme', isDark ? 'light' : 'dark');
+            updatePlot(); 
+        });
+
+        document.body.setAttribute('data-theme', 'dark');
+
+        // --- Data Loading ---
+        document.getElementById('csv-file').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            logMsg("Parsing CSV...");
+            Papa.parse(file, {
+                header: true, dynamicTyping: true, skipEmptyLines: true,
+                complete: function(results) {
+                    const fields = results.meta.fields;
+                    dataStore = {};
+                    fields.forEach(f => dataStore[f] = []);
+                    
+                    results.data.forEach(row => {
+                        fields.forEach(f => dataStore[f].push(row[f]));
+                    });
+
+                    timeKey = fields.find(f => f.toLowerCase() === 'time') || fields[0];
+                    buildCheckboxes(fields);
+                    updateAnalysisDropdown();
+                    logMsg(`Loaded ${results.data.length} rows.\nTime bounds:\nStart: ${dataStore[timeKey][0]}\nEnd: ${dataStore[timeKey][dataStore[timeKey].length-1]}`);
+                    updatePlot();
+                }
+            });
+        });
+
+        function buildCheckboxes(fields) {
+            const container = document.getElementById('variables-list');
+            container.innerHTML = '';
+            activeColumns.clear();
+
+            fields.forEach(field => {
+                if (field === timeKey) return; 
+
+                const lbl = document.createElement('label');
+                const chk = document.createElement('input');
+                chk.type = 'checkbox'; chk.value = field; chk.checked = true;
+                activeColumns.add(field);
+
+                chk.addEventListener('change', (e) => {
+                    if (e.target.checked) activeColumns.add(field);
+                    else activeColumns.delete(field);
+                    updatePlot();
+                });
+
+                lbl.appendChild(chk); lbl.appendChild(document.createTextNode(field));
+                container.appendChild(lbl);
+            });
+        }
+
+        function updateAnalysisDropdown() {
+            const sel = document.getElementById('analysis-target');
+            sel.innerHTML = '';
+            Object.keys(dataStore).forEach(k => {
+                if (k !== timeKey) {
+                    const opt = document.createElement('option');
+                    opt.value = k; opt.text = k; sel.appendChild(opt);
+                }
+            });
+        }
+
+        // --- Plotting Engine ---
+        function updatePlot(isFFT = false, fftData = null) {
+            if (!dataStore[timeKey]) return;
+
+            const isDark = document.body.getAttribute('data-theme') === 'dark';
+            const layout = {
+                paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)',
+                font: { color: isDark ? '#e0e0e0' : '#333' },
+                xaxis: { title: isFFT ? 'Frequency (Hz)' : 'Time (s)', gridcolor: isDark ? '#3e3e42' : '#eee' },
+                yaxis: { title: isFFT ? 'Magnitude' : 'Amplitude', gridcolor: isDark ? '#3e3e42' : '#eee' },
+                margin: { l: 60, r: 20, t: 40, b: 60 },
+                hovermode: 'closest'
+            };
+
+            let traces = [];
+
+            if (isFFT && fftData) {
+                traces.push({ x: fftData.freqs, y: fftData.mags, type: 'scatter', mode: 'lines', name: 'FFT' });
+                layout.title = 'FFT Spectrum (Windowed)';
+            } else {
+                activeColumns.forEach(col => {
+                    traces.push({ x: dataStore[timeKey], y: dataStore[col], type: 'scatter', mode: 'lines', name: col });
+                });
+                layout.title = 'Transient Analysis';
+            }
+
+            Plotly.newPlot('plot-container', traces, layout, {responsive: true});
+        }
+
+        document.getElementById('btn-reset-plot').addEventListener('click', () => updatePlot(false));
+
+        // --- Math Engine (Dot-Safe) ---
+        function escapeRegExp(string) {
+            return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); 
+        }
+
+        document.getElementById('btn-math').addEventListener('click', () => {
+            const expr = document.getElementById('math-input').value.trim();
+            let newName = document.getElementById('math-name').value.trim() || "Calculated_Curve";
+            
+            if (!expr) return logMsg("Error: Empty expression.");
+
+            try {
+                const keys = Object.keys(dataStore);
+                let parsedExpr = expr;
+
+                // Sort keys by length descending to prevent partial replacements
+                const sortedKeys = [...keys].sort((a, b) => b.length - a.length);
+                
+                sortedKeys.forEach(k => {
+                    if (k === timeKey) return;
+                    // Negative lookbehind & lookahead ensures we only match the exact variable name, 
+                    // avoiding accidental replacement inside other strings or Math functions.
+                    const safeKey = escapeRegExp(k);
+                    const regex = new RegExp(`(?<![a-zA-Z0-9_.])(${safeKey})(?![a-zA-Z0-9_.])`, 'g');
+                    parsedExpr = parsedExpr.replace(regex, `__dataStore__["${k}"][__idx__]`);
+                });
+
+                // Compile an extremely fast loop function 
+                const mathFunc = new Function('__dataStore__', '__idx__', `return ${parsedExpr};`);
+                
+                let newCol = [];
+                const len = dataStore[timeKey].length;
+                
+                for (let i = 0; i < len; i++) {
+                    newCol.push(mathFunc(dataStore, i));
+                }
+
+                dataStore[newName] = newCol;
+                
+                if(!Array.from(activeColumns).includes(newName)) {
+                    const container = document.getElementById('variables-list');
+                    const lbl = document.createElement('label');
+                    const chk = document.createElement('input');
+                    chk.type = 'checkbox'; chk.value = newName; chk.checked = true;
+                    
+                    chk.addEventListener('change', (e) => {
+                        if (e.target.checked) activeColumns.add(newName);
+                        else activeColumns.delete(newName);
+                        updatePlot();
+                    });
+
+                    lbl.appendChild(chk); lbl.appendChild(document.createTextNode(newName));
+                    container.appendChild(lbl);
+                    updateAnalysisDropdown();
+                }
+                
+                activeColumns.add(newName);
+                updatePlot();
+                logMsg(`Success: Computed ${newName}\nUsing: ${expr}`);
+
+            } catch (err) {
+                logMsg(`Math Error:\n${err.message}\nCheck syntax and variable names.`);
+            }
+        });
+
+        // --- Save / Load Expressions ---
+        const savedSelect = document.getElementById('saved-expressions');
+        
+        function loadSavedExpressions() {
+            const saved = JSON.parse(localStorage.getItem('savedMath') || '{}');
+            savedSelect.innerHTML = '<option value="">-- Saved Expressions --</option>';
+            Object.keys(saved).forEach(name => {
+                const opt = document.createElement('option');
+                opt.value = saved[name]; opt.text = name;
+                savedSelect.appendChild(opt);
+            });
+        }
+
+        document.getElementById('btn-save-math').addEventListener('click', () => {
+            const expr = document.getElementById('math-input').value.trim();
+            const name = document.getElementById('math-name').value.trim() || `Expr_${Date.now()}`;
+            if (!expr) return logMsg("Cannot save empty expression.");
+            
+            const saved = JSON.parse(localStorage.getItem('savedMath') || '{}');
+            saved[name] = expr;
+            localStorage.setItem('savedMath', JSON.stringify(saved));
+            loadSavedExpressions();
+            savedSelect.value = expr;
+            logMsg(`Saved expression: ${name}`);
+        });
+
+        savedSelect.addEventListener('change', (e) => {
+            if (e.target.value) {
+                document.getElementById('math-input').value = e.target.value;
+                document.getElementById('math-name').value = e.target.options[e.target.selectedIndex].text;
+            }
+        });
+
+        loadSavedExpressions(); // Init on load
+
+        // --- Time Window Utilities ---
+        function getWindowIndices() {
+            const tStart = parseFloat(document.getElementById('time-start').value);
+            const tEnd = parseFloat(document.getElementById('time-end').value);
+            const timeArr = dataStore[timeKey];
+            let startIndex = 0;
+            let endIndex = timeArr.length - 1;
+            
+            if (!isNaN(tStart)) {
+                const idx = timeArr.findIndex(t => t >= tStart);
+                if (idx !== -1) startIndex = idx;
+            }
+            if (!isNaN(tEnd)) {
+                for(let i = timeArr.length - 1; i >= 0; i--) {
+                    if (timeArr[i] <= tEnd) { endIndex = i; break; }
+                }
+            }
+            return { startIndex, endIndex };
+        }
+// --- Math Utilities for FFT/THD ---
+        
+        // 1. Resample SPICE variable time-steps into a uniform grid
+        function resampleUniformly(timeArr, valArr, targetPoints = 4096) {
+            const tStart = timeArr[0];
+            const tEnd = timeArr[timeArr.length - 1];
+            const dt = (tEnd - tStart) / (targetPoints - 1);
+            
+            let resampledVals = new Array(targetPoints);
+            let currentIdx = 0;
+            
+            for (let i = 0; i < targetPoints; i++) {
+                const tTarget = tStart + i * dt;
+                
+                // Advance index to bound the target time
+                while (currentIdx < timeArr.length - 2 && timeArr[currentIdx + 1] <= tTarget) {
+                    currentIdx++;
+                }
+                
+                const t0 = timeArr[currentIdx];
+                const t1 = timeArr[currentIdx + 1];
+                const v0 = valArr[currentIdx];
+                const v1 = valArr[currentIdx + 1];
+                
+                // Linear Interpolation
+                if (t1 === t0) resampledVals[i] = v0;
+                else resampledVals[i] = v0 + ((tTarget - t0) / (t1 - t0)) * (v1 - v0);
+            }
+            return { signal: resampledVals, dt: dt, Fs: 1.0 / dt };
+        }
+
+        // 2. Compute Spectrum with Hanning Window
+        function computeMagnitudeSpectrum(timeArr, valArr) {
+            const N2 = Math.min(timeArr.length, 4096); 
+            const resampled = resampleUniformly(timeArr, valArr, N2);
+            const sampled = resampled.signal;
+            const Fs = resampled.Fs;
+
+            let mags = new Array(Math.floor(N2/2)).fill(0);
+            let freqs = new Array(Math.floor(N2/2)).fill(0);
+
+            // Apply Hanning Window to suppress spectral leakage
+            let windowed = new Array(N2);
+            for(let i = 0; i < N2; i++) {
+                const multiplier = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (N2 - 1)));
+                windowed[i] = sampled[i] * multiplier;
+            }
+
+            // Standard DFT
+            for (let k = 0; k < Math.floor(N2/2); k++) {
+                let sumR = 0; let sumI = 0;
+                for (let n = 0; n < N2; n++) {
+                    const angle = (2 * Math.PI * k * n) / N2;
+                    sumR += windowed[n] * Math.cos(angle);
+                    sumI -= windowed[n] * Math.sin(angle);
+                }
+                // Hanning amplitude correction factor is 2.0 -> 2 * (2/N2) = 4/N2
+                mags[k] = (4.0 / N2) * Math.sqrt(sumR * sumR + sumI * sumI);
+                freqs[k] = k * Fs / N2;
+            }
+            mags[0] = mags[0] / 2.0; // DC Component Fix
+            return { freqs, mags, Fs };
+        }
+
+        document.getElementById('btn-fft').addEventListener('click', () => {
+            const target = document.getElementById('analysis-target').value;
+            if (!target) return logMsg("Select a variable first.");
+
+            logMsg("Computing Windowed FFT...");
+            setTimeout(() => {
+                const { startIndex, endIndex } = getWindowIndices();
+                const signalSlice = dataStore[target].slice(startIndex, endIndex + 1);
+                const timeSlice = dataStore[timeKey].slice(startIndex, endIndex + 1);
+                
+                if(signalSlice.length < 10) return logMsg("Error: Time window too small.");
+
+                const fftData = computeMagnitudeSpectrum(timeSlice, signalSlice);
+                updatePlot(true, fftData);
+                
+                logMsg(`FFT of ${target} computed.\nWindow: ${timeSlice[0].toFixed(5)}s to ${timeSlice[timeSlice.length-1].toFixed(5)}s\nUniform Fs: ${fftData.Fs.toFixed(0)} Hz`);
+            }, 50);
+        });
+
+        document.getElementById('btn-thd').addEventListener('click', () => {
+            const target = document.getElementById('analysis-target').value;
+            if (!target) return logMsg("Select a variable first.");
+
+            const { startIndex, endIndex } = getWindowIndices();
+            const signalSlice = dataStore[target].slice(startIndex, endIndex + 1);
+            const timeSlice = dataStore[timeKey].slice(startIndex, endIndex + 1);
+            
+            if(signalSlice.length < 10) return logMsg("Error: Time window too small for THD.");
+
+            // 1. Compute total RMS on raw un-windowed data
+            let sumSq = 0;
+            for(let i=0; i<signalSlice.length; i++) sumSq += signalSlice[i]*signalSlice[i];
+            const Vrms_total = Math.sqrt(sumSq / signalSlice.length);
+
+            // 2. Fetch uniform FFT to find fundamental frequency peak
+            const fft = computeMagnitudeSpectrum(timeSlice, signalSlice);
+            
+            let maxMag = 0;
+            let peakFreq = 0;
+            for(let i=1; i<fft.mags.length; i++) { // Start at 1 to ignore DC offset
+                if (fft.mags[i] > maxMag) {
+                    maxMag = fft.mags[i];
+                    peakFreq = fft.freqs[i];
+                }
+            }
+            
+            const Vrms_fund = maxMag / Math.SQRT2;
+            let thdSquare = (Vrms_total * Vrms_total) - (Vrms_fund * Vrms_fund);
+            if (thdSquare < 0) thdSquare = 0; // Floating point safety
+            
+            const thd = (Math.sqrt(thdSquare) / Vrms_fund) * 100; 
+
+            logMsg(`Analysis of ${target}:\nWindow: ${timeSlice[0].toFixed(5)}s -> ${timeSlice[timeSlice.length-1].toFixed(5)}s\nBase Freq ≈ ${peakFreq.toFixed(2)} Hz\nTotal RMS = ${Vrms_total.toFixed(4)}\nFund RMS = ${Vrms_fund.toFixed(4)}\nTHD ≈ ${thd.toFixed(2)}%`);
+        });
+
+    </script>
+</body>
+</html>
