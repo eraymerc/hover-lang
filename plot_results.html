@@ -11,115 +11,145 @@
         :root {
             --bg-color: #f4f4f4; --panel-bg: #ffffff; --text-color: #333333;
             --border-color: #cccccc; --btn-bg: #e0e0e0; --btn-hover: #d0d0d0;
-            --accent: #2196F3; --input-bg: #ffffff;
+            --accent: #2196F3; --input-bg: #ffffff; --help-text: #666666;
         }
-
         [data-theme="dark"] {
             --bg-color: #1a1a1a; --panel-bg: #252526; --text-color: #e0e0e0;
             --border-color: #3e3e42; --btn-bg: #333333; --btn-hover: #444444;
-            --accent: #007acc; --input-bg: #1e1e1e;
+            --accent: #007acc; --input-bg: #1e1e1e; --help-text: #999999;
         }
 
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: var(--bg-color); color: var(--text-color);
-            margin: 0; display: flex; height: 100vh; overflow: hidden;
-            transition: background-color 0.3s;
-        }
-
-        #sidebar {
-            width: 320px; background-color: var(--panel-bg);
-            border-right: 1px solid var(--border-color); padding: 20px;
-            display: flex; flex-direction: column; gap: 15px; overflow-y: auto;
-        }
-
-        #main-content { flex-grow: 1; display: flex; flex-direction: column; padding: 20px; }
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; background-color: var(--bg-color); color: var(--text-color); margin: 0; display: flex; height: 100vh; overflow: hidden; transition: background-color 0.3s; }
+        
+        #sidebar { width: 350px; background-color: var(--panel-bg); border-right: 1px solid var(--border-color); padding: 15px; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; }
+        #main-content { flex-grow: 1; display: flex; flex-direction: column; padding: 15px; }
         #plot-container { flex-grow: 1; background-color: var(--panel-bg); border: 1px solid var(--border-color); border-radius: 8px; }
 
-        h3 { margin: 0 0 10px 0; font-size: 15px; border-bottom: 1px solid var(--border-color); padding-bottom: 5px; color: var(--text-color); }
-        
-        button {
-            background-color: var(--btn-bg); color: var(--text-color); border: 1px solid var(--border-color);
-            padding: 8px 12px; border-radius: 4px; cursor: pointer; font-size: 13px; transition: 0.2s;
-        }
+        h3 { margin: 0 0 4px 0; font-size: 14px; border-bottom: 1px solid var(--border-color); padding-bottom: 4px; color: var(--text-color); }
+        .help-text { font-size: 11px; color: var(--help-text); line-height: 1.3; margin-bottom: 8px; }
+
+        button { background-color: var(--btn-bg); color: var(--text-color); border: 1px solid var(--border-color); padding: 6px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; transition: 0.2s; }
         button:hover { background-color: var(--btn-hover); }
         button.primary { background-color: var(--accent); color: #fff; border: none; }
         button.primary:hover { opacity: 0.9; }
 
-        input[type="text"], input[type="number"], select {
-            width: 100%; padding: 8px; box-sizing: border-box; background-color: var(--input-bg);
-            color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px; margin-bottom: 5px; font-size: 13px;
-        }
+        input[type="text"], input[type="number"], select { width: 100%; padding: 6px; box-sizing: border-box; background-color: var(--input-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px; margin-bottom: 5px; font-size: 12px; }
 
-        .checkbox-group { display: flex; flex-direction: column; gap: 5px; max-height: 150px; overflow-y: auto; }
-        .checkbox-group label { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
-        
-        .output-console {
-            background-color: #0d0d0d; color: #4CAF50; font-family: 'Consolas', monospace;
-            padding: 10px; border-radius: 4px; min-height: 60px; font-size: 12px; white-space: pre-wrap; word-break: break-all;
-        }
+        .checkbox-group { display: flex; flex-direction: column; gap: 4px; max-height: 120px; overflow-y: auto; border: 1px solid var(--border-color); padding: 5px; border-radius: 4px;}
+        .var-item { display: flex; align-items: center; justify-content: space-between; font-size: 12px; }
+        .var-item label { display: flex; align-items: center; gap: 6px; cursor: pointer; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;}
+        .axis-sel { width: 45px; padding: 2px; font-size: 10px; margin-left: 5px; margin-bottom: 0;}
+
+        .output-console { background-color: #0d0d0d; color: #4CAF50; font-family: 'Consolas', monospace; padding: 8px; border-radius: 4px; min-height: 40px; font-size: 11px; white-space: pre-wrap; word-break: break-all; max-height: 100px; overflow-y:auto; }
         .row-flex { display: flex; gap: 5px; align-items: center; }
+        
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 3px; }
     </style>
 </head>
 <body>
 
     <div id="sidebar">
-        <div><button id="theme-toggle" style="width: 100%;">Toggle Dark Mode</button></div>
-
-        <div>
-            <h3>1. Load Data</h3>
-            <input type="file" id="csv-file" accept=".csv" style="font-size: 12px;"/>
+        <div class="row-flex">
+            <input type="file" id="csv-file" accept=".csv" style="font-size: 11px; margin-bottom: 0; flex: 2;"/>
+            <button id="theme-toggle" style="flex: 1;">Dark Mode</button>
         </div>
 
         <div>
-            <h3>2. Variables</h3>
+            <h3>1. Axes & Variables</h3>
+            <div class="row-flex" style="margin-bottom: 5px;">
+                <span style="font-size: 12px; width: 50px;">X-Axis:</span>
+                <select id="x-axis-select"></select>
+            </div>
             <div id="variables-list" class="checkbox-group">
-                <span style="font-size: 12px; color: gray;">Upload CSV first...</span>
+                <span style="font-size: 11px; color: gray;">Upload CSV first...</span>
             </div>
         </div>
 
         <div>
-            <h3>3. Math Engine</h3>
-            <select id="saved-expressions" style="margin-bottom: 5px;">
-                <option value="">-- Saved Expressions --</option>
-            </select>
-            <input type="text" id="math-input" placeholder="Expression (e.g., main.q1_base * 2)" />
-            <input type="text" id="math-name" placeholder="Save As (e.g., V_delta)" />
-            <div class="row-flex">
-                <button class="primary" id="btn-math" style="flex: 2;">Calculate Curve</button>
+            <h3>2. Math Operations</h3>
+            <div class="help-text">Create virtual channels using mathematical expressions (e.g., V1 - V2).</div>
+            
+            <div style="display: flex; gap: 5px; margin-bottom: 5px;">
+                <select id="saved-expressions" style="flex: 2; margin: 0;"><option value="">Saved Macros</option></select>
                 <button id="btn-save-math" style="flex: 1;">Save</button>
             </div>
+            <input type="text" id="math-input" placeholder="Expression (e.g., V1 - V2)" />
+            
+            <div class="row-flex" style="margin-bottom: 5px;">
+                <input type="text" id="math-name" placeholder="New Curve Name" style="flex: 2; margin: 0;"/>
+                <button class="primary" id="btn-math" style="flex: 1;">Calculate</button>
+            </div>
         </div>
 
         <div>
-            <h3>4. Analysis Tools</h3>
+            <h3>3. Advanced Filtering</h3>
+            <div class="help-text">Apply moving average, ideal FIR, or electrical IIR filters to signals.</div>
+            <select id="filter-target" style="margin-bottom: 5px;"></select>
+            
+            <select id="filter-type" style="margin-bottom: 5px;">
+                <option value="ma">Moving Average</option>
+                <option value="ideal_lp">Ideal Low Pass (FIR)</option>
+                <option value="ideal_hp">Ideal High Pass (FIR)</option>
+                <option value="ideal_bp">Ideal Band Pass (FIR)</option>
+                <option value="butter_lp">2nd-Order Butterworth LP</option>
+                <option value="butter_hp">2nd-Order Butterworth HP</option>
+            </select>
+            
+            <div id="filter-ma-group" class="row-flex" style="margin-bottom: 5px;">
+                <input type="number" id="filter-pts" placeholder="Window (Pts)" title="Smoothing Window Size in Points" style="flex: 1; margin: 0;" />
+            </div>
+
+            <div id="filter-freq-group" style="display: none; margin-bottom: 5px;">
+                <div class="row-flex">
+                    <input type="number" id="filter-fc1" placeholder="Cutoff Freq (Hz)" style="flex: 1; margin: 0;" />
+                    <input type="number" id="filter-fc2" placeholder="High Cutoff (Hz)" style="flex: 1; margin: 0; display: none;" />
+                </div>
+            </div>
+
+            <button id="btn-apply-filter" class="primary" style="width: 100%;">Apply Filter</button>
+        </div>
+
+        <div>
+            <h3>4. Time-Bounded Measurements</h3>
+            <div class="help-text">Calculates Maximum, Minimum, Peak-to-Peak, and Average (DC).</div>
+            <select id="meas-target" style="margin-bottom: 5px;"></select>
+            <div class="row-flex" style="margin-bottom: 5px;">
+                <input type="number" id="meas-tstart" placeholder="T-Start (s)" title="Measurement Start Time" />
+                <input type="number" id="meas-tend" placeholder="T-End (s)" title="Measurement End Time" />
+                <button id="btn-measure" class="primary">Measure</button>
+            </div>
+        </div>
+
+        <div>
+            <h3>5. FFT & THD Analysis</h3>
+            <div class="help-text">Computes Frequency Spectrum and Total Harmonic Distortion.</div>
             <select id="analysis-target" style="margin-bottom: 5px;"></select>
             
             <div class="row-flex" style="margin-bottom: 5px;">
-                <input type="number" id="time-start" placeholder="Start Time (s)" />
-                <input type="number" id="time-end" placeholder="End Time (s)" />
+                <input type="number" id="time-start" placeholder="T-Start (s)" title="Time Window Start"/>
+                <input type="number" id="time-end" placeholder="T-End (s)" title="Time Window End"/>
+            </div>
+            <div class="row-flex" style="margin-bottom: 5px;">
+                <input type="number" id="freq-start" placeholder="Plot F-Min (Hz)" title="Minimum Frequency to Plot"/>
+                <input type="number" id="freq-end" placeholder="Plot F-Max (Hz)" title="Maximum Frequency to Plot"/>
             </div>
 
             <div class="row-flex" style="margin-bottom: 5px;">
-                <label style="font-size: 13px; display: flex; align-items: center; gap: 5px; flex: 1;">
+                <label style="font-size: 11px; display: flex; align-items: center; gap: 3px; flex: 1;">
                     <input type="checkbox" id="remove-dc" checked /> No DC
                 </label>
-                <select id="fft-window" style="flex: 2; margin-bottom: 0;">
+                <select id="fft-window" style="flex: 1.5; margin: 0;">
                     <option value="hanning">Hanning</option>
                     <option value="hamming">Hamming</option>
                     <option value="blackman">Blackman</option>
-                    <option value="none">Rectangular</option>
+                    <option value="none">Rectang</option>
                 </select>
-            </div>
-
-            <div class="row-flex" style="margin-bottom: 5px;">
-                <span style="font-size: 13px; flex: 1; padding-left: 2px;">FFT Pts:</span>
-                <select id="fft-points" style="flex: 2; margin-bottom: 0;">
-                    <option value="1024">1024</option>
-                    <option value="2048">2048</option>
-                    <option value="4096" selected>4096</option>
-                    <option value="8192">8192</option>
-                    <option value="16384">16384</option>
+                <select id="fft-points" style="flex: 1; margin: 0;">
+                    <option value="2048">2k Pts</option>
+                    <option value="4096" selected>4k Pts</option>
+                    <option value="8192">8k Pts</option>
                 </select>
             </div>
 
@@ -127,12 +157,16 @@
                 <button id="btn-fft" style="flex: 1;">Plot FFT</button>
                 <button id="btn-thd" style="flex: 1;">Calc THD</button>
             </div>
-            <button id="btn-reset-plot" style="width: 100%; margin-top: 5px;">Reset to Time Plot</button>
+        </div>
+        
+        <div class="row-flex">
+            <button id="btn-reset-plot" style="flex: 1;">Reset Plot</button>
+            <button id="btn-export" style="flex: 1; background-color: #4CAF50; color: white; border:none;">Export Data</button>
         </div>
 
         <div>
-            <h3>Console</h3>
-            <div id="console-output" class="output-console">System Ready.</div>
+            <h3>Console Output</h3>
+            <div id="console-output" class="output-console">Ready.</div>
         </div>
     </div>
 
@@ -143,22 +177,23 @@
     <script>
         let dataStore = {}; 
         let activeColumns = new Set();
-        let timeKey = 'Time';
+        let axisMap = {}; // Maps column name to 'y1' or 'y2'
+        let defaultTimeKey = 'Time';
+        let currentMode = 'time'; // 'time' or 'fft'
+        let lastExportData = []; // Holds arrays of objects for PapaParse export
 
-        const themeToggle = document.getElementById('theme-toggle');
         const consoleOut = document.getElementById('console-output');
-        
-        function logMsg(msg) { consoleOut.textContent = msg; }
+        function logMsg(msg) { 
+            consoleOut.textContent = msg + "\n" + consoleOut.textContent; 
+        }
 
-        themeToggle.addEventListener('click', () => {
+        document.getElementById('theme-toggle').addEventListener('click', () => {
             const isDark = document.body.getAttribute('data-theme') === 'dark';
             document.body.setAttribute('data-theme', isDark ? 'light' : 'dark');
             updatePlot(); 
         });
-
         document.body.setAttribute('data-theme', 'dark');
 
-        // --- Data Loading ---
         document.getElementById('csv-file').addEventListener('change', function(e) {
             const file = e.target.files[0];
             if (!file) return;
@@ -175,275 +210,491 @@
                         fields.forEach(f => dataStore[f].push(row[f]));
                     });
 
-                    timeKey = fields.find(f => f.toLowerCase() === 'time') || fields[0];
+                    defaultTimeKey = fields.find(f => f.toLowerCase() === 'time') || fields[0];
+                    updateDropdowns(fields);
                     buildCheckboxes(fields);
-                    updateAnalysisDropdown();
-                    logMsg(`Loaded ${results.data.length} rows.\nTime bounds:\nStart: ${dataStore[timeKey][0]}\nEnd: ${dataStore[timeKey][dataStore[timeKey].length-1]}`);
+                    logMsg(`Loaded ${results.data.length} rows.`);
                     updatePlot();
                 }
             });
         });
 
+        function updateDropdowns(fields) {
+            const xSel = document.getElementById('x-axis-select');
+            const targetSels = [document.getElementById('analysis-target'), document.getElementById('meas-target'), document.getElementById('filter-target')];
+            
+            xSel.innerHTML = '';
+            targetSels.forEach(sel => sel.innerHTML = '');
+
+            fields.forEach(f => {
+                const optX = document.createElement('option');
+                optX.value = f; optX.text = f;
+                if (f === defaultTimeKey) optX.selected = true;
+                xSel.appendChild(optX);
+
+                if (f !== defaultTimeKey) {
+                    targetSels.forEach(sel => {
+                        const optT = document.createElement('option');
+                        optT.value = f; optT.text = f;
+                        sel.appendChild(optT);
+                    });
+                }
+            });
+        }
+
+        document.getElementById('x-axis-select').addEventListener('change', () => updatePlot(false));
+
         function buildCheckboxes(fields) {
             const container = document.getElementById('variables-list');
             container.innerHTML = '';
             activeColumns.clear();
+            axisMap = {};
 
             fields.forEach(field => {
-                if (field === timeKey) return; 
+                if (field === defaultTimeKey) return; 
+
+                const wrapper = document.createElement('div');
+                wrapper.className = 'var-item';
 
                 const lbl = document.createElement('label');
                 const chk = document.createElement('input');
                 chk.type = 'checkbox'; chk.value = field; chk.checked = true;
                 activeColumns.add(field);
+                axisMap[field] = 'y1';
 
+                const axisSel = document.createElement('select');
+                axisSel.className = 'axis-sel';
+                axisSel.title = "Select Y-Axis (Left Y1 or Right Y2)";
+                axisSel.innerHTML = '<option value="y1">Y1</option><option value="y2">Y2</option>';
+                
                 chk.addEventListener('change', (e) => {
                     if (e.target.checked) activeColumns.add(field);
                     else activeColumns.delete(field);
                     updatePlot();
                 });
 
+                axisSel.addEventListener('change', (e) => {
+                    axisMap[field] = e.target.value;
+                    updatePlot();
+                });
+
                 lbl.appendChild(chk); lbl.appendChild(document.createTextNode(field));
-                container.appendChild(lbl);
+                wrapper.appendChild(lbl); wrapper.appendChild(axisSel);
+                container.appendChild(wrapper);
             });
         }
 
-        function updateAnalysisDropdown() {
-            const sel = document.getElementById('analysis-target');
-            sel.innerHTML = '';
-            Object.keys(dataStore).forEach(k => {
-                if (k !== timeKey) {
+        function addComputedCurve(name, dataArray) {
+            dataStore[name] = dataArray;
+            if(!Array.from(activeColumns).includes(name)) {
+                const container = document.getElementById('variables-list');
+                const wrapper = document.createElement('div'); wrapper.className = 'var-item';
+                
+                const lbl = document.createElement('label');
+                const chk = document.createElement('input');
+                chk.type = 'checkbox'; chk.value = name; chk.checked = true;
+                activeColumns.add(name);
+                axisMap[name] = 'y1';
+
+                const axisSel = document.createElement('select');
+                axisSel.className = 'axis-sel';
+                axisSel.innerHTML = '<option value="y1">Y1</option><option value="y2">Y2</option>';
+                
+                chk.addEventListener('change', (e) => {
+                    if (e.target.checked) activeColumns.add(name);
+                    else activeColumns.delete(name);
+                    updatePlot();
+                });
+                axisSel.addEventListener('change', (e) => { axisMap[name] = e.target.value; updatePlot(); });
+
+                lbl.appendChild(chk); lbl.appendChild(document.createTextNode(name));
+                wrapper.appendChild(lbl); wrapper.appendChild(axisSel);
+                container.appendChild(wrapper);
+
+                const sels = ['analysis-target', 'meas-target', 'filter-target'];
+                sels.forEach(id => {
+                    const sel = document.getElementById(id);
                     const opt = document.createElement('option');
-                    opt.value = k; opt.text = k; sel.appendChild(opt);
-                }
-            });
+                    opt.value = name; opt.text = name; sel.appendChild(opt);
+                });
+            }
+            updatePlot();
         }
 
-        // --- Plotting Engine ---
         function updatePlot(isFFT = false, fftData = null) {
-            if (!dataStore[timeKey]) return;
+            if (!dataStore[defaultTimeKey]) return;
+            currentMode = isFFT ? 'fft' : 'time';
 
             const isDark = document.body.getAttribute('data-theme') === 'dark';
+            const xCol = isFFT ? 'Frequency' : document.getElementById('x-axis-select').value;
+            
             const layout = {
                 paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)',
                 font: { color: isDark ? '#e0e0e0' : '#333' },
-                xaxis: { title: isFFT ? 'Frequency (Hz)' : 'Time (s)', gridcolor: isDark ? '#3e3e42' : '#eee' },
-                yaxis: { title: isFFT ? 'Magnitude' : 'Amplitude', gridcolor: isDark ? '#3e3e42' : '#eee' },
-                margin: { l: 60, r: 20, t: 40, b: 60 },
-                hovermode: 'closest'
+                xaxis: { title: isFFT ? 'Frequency (Hz)' : xCol, gridcolor: isDark ? '#3e3e42' : '#eee' },
+                yaxis: { title: isFFT ? 'Magnitude' : 'Amplitude (Y1)', gridcolor: isDark ? '#3e3e42' : '#eee' },
+                yaxis2: { title: 'Amplitude (Y2)', overlaying: 'y', side: 'right', showgrid: false },
+                margin: { l: 60, r: 60, t: 40, b: 60 }, hovermode: 'closest'
             };
 
             let traces = [];
+            lastExportData = []; 
 
             if (isFFT && fftData) {
                 traces.push({ x: fftData.freqs, y: fftData.mags, type: 'scatter', mode: 'lines', name: 'FFT' });
-                layout.title = 'FFT Spectrum (Windowed)';
+                layout.title = 'FFT Spectrum';
+                
+                for(let i=0; i<fftData.freqs.length; i++) {
+                    lastExportData.push({ "Frequency (Hz)": fftData.freqs[i], "Magnitude": fftData.mags[i] });
+                }
             } else {
+                let hasY2 = false;
                 activeColumns.forEach(col => {
-                    traces.push({ x: dataStore[timeKey], y: dataStore[col], type: 'scatter', mode: 'lines', name: col });
+                    if (axisMap[col] === 'y2') hasY2 = true;
+                    traces.push({ 
+                        x: dataStore[xCol], y: dataStore[col], 
+                        type: 'scatter', mode: 'lines', name: col,
+                        yaxis: axisMap[col] === 'y2' ? 'y2' : 'y1'
+                    });
                 });
-                layout.title = 'Transient Analysis';
-            }
+                if (!hasY2) delete layout.yaxis2;
+                layout.title = xCol === defaultTimeKey ? 'Transient Analysis' : 'X-Y Parametric Sweep';
 
+                const len = dataStore[xCol].length;
+                const activeArr = Array.from(activeColumns);
+                for(let i=0; i<len; i++) {
+                    let row = {};
+                    row[xCol] = dataStore[xCol][i];
+                    activeArr.forEach(col => row[col] = dataStore[col][i]);
+                    lastExportData.push(row);
+                }
+            }
             Plotly.newPlot('plot-container', traces, layout, {responsive: true});
         }
 
         document.getElementById('btn-reset-plot').addEventListener('click', () => updatePlot(false));
 
-        // --- Math Engine (Dot-Safe) ---
-        function escapeRegExp(string) {
-            return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); 
-        }
-
         document.getElementById('btn-math').addEventListener('click', () => {
             const expr = document.getElementById('math-input').value.trim();
-            let newName = document.getElementById('math-name').value.trim() || "Calculated_Curve";
-            
+            const newName = document.getElementById('math-name').value.trim() || "Calc_Curve";
             if (!expr) return logMsg("Error: Empty expression.");
 
             try {
                 const keys = Object.keys(dataStore);
                 let parsedExpr = expr;
-
                 const sortedKeys = [...keys].sort((a, b) => b.length - a.length);
                 
                 sortedKeys.forEach(k => {
-                    if (k === timeKey) return;
-                    const safeKey = escapeRegExp(k);
+                    const safeKey = k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
                     const regex = new RegExp(`(?<![a-zA-Z0-9_.])(${safeKey})(?![a-zA-Z0-9_.])`, 'g');
                     parsedExpr = parsedExpr.replace(regex, `__dataStore__["${k}"][__idx__]`);
                 });
 
                 const mathFunc = new Function('__dataStore__', '__idx__', `return ${parsedExpr};`);
-                
                 let newCol = [];
-                const len = dataStore[timeKey].length;
+                for (let i = 0; i < dataStore[defaultTimeKey].length; i++) newCol.push(mathFunc(dataStore, i));
                 
-                for (let i = 0; i < len; i++) {
-                    newCol.push(mathFunc(dataStore, i));
-                }
-
-                dataStore[newName] = newCol;
-                
-                if(!Array.from(activeColumns).includes(newName)) {
-                    const container = document.getElementById('variables-list');
-                    const lbl = document.createElement('label');
-                    const chk = document.createElement('input');
-                    chk.type = 'checkbox'; chk.value = newName; chk.checked = true;
-                    
-                    chk.addEventListener('change', (e) => {
-                        if (e.target.checked) activeColumns.add(newName);
-                        else activeColumns.delete(newName);
-                        updatePlot();
-                    });
-
-                    lbl.appendChild(chk); lbl.appendChild(document.createTextNode(newName));
-                    container.appendChild(lbl);
-                    updateAnalysisDropdown();
-                }
-                
-                activeColumns.add(newName);
-                updatePlot();
-                logMsg(`Success: Computed ${newName}\nUsing: ${expr}`);
-
-            } catch (err) {
-                logMsg(`Math Error:\n${err.message}\nCheck syntax and variable names.`);
-            }
+                addComputedCurve(newName, newCol);
+                logMsg(`Computed: ${newName}`);
+            } catch (err) { logMsg(`Math Error:\n${err.message}`); }
         });
-
-        // --- Save / Load Expressions ---
-        const savedSelect = document.getElementById('saved-expressions');
         
+        const savedSelect = document.getElementById('saved-expressions');
         function loadSavedExpressions() {
             const saved = JSON.parse(localStorage.getItem('savedMath') || '{}');
-            savedSelect.innerHTML = '<option value="">-- Saved Expressions --</option>';
+            savedSelect.innerHTML = '<option value="">Saved Macros</option>';
             Object.keys(saved).forEach(name => {
                 const opt = document.createElement('option');
                 opt.value = saved[name]; opt.text = name;
                 savedSelect.appendChild(opt);
             });
         }
-
         document.getElementById('btn-save-math').addEventListener('click', () => {
             const expr = document.getElementById('math-input').value.trim();
-            const name = document.getElementById('math-name').value.trim() || `Expr_${Date.now()}`;
-            if (!expr) return logMsg("Cannot save empty expression.");
+            const name = document.getElementById('math-name').value.trim() || `Macro_${Date.now()}`;
+            if (!expr) return logMsg("Cannot save an empty expression.");
             
             const saved = JSON.parse(localStorage.getItem('savedMath') || '{}');
             saved[name] = expr;
             localStorage.setItem('savedMath', JSON.stringify(saved));
             loadSavedExpressions();
             savedSelect.value = expr;
-            logMsg(`Saved expression: ${name}`);
+            logMsg(`Saved macro: ${name}`);
         });
-
         savedSelect.addEventListener('change', (e) => {
             if (e.target.value) {
                 document.getElementById('math-input').value = e.target.value;
                 document.getElementById('math-name').value = e.target.options[e.target.selectedIndex].text;
             }
         });
-
         loadSavedExpressions(); 
 
-        // --- Time Window Utilities ---
-        function getWindowIndices() {
-            const tStart = parseFloat(document.getElementById('time-start').value);
-            const tEnd = parseFloat(document.getElementById('time-end').value);
-            const timeArr = dataStore[timeKey];
-            let startIndex = 0;
-            let endIndex = timeArr.length - 1;
+        
+        // Filter UI toggles
+        document.getElementById('filter-type').addEventListener('change', (e) => {
+            const v = e.target.value;
+            document.getElementById('filter-ma-group').style.display = (v === 'ma') ? 'flex' : 'none';
+            document.getElementById('filter-freq-group').style.display = (v !== 'ma') ? 'block' : 'none';
+            document.getElementById('filter-fc2').style.display = (v === 'ideal_bp') ? 'block' : 'none';
             
-            if (!isNaN(tStart)) {
-                const idx = timeArr.findIndex(t => t >= tStart);
-                if (idx !== -1) startIndex = idx;
+            if (v !== 'ma') {
+                 document.getElementById('filter-fc1').placeholder = (v === 'ideal_bp') ? "f_Low (Hz)" : "Cutoff f_c (Hz)";
             }
-            if (!isNaN(tEnd)) {
-                for(let i = timeArr.length - 1; i >= 0; i--) {
-                    if (timeArr[i] <= tEnd) { endIndex = i; break; }
-                }
+        });
+
+        // 1. Moving Average logic
+        function computeMovingAverage(src, pts) {
+            let out = new Array(src.length).fill(0);
+            let sum = 0;
+            for(let i=0; i<src.length; i++) {
+                sum += src[i];
+                if(i >= pts) sum -= src[i - pts];
+                out[i] = sum / Math.min(i + 1, pts);
             }
-            return { startIndex, endIndex };
+            // Optional: phase shift compensation to center the moving average
+            let shift = Math.floor(pts / 2);
+            let centeredOut = new Array(src.length).fill(0);
+            for(let i=0; i<src.length; i++) {
+                if (i + shift < src.length) centeredOut[i] = out[i + shift];
+                else centeredOut[i] = out[src.length - 1]; // pad
+            }
+            return centeredOut;
         }
 
-        // --- Math Utilities for FFT/THD ---
-        function resampleUniformly(timeArr, valArr, targetPoints) {
-            const tStart = timeArr[0];
-            const tEnd = timeArr[timeArr.length - 1];
-            const dt = (tEnd - tStart) / (targetPoints - 1);
+        // 2. FIR Zero-Phase Convolution
+        function convolveFIR(x, h) {
+            let y = new Array(x.length).fill(0);
+            let M = h.length;
+            let halfM = Math.floor(M / 2);
+            for (let n = 0; n < x.length; n++) {
+                let sum = 0;
+                for (let k = 0; k < M; k++) {
+                    let idx = n - k + halfM; // zero phase delay compensation
+                    if (idx >= 0 && idx < x.length) {
+                        sum += h[k] * x[idx];
+                    } else if (idx < 0) {
+                        sum += h[k] * x[0];
+                    } else {
+                        sum += h[k] * x[x.length - 1];
+                    }
+                }
+                y[n] = sum;
+            }
+            return y;
+        }
+
+        // Generate Windowed Sinc FIR Filter
+        function generateFIR(type, Fc1, Fc2, Fs, taps=101) {
+            let h = new Array(taps).fill(0);
+            let M = taps - 1;
             
-            let resampledVals = new Array(targetPoints);
-            let currentIdx = 0;
+            function buildLowPass(fc, fs) {
+                let wc = 2 * Math.PI * (fc / fs);
+                let h_lp = new Array(taps).fill(0);
+                let sum = 0;
+                for (let i = 0; i < taps; i++) {
+                    let n = i - M / 2;
+                    if (n === 0) h_lp[i] = wc / Math.PI;
+                    else h_lp[i] = Math.sin(wc * n) / (Math.PI * n);
+                    // Hamming window
+                    h_lp[i] *= 0.54 - 0.46 * Math.cos(2 * Math.PI * i / M);
+                    sum += h_lp[i];
+                }
+                // Normalize DC gain to 1
+                for(let i=0; i<taps; i++) h_lp[i] /= sum;
+                return h_lp;
+            }
+
+            if (type === 'ideal_lp') {
+                return buildLowPass(Fc1, Fs);
+            } else if (type === 'ideal_hp') {
+                let h_lp = buildLowPass(Fc1, Fs);
+                for(let i=0; i<taps; i++) h[i] = -h_lp[i];
+                h[M/2] += 1; // Delta function shift
+                return h;
+            } else if (type === 'ideal_bp') {
+                let h_low = buildLowPass(Fc1, Fs);
+                let h_high = buildLowPass(Fc2, Fs);
+                for(let i=0; i<taps; i++) h[i] = h_high[i] - h_low[i];
+                return h;
+            }
+            return h;
+        }
+
+        // 3. IIR Biquad Filter (Audio EQ Cookbook)
+        function computeBiquad(x, type, fc, fs) {
+            let w0 = 2 * Math.PI * fc / fs;
+            let alpha = Math.sin(w0) / (2 * 0.7071); // Q = 1/sqrt(2) for Butterworth
+            let a0, a1, a2, b0, b1, b2;
+
+            if (type === 'butter_lp') {
+                b0 = (1 - Math.cos(w0)) / 2;
+                b1 = 1 - Math.cos(w0);
+                b2 = (1 - Math.cos(w0)) / 2;
+                a0 = 1 + alpha;
+                a1 = -2 * Math.cos(w0);
+                a2 = 1 - alpha;
+            } else { // butter_hp
+                b0 = (1 + Math.cos(w0)) / 2;
+                b1 = -(1 + Math.cos(w0));
+                b2 = (1 + Math.cos(w0)) / 2;
+                a0 = 1 + alpha;
+                a1 = -2 * Math.cos(w0);
+                a2 = 1 - alpha;
+            }
+
+            // Normalize
+            b0 /= a0; b1 /= a0; b2 /= a0; a1 /= a0; a2 /= a0;
+
+            // Forward filter
+            function filter1D(sig) {
+                let y = new Array(sig.length).fill(0);
+                let x1=0, x2=0, y1=0, y2=0;
+                for(let i=0; i<sig.length; i++) {
+                    y[i] = b0*sig[i] + b1*x1 + b2*x2 - a1*y1 - a2*y2;
+                    x2 = x1; x1 = sig[i];
+                    y2 = y1; y1 = y[i];
+                }
+                return y;
+            }
+            
+            // To achieve Zero-Phase shift, we use filtfilt (forward-backward filtering)
+            let forward = filter1D(x);
+            let reversed = forward.reverse();
+            let backward = filter1D(reversed);
+            return backward.reverse();
+        }
+
+        document.getElementById('btn-apply-filter').addEventListener('click', () => {
+            const target = document.getElementById('filter-target').value;
+            const filterType = document.getElementById('filter-type').value;
+            if (!target) return logMsg("Select a target variable first.");
+
+            const src = dataStore[target];
+            const timeArr = dataStore[defaultTimeKey];
+            
+            // Estimate average Sample Rate (Fs)
+            const duration = timeArr[timeArr.length - 1] - timeArr[0];
+            const Fs = (timeArr.length - 1) / duration;
+
+            let out = [];
+            let suffix = "";
+
+            if (filterType === 'ma') {
+                const pts = parseInt(document.getElementById('filter-pts').value);
+                if (isNaN(pts) || pts < 2) return logMsg("Invalid MA window points.");
+                out = computeMovingAverage(src, pts);
+                suffix = `_MA${pts}`;
+                logMsg(`Applied ${pts}-pt Moving Average to ${target}`);
+            } else {
+                const fc1 = parseFloat(document.getElementById('filter-fc1').value);
+                const fc2 = parseFloat(document.getElementById('filter-fc2').value);
+                
+                if (isNaN(fc1) || fc1 <= 0 || fc1 >= Fs/2) {
+                    return logMsg(`Invalid Cutoff Frequency. Fs is ≈ ${Math.round(Fs)} Hz. Fc must be between 0 and Nyquist (${Math.round(Fs/2)} Hz).`);
+                }
+
+                if (filterType.startsWith('ideal_')) {
+                    if (filterType === 'ideal_bp' && (isNaN(fc2) || fc2 <= fc1 || fc2 >= Fs/2)) {
+                        return logMsg("Invalid Band Pass configuration. Ensure f_Low < f_High < Nyquist.");
+                    }
+                    const h = generateFIR(filterType, fc1, fc2, Fs, 101);
+                    out = convolveFIR(src, h);
+                    suffix = `_FIR_${filterType.split('_')[1].toUpperCase()}`;
+                    logMsg(`Applied FIR ${filterType.split('_')[1].toUpperCase()} to ${target}.`);
+                } else if (filterType.startsWith('butter_')) {
+                    out = computeBiquad(src, filterType, fc1, Fs);
+                    suffix = `_Butter_${filterType.split('_')[1].toUpperCase()}`;
+                    logMsg(`Applied Zero-Phase 2nd-Order Butterworth ${filterType.split('_')[1].toUpperCase()} to ${target}.`);
+                }
+            }
+
+            addComputedCurve(`${target}${suffix}`, out);
+        });
+
+        function getIndices(tStartStr, tEndStr) {
+            const tStart = parseFloat(tStartStr);
+            const tEnd = parseFloat(tEndStr);
+            const timeArr = dataStore[defaultTimeKey];
+            let start = 0, end = timeArr.length - 1;
+            
+            if (!isNaN(tStart)) { const idx = timeArr.findIndex(t => t >= tStart); if (idx !== -1) start = idx; }
+            if (!isNaN(tEnd)) { for(let i = timeArr.length - 1; i >= 0; i--) if (timeArr[i] <= tEnd) { end = i; break; } }
+            return { start, end };
+        }
+
+        document.getElementById('btn-measure').addEventListener('click', () => {
+            const target = document.getElementById('meas-target').value;
+            if(!target) return;
+            const { start, end } = getIndices(document.getElementById('meas-tstart').value, document.getElementById('meas-tend').value);
+            
+            const slice = dataStore[target].slice(start, end + 1);
+            if(slice.length === 0) return logMsg("Window empty.");
+
+            let max = -Infinity, min = Infinity, sum = 0;
+            for(let i=0; i<slice.length; i++) {
+                if(slice[i] > max) max = slice[i];
+                if(slice[i] < min) min = slice[i];
+                sum += slice[i];
+            }
+            const avg = sum / slice.length;
+            const pkpk = max - min;
+            
+            logMsg(`[MEASURE] ${target}:\nWindow: ${dataStore[defaultTimeKey][start].toFixed(5)}s - ${dataStore[defaultTimeKey][end].toFixed(5)}s\nMax:    ${max.toFixed(5)}\nMin:    ${min.toFixed(5)}\nPk-Pk:  ${pkpk.toFixed(5)}\nAvg/DC: ${avg.toFixed(5)}`);
+        });
+
+        function resampleUniformly(timeArr, valArr, targetPoints) {
+            const tStart = timeArr[0], tEnd = timeArr[timeArr.length - 1];
+            const dt = (tEnd - tStart) / (targetPoints - 1);
+            let res = new Array(targetPoints);
+            let idx = 0;
             
             for (let i = 0; i < targetPoints; i++) {
-                const tTarget = tStart + i * dt;
-                while (currentIdx < timeArr.length - 2 && timeArr[currentIdx + 1] <= tTarget) {
-                    currentIdx++;
-                }
-                const t0 = timeArr[currentIdx];
-                const t1 = timeArr[currentIdx + 1];
-                const v0 = valArr[currentIdx];
-                const v1 = valArr[currentIdx + 1];
-                
-                if (t1 === t0) resampledVals[i] = v0;
-                else resampledVals[i] = v0 + ((tTarget - t0) / (t1 - t0)) * (v1 - v0);
+                const tTarg = tStart + i * dt;
+                while (idx < timeArr.length - 2 && timeArr[idx + 1] <= tTarg) idx++;
+                const t0 = timeArr[idx], t1 = timeArr[idx + 1], v0 = valArr[idx], v1 = valArr[idx + 1];
+                res[i] = t1 === t0 ? v0 : v0 + ((tTarg - t0) / (t1 - t0)) * (v1 - v0);
             }
-            return { signal: resampledVals, dt: dt, Fs: 1.0 / dt };
+            return { signal: res, dt: dt, Fs: 1.0 / dt };
         }
 
-        function computeMagnitudeSpectrum(timeArr, valArr, removeDC, windowType, targetPoints) {
-            const N2 = targetPoints; 
-            const resampled = resampleUniformly(timeArr, valArr, N2);
+        function computeMagnitudeSpectrum(timeArr, valArr, removeDC, windowType, N, fStart, fEnd) {
+            const resampled = resampleUniformly(timeArr, valArr, N);
             const sampled = resampled.signal;
             const Fs = resampled.Fs;
 
-            // DC Calculation
-            let dcOffset = 0;
-            if (removeDC) {
-                let sum = 0;
-                for (let i = 0; i < N2; i++) sum += sampled[i];
-                dcOffset = sum / N2;
-            }
+            let dc = 0;
+            if (removeDC) { let s=0; for(let i=0;i<N;i++) s+=sampled[i]; dc=s/N; }
 
-            let mags = new Array(Math.floor(N2/2)).fill(0);
-            let freqs = new Array(Math.floor(N2/2)).fill(0);
-            
-            // Apply Window function and determine Amplitude Correction Factor (ACF)
-            let windowed = new Array(N2);
+            let windowed = new Array(N);
             let acf = 1.0; 
-
-            for(let i = 0; i < N2; i++) {
+            for(let i=0; i<N; i++) {
                 let w = 1.0; 
-                if (windowType === 'hanning') {
-                    w = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (N2 - 1)));
-                    acf = 2.0;
-                } else if (windowType === 'hamming') {
-                    w = 0.54 - 0.46 * Math.cos((2 * Math.PI * i) / (N2 - 1));
-                    acf = 1.8518;
-                } else if (windowType === 'blackman') {
-                    w = 0.42 - 0.5 * Math.cos((2 * Math.PI * i) / (N2 - 1)) + 0.08 * Math.cos((4 * Math.PI * i) / (N2 - 1));
-                    acf = 2.38;
-                }
-                windowed[i] = (sampled[i] - dcOffset) * w;
+                if (windowType === 'hanning') { w = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (N - 1))); acf = 2.0; } 
+                else if (windowType === 'hamming') { w = 0.54 - 0.46 * Math.cos((2 * Math.PI * i) / (N - 1)); acf = 1.8518; }
+                else if (windowType === 'blackman') { w = 0.42 - 0.5 * Math.cos(2*Math.PI*i/(N-1)) + 0.08 * Math.cos(4*Math.PI*i/(N-1)); acf = 2.38; }
+                windowed[i] = (sampled[i] - dc) * w;
             }
 
-            // Standard DFT
-            for (let k = 0; k < Math.floor(N2/2); k++) {
-                let sumR = 0; let sumI = 0;
-                for (let n = 0; n < N2; n++) {
-                    const angle = (2 * Math.PI * k * n) / N2;
+            let kStart = 0, kEnd = Math.floor(N/2);
+            if (!isNaN(fStart)) kStart = Math.max(0, Math.floor(fStart * N / Fs));
+            if (!isNaN(fEnd)) kEnd = Math.min(Math.floor(N/2), Math.ceil(fEnd * N / Fs));
+
+            let freqs = [], mags = [];
+            for (let k = kStart; k <= kEnd; k++) {
+                let sumR = 0, sumI = 0;
+                for (let n = 0; n < N; n++) {
+                    const angle = (2 * Math.PI * k * n) / N;
                     sumR += windowed[n] * Math.cos(angle);
                     sumI -= windowed[n] * Math.sin(angle);
                 }
+                let mag = (2.0 * acf / N) * Math.sqrt(sumR * sumR + sumI * sumI);
+                if (k === 0 && !removeDC) mag = mag / 2.0; 
+                else if (k === 0 && removeDC) mag = 0;
                 
-                // Multiply magnitude by 2/N2 and the specific window correction factor
-                mags[k] = (2.0 * acf / N2) * Math.sqrt(sumR * sumR + sumI * sumI);
-                freqs[k] = k * Fs / N2;
+                freqs.push(k * Fs / N);
+                mags.push(mag);
             }
-            
-            if (removeDC) mags[0] = 0; 
-            else mags[0] = mags[0] / 2.0; 
-            
             return { freqs, mags, Fs };
         }
 
@@ -451,40 +702,40 @@
             const target = document.getElementById('analysis-target').value;
             if (!target) return logMsg("Select a variable first.");
 
-            const removeDC = document.getElementById('remove-dc').checked;
-            const windowType = document.getElementById('fft-window').value;
-            const targetPoints = parseInt(document.getElementById('fft-points').value);
-
-            logMsg("Computing Windowed FFT...");
+            logMsg("Computing FFT...");
             setTimeout(() => {
-                const { startIndex, endIndex } = getWindowIndices();
-                const signalSlice = dataStore[target].slice(startIndex, endIndex + 1);
-                const timeSlice = dataStore[timeKey].slice(startIndex, endIndex + 1);
+                const { start, end } = getIndices(document.getElementById('time-start').value, document.getElementById('time-end').value);
+                const sig = dataStore[target].slice(start, end + 1);
+                const tim = dataStore[defaultTimeKey].slice(start, end + 1);
                 
-                if(signalSlice.length < 10) return logMsg("Error: Time window too small.");
+                const fStart = parseFloat(document.getElementById('freq-start').value);
+                const fEnd = parseFloat(document.getElementById('freq-end').value);
 
-                const fftData = computeMagnitudeSpectrum(timeSlice, signalSlice, removeDC, windowType, targetPoints);
+                const fftData = computeMagnitudeSpectrum(tim, sig, 
+                    document.getElementById('remove-dc').checked, 
+                    document.getElementById('fft-window').value, 
+                    parseInt(document.getElementById('fft-points').value),
+                    fStart, fEnd
+                );
                 updatePlot(true, fftData);
-                
-                logMsg(`FFT computed (${windowType} window).\nPoints: ${targetPoints}\nWindow: ${timeSlice[0].toFixed(5)}s to ${timeSlice[timeSlice.length-1].toFixed(5)}s\nUniform Fs: ${fftData.Fs.toFixed(0)} Hz`);
+                logMsg(`[FFT] Success. Fs: ${fftData.Fs.toFixed(0)} Hz`);
             }, 50);
         });
-
+        
         document.getElementById('btn-thd').addEventListener('click', () => {
             const target = document.getElementById('analysis-target').value;
-            if (!target) return logMsg("Select a variable first.");
+            if (!target) return logMsg("Select a variable for THD Analysis.");
 
             const removeDC = document.getElementById('remove-dc').checked;
             const windowType = document.getElementById('fft-window').value;
-            const targetPoints = parseInt(document.getElementById('fft-points').value);
+            const pts = parseInt(document.getElementById('fft-points').value);
 
-            const { startIndex, endIndex } = getWindowIndices();
-            const signalSlice = dataStore[target].slice(startIndex, endIndex + 1);
-            const timeSlice = dataStore[timeKey].slice(startIndex, endIndex + 1);
+            const { start, end } = getIndices(document.getElementById('time-start').value, document.getElementById('time-end').value);
+            const signalSlice = dataStore[target].slice(start, end + 1);
+            const timeSlice = dataStore[defaultTimeKey].slice(start, end + 1);
             
-            if(signalSlice.length < 10) return logMsg("Error: Time window too small for THD.");
+            if(signalSlice.length < 10) return logMsg("Error: Time window too small for THD calculation.");
 
-            // Strip DC from total RMS calculation if requested
             let dcComponent = 0;
             if (removeDC) {
                 let sum = 0;
@@ -499,26 +750,36 @@
             }
             const Vrms_total = Math.sqrt(sumSq / signalSlice.length);
 
-            // Fetch uniform FFT to find fundamental frequency peak
-            const fft = computeMagnitudeSpectrum(timeSlice, signalSlice, removeDC, windowType, targetPoints);
+            const fft = computeMagnitudeSpectrum(timeSlice, signalSlice, removeDC, windowType, pts, NaN, NaN);
             
-            let maxMag = 0;
-            let peakFreq = 0;
-            for(let i=1; i<fft.mags.length; i++) { // Skip bin 0
-                if (fft.mags[i] > maxMag) {
-                    maxMag = fft.mags[i];
-                    peakFreq = fft.freqs[i];
-                }
+            let maxMag = 0, peakFreq = 0;
+            for(let i=1; i<fft.mags.length; i++) { 
+                if (fft.mags[i] > maxMag) { maxMag = fft.mags[i]; peakFreq = fft.freqs[i]; }
             }
             
             const Vrms_fund = maxMag / Math.SQRT2;
             let thdSquare = (Vrms_total * Vrms_total) - (Vrms_fund * Vrms_fund);
             if (thdSquare < 0) thdSquare = 0; 
-            
             const thd = (Math.sqrt(thdSquare) / Vrms_fund) * 100; 
 
-            logMsg(`THD Analysis:\nWindow: ${timeSlice[0].toFixed(5)}s -> ${timeSlice[timeSlice.length-1].toFixed(5)}s\nBase Freq ≈ ${peakFreq.toFixed(2)} Hz\nTotal RMS (AC) = ${Vrms_total.toFixed(4)}\nFund RMS = ${Vrms_fund.toFixed(4)}\nTHD ≈ ${thd.toFixed(2)}%`);
+            logMsg(`[THD] Analysis for ${target}:\nWindow: ${timeSlice[0].toFixed(5)}s to ${timeSlice[timeSlice.length-1].toFixed(5)}s\nFund Freq ≈ ${peakFreq.toFixed(2)} Hz\nTotal RMS (AC) = ${Vrms_total.toFixed(4)}\nFund RMS = ${Vrms_fund.toFixed(4)}\nTHD ≈ ${thd.toFixed(3)}%`);
         });
+
+        document.getElementById('btn-export').addEventListener('click', () => {
+            if(lastExportData.length === 0) return logMsg("No active data to export.");
+            
+            const csv = Papa.unparse(lastExportData);
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            const url = URL.createObjectURL(blob);
+            link.setAttribute("href", url);
+            link.setAttribute("download", currentMode === 'fft' ? "fft_export.csv" : "transient_export.csv");
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            logMsg(`Exported ${lastExportData.length} rows to CSV.`);
+        });
+        
     </script>
 </body>
 </html>
