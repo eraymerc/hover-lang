@@ -9,47 +9,28 @@
 
     <style>
         :root {
-            --bg-color: #f4f4f4;
-            --panel-bg: #ffffff;
-            --text-color: #333333;
-            --border-color: #cccccc;
-            --btn-bg: #e0e0e0;
-            --btn-hover: #d0d0d0;
-            --accent: #2196F3;
-            --input-bg: #ffffff;
+            --bg-color: #f4f4f4; --panel-bg: #ffffff; --text-color: #333333;
+            --border-color: #cccccc; --btn-bg: #e0e0e0; --btn-hover: #d0d0d0;
+            --accent: #2196F3; --input-bg: #ffffff;
         }
 
         [data-theme="dark"] {
-            --bg-color: #1a1a1a;
-            --panel-bg: #252526;
-            --text-color: #e0e0e0;
-            --border-color: #3e3e42;
-            --btn-bg: #333333;
-            --btn-hover: #444444;
-            --accent: #007acc;
-            --input-bg: #1e1e1e;
+            --bg-color: #1a1a1a; --panel-bg: #252526; --text-color: #e0e0e0;
+            --border-color: #3e3e42; --btn-bg: #333333; --btn-hover: #444444;
+            --accent: #007acc; --input-bg: #1e1e1e;
         }
 
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: var(--bg-color);
-            color: var(--text-color);
-            margin: 0;
-            display: flex;
-            height: 100vh;
-            overflow: hidden;
+            background-color: var(--bg-color); color: var(--text-color);
+            margin: 0; display: flex; height: 100vh; overflow: hidden;
             transition: background-color 0.3s;
         }
 
         #sidebar {
-            width: 320px;
-            background-color: var(--panel-bg);
-            border-right: 1px solid var(--border-color);
-            padding: 20px;
-            display: flex;
-            flex-direction: column;
-            gap: 15px;
-            overflow-y: auto;
+            width: 320px; background-color: var(--panel-bg);
+            border-right: 1px solid var(--border-color); padding: 20px;
+            display: flex; flex-direction: column; gap: 15px; overflow-y: auto;
         }
 
         #main-content { flex-grow: 1; display: flex; flex-direction: column; padding: 20px; }
@@ -77,15 +58,13 @@
             background-color: #0d0d0d; color: #4CAF50; font-family: 'Consolas', monospace;
             padding: 10px; border-radius: 4px; min-height: 60px; font-size: 12px; white-space: pre-wrap; word-break: break-all;
         }
-        .row-flex { display: flex; gap: 5px; }
+        .row-flex { display: flex; gap: 5px; align-items: center; }
     </style>
 </head>
 <body>
 
     <div id="sidebar">
-        <div>
-            <button id="theme-toggle" style="width: 100%;">Toggle Dark Mode</button>
-        </div>
+        <div><button id="theme-toggle" style="width: 100%;">Toggle Dark Mode</button></div>
 
         <div>
             <h3>1. Load Data</h3>
@@ -113,12 +92,35 @@
         </div>
 
         <div>
-            <h3>4. Analysis Tools (Time Bound)</h3>
+            <h3>4. Analysis Tools</h3>
             <select id="analysis-target" style="margin-bottom: 5px;"></select>
             
             <div class="row-flex" style="margin-bottom: 5px;">
                 <input type="number" id="time-start" placeholder="Start Time (s)" />
                 <input type="number" id="time-end" placeholder="End Time (s)" />
+            </div>
+
+            <div class="row-flex" style="margin-bottom: 5px;">
+                <label style="font-size: 13px; display: flex; align-items: center; gap: 5px; flex: 1;">
+                    <input type="checkbox" id="remove-dc" checked /> No DC
+                </label>
+                <select id="fft-window" style="flex: 2; margin-bottom: 0;">
+                    <option value="hanning">Hanning</option>
+                    <option value="hamming">Hamming</option>
+                    <option value="blackman">Blackman</option>
+                    <option value="none">Rectangular</option>
+                </select>
+            </div>
+
+            <div class="row-flex" style="margin-bottom: 5px;">
+                <span style="font-size: 13px; flex: 1; padding-left: 2px;">FFT Pts:</span>
+                <select id="fft-points" style="flex: 2; margin-bottom: 0;">
+                    <option value="1024">1024</option>
+                    <option value="2048">2048</option>
+                    <option value="4096" selected>4096</option>
+                    <option value="8192">8192</option>
+                    <option value="16384">16384</option>
+                </select>
             </div>
 
             <div class="row-flex">
@@ -263,19 +265,15 @@
                 const keys = Object.keys(dataStore);
                 let parsedExpr = expr;
 
-                // Sort keys by length descending to prevent partial replacements
                 const sortedKeys = [...keys].sort((a, b) => b.length - a.length);
                 
                 sortedKeys.forEach(k => {
                     if (k === timeKey) return;
-                    // Negative lookbehind & lookahead ensures we only match the exact variable name, 
-                    // avoiding accidental replacement inside other strings or Math functions.
                     const safeKey = escapeRegExp(k);
                     const regex = new RegExp(`(?<![a-zA-Z0-9_.])(${safeKey})(?![a-zA-Z0-9_.])`, 'g');
                     parsedExpr = parsedExpr.replace(regex, `__dataStore__["${k}"][__idx__]`);
                 });
 
-                // Compile an extremely fast loop function 
                 const mathFunc = new Function('__dataStore__', '__idx__', `return ${parsedExpr};`);
                 
                 let newCol = [];
@@ -346,7 +344,7 @@
             }
         });
 
-        loadSavedExpressions(); // Init on load
+        loadSavedExpressions(); 
 
         // --- Time Window Utilities ---
         function getWindowIndices() {
@@ -367,10 +365,9 @@
             }
             return { startIndex, endIndex };
         }
-// --- Math Utilities for FFT/THD ---
-        
-        // 1. Resample SPICE variable time-steps into a uniform grid
-        function resampleUniformly(timeArr, valArr, targetPoints = 4096) {
+
+        // --- Math Utilities for FFT/THD ---
+        function resampleUniformly(timeArr, valArr, targetPoints) {
             const tStart = timeArr[0];
             const tEnd = timeArr[timeArr.length - 1];
             const dt = (tEnd - tStart) / (targetPoints - 1);
@@ -380,39 +377,54 @@
             
             for (let i = 0; i < targetPoints; i++) {
                 const tTarget = tStart + i * dt;
-                
-                // Advance index to bound the target time
                 while (currentIdx < timeArr.length - 2 && timeArr[currentIdx + 1] <= tTarget) {
                     currentIdx++;
                 }
-                
                 const t0 = timeArr[currentIdx];
                 const t1 = timeArr[currentIdx + 1];
                 const v0 = valArr[currentIdx];
                 const v1 = valArr[currentIdx + 1];
                 
-                // Linear Interpolation
                 if (t1 === t0) resampledVals[i] = v0;
                 else resampledVals[i] = v0 + ((tTarget - t0) / (t1 - t0)) * (v1 - v0);
             }
             return { signal: resampledVals, dt: dt, Fs: 1.0 / dt };
         }
 
-        // 2. Compute Spectrum with Hanning Window
-        function computeMagnitudeSpectrum(timeArr, valArr) {
-            const N2 = Math.min(timeArr.length, 4096); 
+        function computeMagnitudeSpectrum(timeArr, valArr, removeDC, windowType, targetPoints) {
+            const N2 = targetPoints; 
             const resampled = resampleUniformly(timeArr, valArr, N2);
             const sampled = resampled.signal;
             const Fs = resampled.Fs;
 
+            // DC Calculation
+            let dcOffset = 0;
+            if (removeDC) {
+                let sum = 0;
+                for (let i = 0; i < N2; i++) sum += sampled[i];
+                dcOffset = sum / N2;
+            }
+
             let mags = new Array(Math.floor(N2/2)).fill(0);
             let freqs = new Array(Math.floor(N2/2)).fill(0);
-
-            // Apply Hanning Window to suppress spectral leakage
+            
+            // Apply Window function and determine Amplitude Correction Factor (ACF)
             let windowed = new Array(N2);
+            let acf = 1.0; 
+
             for(let i = 0; i < N2; i++) {
-                const multiplier = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (N2 - 1)));
-                windowed[i] = sampled[i] * multiplier;
+                let w = 1.0; 
+                if (windowType === 'hanning') {
+                    w = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (N2 - 1)));
+                    acf = 2.0;
+                } else if (windowType === 'hamming') {
+                    w = 0.54 - 0.46 * Math.cos((2 * Math.PI * i) / (N2 - 1));
+                    acf = 1.8518;
+                } else if (windowType === 'blackman') {
+                    w = 0.42 - 0.5 * Math.cos((2 * Math.PI * i) / (N2 - 1)) + 0.08 * Math.cos((4 * Math.PI * i) / (N2 - 1));
+                    acf = 2.38;
+                }
+                windowed[i] = (sampled[i] - dcOffset) * w;
             }
 
             // Standard DFT
@@ -423,17 +435,25 @@
                     sumR += windowed[n] * Math.cos(angle);
                     sumI -= windowed[n] * Math.sin(angle);
                 }
-                // Hanning amplitude correction factor is 2.0 -> 2 * (2/N2) = 4/N2
-                mags[k] = (4.0 / N2) * Math.sqrt(sumR * sumR + sumI * sumI);
+                
+                // Multiply magnitude by 2/N2 and the specific window correction factor
+                mags[k] = (2.0 * acf / N2) * Math.sqrt(sumR * sumR + sumI * sumI);
                 freqs[k] = k * Fs / N2;
             }
-            mags[0] = mags[0] / 2.0; // DC Component Fix
+            
+            if (removeDC) mags[0] = 0; 
+            else mags[0] = mags[0] / 2.0; 
+            
             return { freqs, mags, Fs };
         }
 
         document.getElementById('btn-fft').addEventListener('click', () => {
             const target = document.getElementById('analysis-target').value;
             if (!target) return logMsg("Select a variable first.");
+
+            const removeDC = document.getElementById('remove-dc').checked;
+            const windowType = document.getElementById('fft-window').value;
+            const targetPoints = parseInt(document.getElementById('fft-points').value);
 
             logMsg("Computing Windowed FFT...");
             setTimeout(() => {
@@ -443,10 +463,10 @@
                 
                 if(signalSlice.length < 10) return logMsg("Error: Time window too small.");
 
-                const fftData = computeMagnitudeSpectrum(timeSlice, signalSlice);
+                const fftData = computeMagnitudeSpectrum(timeSlice, signalSlice, removeDC, windowType, targetPoints);
                 updatePlot(true, fftData);
                 
-                logMsg(`FFT of ${target} computed.\nWindow: ${timeSlice[0].toFixed(5)}s to ${timeSlice[timeSlice.length-1].toFixed(5)}s\nUniform Fs: ${fftData.Fs.toFixed(0)} Hz`);
+                logMsg(`FFT computed (${windowType} window).\nPoints: ${targetPoints}\nWindow: ${timeSlice[0].toFixed(5)}s to ${timeSlice[timeSlice.length-1].toFixed(5)}s\nUniform Fs: ${fftData.Fs.toFixed(0)} Hz`);
             }, 50);
         });
 
@@ -454,23 +474,37 @@
             const target = document.getElementById('analysis-target').value;
             if (!target) return logMsg("Select a variable first.");
 
+            const removeDC = document.getElementById('remove-dc').checked;
+            const windowType = document.getElementById('fft-window').value;
+            const targetPoints = parseInt(document.getElementById('fft-points').value);
+
             const { startIndex, endIndex } = getWindowIndices();
             const signalSlice = dataStore[target].slice(startIndex, endIndex + 1);
             const timeSlice = dataStore[timeKey].slice(startIndex, endIndex + 1);
             
             if(signalSlice.length < 10) return logMsg("Error: Time window too small for THD.");
 
-            // 1. Compute total RMS on raw un-windowed data
+            // Strip DC from total RMS calculation if requested
+            let dcComponent = 0;
+            if (removeDC) {
+                let sum = 0;
+                for(let i=0; i<signalSlice.length; i++) sum += signalSlice[i];
+                dcComponent = sum / signalSlice.length;
+            }
+
             let sumSq = 0;
-            for(let i=0; i<signalSlice.length; i++) sumSq += signalSlice[i]*signalSlice[i];
+            for(let i=0; i<signalSlice.length; i++) {
+                const val = signalSlice[i] - dcComponent;
+                sumSq += val * val;
+            }
             const Vrms_total = Math.sqrt(sumSq / signalSlice.length);
 
-            // 2. Fetch uniform FFT to find fundamental frequency peak
-            const fft = computeMagnitudeSpectrum(timeSlice, signalSlice);
+            // Fetch uniform FFT to find fundamental frequency peak
+            const fft = computeMagnitudeSpectrum(timeSlice, signalSlice, removeDC, windowType, targetPoints);
             
             let maxMag = 0;
             let peakFreq = 0;
-            for(let i=1; i<fft.mags.length; i++) { // Start at 1 to ignore DC offset
+            for(let i=1; i<fft.mags.length; i++) { // Skip bin 0
                 if (fft.mags[i] > maxMag) {
                     maxMag = fft.mags[i];
                     peakFreq = fft.freqs[i];
@@ -479,13 +513,12 @@
             
             const Vrms_fund = maxMag / Math.SQRT2;
             let thdSquare = (Vrms_total * Vrms_total) - (Vrms_fund * Vrms_fund);
-            if (thdSquare < 0) thdSquare = 0; // Floating point safety
+            if (thdSquare < 0) thdSquare = 0; 
             
             const thd = (Math.sqrt(thdSquare) / Vrms_fund) * 100; 
 
-            logMsg(`Analysis of ${target}:\nWindow: ${timeSlice[0].toFixed(5)}s -> ${timeSlice[timeSlice.length-1].toFixed(5)}s\nBase Freq ≈ ${peakFreq.toFixed(2)} Hz\nTotal RMS = ${Vrms_total.toFixed(4)}\nFund RMS = ${Vrms_fund.toFixed(4)}\nTHD ≈ ${thd.toFixed(2)}%`);
+            logMsg(`THD Analysis:\nWindow: ${timeSlice[0].toFixed(5)}s -> ${timeSlice[timeSlice.length-1].toFixed(5)}s\nBase Freq ≈ ${peakFreq.toFixed(2)} Hz\nTotal RMS (AC) = ${Vrms_total.toFixed(4)}\nFund RMS = ${Vrms_fund.toFixed(4)}\nTHD ≈ ${thd.toFixed(2)}%`);
         });
-
     </script>
 </body>
 </html>
