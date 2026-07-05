@@ -19,11 +19,6 @@ func ParseEngineering(s string) float64 {
 	return val
 }
 
-func isBranch(t string) bool {
-	t = strings.ToLower(t)
-	return t == "l" || t == "inductor" || t == "voltage_source" || t == "v" || t == "vcvs" || t == "ccvs" || t == "e" || t == "h"
-}
-
 func copyMapSF(m map[string]float64) map[string]float64 {
 	c := make(map[string]float64, len(m))
 	for k, v := range m {

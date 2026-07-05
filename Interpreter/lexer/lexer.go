@@ -283,4 +283,3 @@ func newToken(tokenType token.Type, ch byte, line int, column int) token.Token {
 	return token.Token{Type: tokenType, Literal: string(ch), Line: line, Column: column}
 }
 
-var strings_ContainsRune = strings.ContainsRune

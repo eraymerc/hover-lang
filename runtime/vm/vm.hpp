@@ -115,23 +115,6 @@ void vm_run_analog(VM *vm);
 void vm_run_phase_b(VM *vm);
 
 // ─────────────────────────────────────────────────────────────────────────────
-// NAME RESOLUTION HELPERS
-// ─────────────────────────────────────────────────────────────────────────────
-
-// Resolve an identifier to its float64 value in the current context.
-// Mirrors Go: func (vm *VM) resolveIdent(name string) float64
-double vm_resolve_ident(VM *vm, const std::string &name);
-
-// Resolve a write target name to its mangled key.
-// Checks ctx_ports first, then prepends ctx_prefix.
-// Mirrors Go: func (vm *VM) resolveWrite(name string) string
-std::string vm_resolve_write(VM *vm, const std::string &name);
-
-// Resolve a wire/net name for V() and I() calls.
-// Mirrors Go: func (vm *VM) resolveNetName(rawName string) string
-std::string vm_resolve_net_name(VM *vm, const std::string &raw_name);
-
-// ─────────────────────────────────────────────────────────────────────────────
 // JACOBIAN
 // Numerical Jacobian via 1µV perturbation — for implicit solvers.
 // Mirrors Go: func (vm *VM) ComputeJacobian(xGuess []float64) []float64

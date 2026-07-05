@@ -151,7 +151,7 @@ func main() {
 		}
 	}
 
-	flatProg, _, err := elab.Elaborate()
+	flatProg, err := elab.Elaborate()
 	if err != nil {
 		fmt.Printf("[Elaborator] Error: %v\n", err)
 		os.Exit(1)

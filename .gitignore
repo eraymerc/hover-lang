@@ -1,3 +1,8 @@
 toolchain/
 hover_linux/
 hover_win/
+# Generated build artifacts
+sim.cpp
+sim
+sim.exe
+*.csv
