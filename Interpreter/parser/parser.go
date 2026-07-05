@@ -12,8 +12,12 @@ type parser struct {
 	errors []string
 }
 
-// Parse is the main entry point
-func Parse(tokens []token.Token) *ast.Program {
+// Parse is the main entry point. It returns the parsed program plus every
+// syntax error encountered. Callers MUST treat a non-empty error slice as
+// fatal: the returned AST is best-effort and may be partial or structurally
+// wrong after error recovery, so it must never be fed into semantic
+// analysis, elaboration, or codegen.
+func Parse(tokens []token.Token) (*ast.Program, []string) {
 	p := &parser{
 		tokens: tokens,
 		pos:    0,
@@ -36,29 +40,44 @@ func Parse(tokens []token.Token) *ast.Program {
 		}
 	}
 
-	// Print errors if any were found during parsing
-	if len(p.errors) > 0 {
-		fmt.Printf("\nParser encountered %d syntax errors:\n", len(p.errors))
-		for _, msg := range p.errors {
-			fmt.Printf("  - %s\n", msg)
-		}
-		fmt.Println()
-	}
-
-	return program
+	return program, p.errors
 }
 
 // ==========================================
 // UTILITIES & HELPERS
 // ==========================================
 
-func (p *parser) currentToken() token.Token    { return p.tokens[p.pos] }
-func (p *parser) currentTokenType() token.Type { return p.tokens[p.pos].Type }
-func (p *parser) hasTokens() bool              { return p.pos < len(p.tokens) && p.currentTokenType() != token.EOF }
+// currentToken is clamped at the end of the token stream: once the cursor
+// has run past the last token, it keeps returning that last token instead
+// of panicking with an index-out-of-range. Every token stream main.go
+// produces ends in EOF, so "the last token" is always EOF in practice —
+// a truncated file (e.g. `double x[` at end-of-file) now surfaces as a
+// normal "Expected X, got EOF" syntax error rather than a compiler crash.
+func (p *parser) currentToken() token.Token {
+	if len(p.tokens) == 0 {
+		return token.Token{Type: token.EOF, Literal: "", Line: 1, Column: 1}
+	}
+	if p.pos >= len(p.tokens) {
+		return p.tokens[len(p.tokens)-1]
+	}
+	return p.tokens[p.pos]
+}
 
+func (p *parser) currentTokenType() token.Type { return p.currentToken().Type }
+func (p *parser) hasTokens() bool {
+	return p.pos < len(p.tokens) && p.currentTokenType() != token.EOF
+}
+
+// nextToken advances the cursor but never past len(tokens): after the final
+// token has been consumed, further calls keep returning it (EOF) without
+// moving. This cannot re-trap the watchdog loops — every parse loop is
+// guarded either by hasTokens() (false once pos reaches the end) or by a
+// specific token-type comparison that EOF can never satisfy.
 func (p *parser) nextToken() token.Token {
 	tok := p.currentToken()
-	p.pos++
+	if p.pos < len(p.tokens) {
+		p.pos++
+	}
 	return tok
 }
 

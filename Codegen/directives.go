@@ -2,6 +2,9 @@ package codegen
 
 import (
 	"fmt"
+	"sort"
+	"strings"
+
 	ast "hover/Interpreter/ast"
 	"hover/Interpreter/elaborator"
 )
@@ -105,7 +108,11 @@ func (g *generator) parseSimConfig() (simConfig, error) {
 		}
 	}
 
-	cfg.saveMNANodes, cfg.saveVMSignals = g.parseSaveDirectives()
+	var saveErr error
+	cfg.saveMNANodes, cfg.saveVMSignals, saveErr = g.parseSaveDirectives()
+	if saveErr != nil {
+		return cfg, saveErr
+	}
 	return cfg, nil
 }
 
@@ -129,7 +136,19 @@ func parseOptionalSolverArg(args []ast.Expression, idx int) solverParam {
 // each one as either an MNA node (a wire that's a terminal of some
 // physical primitive — read straight from the solution vector) or a VM
 // signal (a logic variable — copied into vm->values by phase_log first).
-func (g *generator) parseSaveDirectives() (mnaNodes []string, vmSignals []string) {
+//
+// A name that is NEITHER is a hard error, not a silent fallthrough. The
+// previous behavior classified any unrecognized name as a VM signal; at
+// runtime logger_log_signals then found nothing in vm->values and logged
+// 0.0 forever — so a typo'd .save argument compiled cleanly and produced
+// a plausible-looking all-zeros column in the CSV. Refusing to compile,
+// with the full list of what IS saveable, is strictly better. Same
+// philosophy as solverStructName's unknown-solver hard error.
+//
+// A declared-but-unconnected wire is its own distinct error: it exists as
+// a symbol, but it has no row in the MNA matrix, so there is no voltage
+// to record — logger_log_step would log 0.0 for it just like a typo.
+func (g *generator) parseSaveDirectives() (mnaNodes []string, vmSignals []string, err error) {
 	for _, d := range g.prog.Directives {
 		if d.Name != "save" {
 			continue
@@ -139,22 +158,90 @@ func (g *generator) parseSaveDirectives() (mnaNodes []string, vmSignals []string
 			// from the AST BinaryExpression printer — clean it to "main.lc_out"
 			name := cleanString(arg.String())
 
-			isMNA := false
-			for _, phys := range g.prog.Physicals {
-				for _, n := range phys.Nodes {
-					if cleanString(n) == name {
-						isMNA = true
-						break
-					}
-				}
-			}
-			if isMNA {
+			// Ground is always saveable (logger special-cases it to 0.0
+			// by definition, which for ground is correct, not a fallback).
+			if name == "gnd" || name == "0" {
 				mnaNodes = append(mnaNodes, name)
-			} else {
-				// VM signals are stored with dots in the values map (e.g. "main.generator.carrierWave")
-				vmSignals = append(vmSignals, name)
+				continue
 			}
+
+			if physNodeSet(g.prog.Physicals)[name] {
+				mnaNodes = append(mnaNodes, name)
+				continue
+			}
+
+			symType, declared := g.prog.Symbols[name]
+			if declared && symType == "wire" {
+				return nil, nil, fmt.Errorf(
+					".save(%s): '%s' is a declared wire, but it is not connected to any "+
+						"physical primitive — it has no MNA matrix row, so there is no "+
+						"voltage to record. Connect it to a component or remove it from .save().",
+					name, name)
+			}
+			if declared {
+				// VM signals are stored with dots in the values map
+				// (e.g. "main.generator.carrierWave")
+				vmSignals = append(vmSignals, name)
+				continue
+			}
+
+			return nil, nil, fmt.Errorf(
+				".save(%s): no MNA node or logic signal with this name exists — "+
+					"did you mean one of these?\n  MNA nodes:    %s\n  Logic signals: %s",
+				name,
+				joinSortedOrNone(saveableNodeNames(g.prog.Physicals)),
+				joinSortedOrNone(saveableSignalNames(g.prog.Symbols)))
 		}
 	}
-	return mnaNodes, vmSignals
+	return mnaNodes, vmSignals, nil
+}
+
+// physNodeSet builds the set of every (cleaned) node name that appears as
+// a terminal of some physical primitive — the names logger_log_step can
+// actually resolve to a solution-vector index.
+func physNodeSet(physicals []elaborator.PhysicalObject) map[string]bool {
+	set := make(map[string]bool)
+	for _, phys := range physicals {
+		for _, n := range phys.Nodes {
+			set[cleanString(n)] = true
+		}
+	}
+	return set
+}
+
+// saveableNodeNames returns every MNA node name a .save() could refer to,
+// for error-message display. Ground is omitted — it's always saveable but
+// listing it as a suggestion for a typo is never helpful.
+func saveableNodeNames(physicals []elaborator.PhysicalObject) []string {
+	set := physNodeSet(physicals)
+	delete(set, "gnd")
+	delete(set, "0")
+	names := make([]string, 0, len(set))
+	for n := range set {
+		names = append(names, n)
+	}
+	return names
+}
+
+// saveableSignalNames returns every logic-variable name a .save() could
+// refer to — every elaborated symbol that isn't a wire (wires are either
+// MNA nodes, listed separately, or unconnected, which is an error).
+func saveableSignalNames(symbols map[string]string) []string {
+	names := make([]string, 0, len(symbols))
+	for name, symType := range symbols {
+		if symType != "wire" {
+			names = append(names, name)
+		}
+	}
+	return names
+}
+
+// joinSortedOrNone renders a name list for an error message in a stable
+// order (Go map iteration is randomized), or "(none)" if empty.
+func joinSortedOrNone(names []string) string {
+	if len(names) == 0 {
+		return "(none)"
+	}
+	sort.Strings(names)
+	return strings.Join(names, ", ")
 }

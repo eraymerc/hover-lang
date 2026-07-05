@@ -42,7 +42,7 @@ func main() {
 	// rather than shifted by however much text came before it in some
 	// merged blob.
 	importedFiles := make(map[string]*elaborator.ImportedFile, len(loadResult.LoadOrder))
-
+	parseFailed := false
 	for _, path := range loadResult.LoadOrder {
 		source := loadResult.Sources[path]
 
@@ -56,7 +56,14 @@ func main() {
 			}
 		}
 
-		program := parser.Parse(tokens)
+		program, parseErrors := parser.Parse(tokens)
+		if len(parseErrors) > 0 {
+			parseFailed = true
+			fmt.Printf("[Parser] %d syntax error(s) in %s:\n", len(parseErrors), path)
+			for _, msg := range parseErrors {
+				fmt.Println("   -", msg)
+			}
+		}
 
 		// Pull out this file's own ImportStatement nodes so the elaborator
 		// can match them against loadResult.Imports[path] (which has the
@@ -80,6 +87,10 @@ func main() {
 		} else {
 			fmt.Printf("[Lexer]  %d tokens from %s (imported)\n", len(tokens), path)
 		}
+	}
+
+	if parseFailed {
+		os.Exit(1)
 	}
 
 	entryProgram := importedFiles[loadResult.EntryPath].Program
