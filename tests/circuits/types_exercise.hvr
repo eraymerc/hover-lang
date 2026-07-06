@@ -1,0 +1,32 @@
+// Golden test circuit: exercises the typed part of the language that the
+// example corpus (all-double) never touches — int/unsigned state, bitwise
+// and shift operators, arrays with initializers and indexing, and a typed
+// user function. Guards the structured-type refactor (ast.Type) and the
+// int64/uint64 codegen paths.
+.tran(0, 1m, 1u);
+.save(main.box.tick, main.box.mask, main.box.acc, main.box.pick, main.node_a);
+
+func int double_it(int x) {
+    return x * 2;
+}
+
+digital module Counter<>() [] {
+    state int tick = 0;
+    state unsigned int mask = 0;
+    state double acc = 0;
+    state double[4] gains = {0.5, 1.0, 2.0, 4.0};
+    state double pick = 0;
+
+    tick = tick + 1;
+    mask = (mask << 1) | (tick & 7);
+    pick = gains[tick % 4];
+    acc = acc + pick * 1m;
+    tick = double_it(tick) - tick;   // identity via the function — exercises int params
+}
+
+module main<>()[] {
+    wire node_a;
+    module box = Counter<>()[];
+    R<1k>()[node_a, gnd];
+    voltage_source<5>()[node_a, gnd];
+}
