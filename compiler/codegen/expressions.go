@@ -2,6 +2,8 @@ package codegen
 
 import (
 	"fmt"
+	"math"
+	"strconv"
 	ast "hover/compiler/ast"
 	"hover/compiler/elaborator"
 	"strings"
@@ -19,6 +21,27 @@ import (
 // differs from what an operator/call/assignment expects, rather than
 // relying on C++'s own implicit conversions.
 // ─────────────────────────────────────────────────────────────────────────────
+
+// integerizeLiteral re-types an operand for an integer-only context
+// (bitwise, shift, modulo): if the operand is a bare numeric literal with
+// an integral value, it is emitted as a C++ integer literal of type CInt —
+// the way C's untyped constants adapt to context — instead of the blanket
+// literal-is-CDouble convention. Without this, `x & 7` promoted to CDouble
+// and emitted `&` on doubles, which is not valid C++: bitwise/shift with a
+// literal operand could never compile. Non-literals and non-integral
+// literals pass through unchanged (semantic analysis already rejects
+// genuinely floating operands for these operators).
+func integerizeLiteral(expr ast.Expression, code string, t CType) (string, CType) {
+	n, ok := expr.(*ast.NumberExpression)
+	if !ok {
+		return code, t
+	}
+	v := elaborator.ParseEngineering(n.Value)
+	if math.IsInf(v, 0) || math.IsNaN(v) || v != math.Trunc(v) {
+		return code, t
+	}
+	return strconv.FormatInt(int64(v), 10), CInt
+}
 
 // emitExpr recursively translates a Hover expression into a C++ expression
 // string plus its inferred CType, in the context of the given LogicObject
@@ -48,6 +71,7 @@ func (g *generator) emitExpr(expr ast.Expression, logic elaborator.LogicObject) 
 			// system — preserved exactly as before.
 			return fmt.Sprintf("((%s) == 0.0 ? 1.0 : 0.0)", innerCode), CDouble
 		case "~":
+			innerCode, innerType = integerizeLiteral(n.Right, innerCode, innerType)
 			// Semantic analysis already rejects ~ on a float/double operand
 			// (see semantic/expressions.go's isFloatingType check), so by
 			// the time codegen sees this, innerType is guaranteed CInt or
@@ -98,6 +122,8 @@ func (g *generator) emitExpr(expr ast.Expression, logic elaborator.LogicObject) 
 			return fmt.Sprintf("((%s) == 0.0 ? 0.0 : (%s) / (%s))", rCast, lCast, rCast), resultType
 
 		case "%":
+			lCode, lType = integerizeLiteral(n.Left, lCode, lType)
+			rCode, rType = integerizeLiteral(n.Right, rCode, rType)
 			resultType := promote(lType, rType, "%")
 			lCast := emitCast(lCode, lType, resultType)
 			rCast := emitCast(rCode, rType, resultType)
@@ -115,15 +141,19 @@ func (g *generator) emitExpr(expr ast.Expression, logic elaborator.LogicObject) 
 			return fmt.Sprintf("pow(%s, %s)", lCast, rCast), CDouble
 
 		case "&", "|", "^":
-			// Semantic analysis already rejects float/double operands here
-			// (see isFloatingType check) — both operands are guaranteed
-			// integer-typed by the time codegen sees this.
+			// Semantic analysis already rejects float/double VARIABLES here
+			// (see isFloatingType check); literal operands adapt to integer
+			// context via integerizeLiteral.
+			lCode, lType = integerizeLiteral(n.Left, lCode, lType)
+			rCode, rType = integerizeLiteral(n.Right, rCode, rType)
 			resultType := promote(lType, rType, n.Operator)
 			lCast := emitCast(lCode, lType, resultType)
 			rCast := emitCast(rCode, rType, resultType)
 			return fmt.Sprintf("((%s) %s (%s))", lCast, n.Operator, rCast), resultType
 
 		case "<<", ">>":
+			lCode, lType = integerizeLiteral(n.Left, lCode, lType)
+			rCode, rType = integerizeLiteral(n.Right, rCode, rType)
 			// C's actual rule: shift result type follows the LEFT operand
 			// only — the right operand (shift count) doesn't participate
 			// in promotion. Preserved faithfully per design decision.
