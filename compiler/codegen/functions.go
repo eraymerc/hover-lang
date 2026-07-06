@@ -97,7 +97,7 @@ func (g *generator) emitOneFunction(cName string, fn *ast.FuncDeclStatement) {
 	g.push()
 
 	for _, p := range fn.Parameters {
-		localName := fmt.Sprintf("%s_%s", cName, p.Name)
+		localName := mangle(cName + "." + p.Name)
 		g.line("%s", hoverTypeOf(p.Type).cDecayedLocalDecl(localName, p.Name))
 	}
 

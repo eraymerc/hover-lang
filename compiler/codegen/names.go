@@ -4,6 +4,7 @@ import (
 	"fmt"
 	ast "hover/compiler/ast"
 	"hover/compiler/elaborator"
+	"strconv"
 	"strings"
 )
 
@@ -38,7 +39,13 @@ func dottedPath(expr ast.Expression) (string, bool) {
 // mangle converts a dotted mangled name to a valid C++ identifier.
 // "main.ctrl_pid.integral" → "main_ctrl_pid_integral"
 func mangle(name string) string {
-	return strings.ReplaceAll(name, ".", "_")
+	var b strings.Builder
+	b.WriteByte('v')
+	for _, seg := range strings.Split(name, ".") {
+		b.WriteString(strconv.Itoa(len(seg)))
+		b.WriteString(seg)
+	}
+	return b.String()
 }
 
 // cStr emits a C string literal for a net name (used in api_V / api_I calls).
