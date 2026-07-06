@@ -1,12 +1,14 @@
 package semantic
 
+import ast "hover/compiler/ast"
+
 // ==========================================
 // SYMBOL TABLE
 // ==========================================
 
 type Symbol struct {
 	Name    string
-	Type    string
+	Type    ast.Type
 	IsState bool
 }
 

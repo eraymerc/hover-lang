@@ -70,9 +70,9 @@ func (g *generator) emitFunctions() {
 func (g *generator) emitForwardDecl(cName string, fn *ast.FuncDeclStatement) {
 	params := []string{"VM *vm"}
 	for _, p := range fn.Parameters {
-		params = append(params, parseHoverType(p.Type).cParamDecl(p.Name))
+		params = append(params, hoverTypeOf(p.Type).cParamDecl(p.Name))
 	}
-	ret := parseHoverType(fn.ReturnType)
+	ret := hoverTypeOf(fn.ReturnType)
 	g.raw(fmt.Sprintf("static %s %s(%s);", ret.cReturnType(), cName, strings.Join(params, ", ")))
 }
 
@@ -88,17 +88,17 @@ func (g *generator) emitOneFunction(cName string, fn *ast.FuncDeclStatement) {
 
 	params := []string{"VM *vm"}
 	for _, p := range fn.Parameters {
-		params = append(params, parseHoverType(p.Type).cParamDecl(p.Name))
+		params = append(params, hoverTypeOf(p.Type).cParamDecl(p.Name))
 		fnLogic.Ports[p.Name] = cName + "." + p.Name
 	}
 
-	ret := parseHoverType(fn.ReturnType)
+	ret := hoverTypeOf(fn.ReturnType)
 	g.raw(fmt.Sprintf("static %s %s(%s) {", ret.cReturnType(), cName, strings.Join(params, ", ")))
 	g.push()
 
 	for _, p := range fn.Parameters {
 		localName := fmt.Sprintf("%s_%s", cName, p.Name)
-		g.line("%s", parseHoverType(p.Type).cDecayedLocalDecl(localName, p.Name))
+		g.line("%s", hoverTypeOf(p.Type).cDecayedLocalDecl(localName, p.Name))
 	}
 
 	g.emitStmt(fn.Body, fnLogic, true)

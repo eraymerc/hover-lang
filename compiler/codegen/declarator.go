@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	ast "hover/compiler/ast"
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -31,38 +33,14 @@ type hoverType struct {
 	dims  []int // array dimensions, outer→inner: double[2][3] -> {2, 3}
 }
 
-// parseHoverType decomposes a Hover type string into a hoverType.
-//
-// Grammar (as produced by parser.parseTypeString):
-//
-//	[unsigned ] base ('*')* ( '[' N ']' )*
-//
-// e.g. "double", "double[2]", "double*", "double[2][3]", "int*[4]".
-// Pointer stars bind to the element and array dimensions are outermost,
-// matching the C reading of "double *x[4]" as "array of pointers to double".
-func parseHoverType(t string) hoverType {
-	ht := hoverType{elem: hoverTypeToCType(t)}
-	ht.stars = strings.Count(t, "*")
-
-	rest := t
-	for {
-		open := strings.IndexByte(rest, '[')
-		if open == -1 {
-			break
-		}
-		closeIdx := strings.IndexByte(rest[open:], ']')
-		if closeIdx == -1 {
-			break
-		}
-		closeIdx += open
-		n, err := strconv.Atoi(strings.TrimSpace(rest[open+1 : closeIdx]))
-		if err != nil || n < 0 {
-			n = 0
-		}
-		ht.dims = append(ht.dims, n)
-		rest = rest[closeIdx+1:]
-	}
-	return ht
+// hoverTypeOf converts the parser's structured ast.Type into codegen's
+// hoverType (element CType + declarator shape). This is a field mapping,
+// not a parse — the string grammar this function used to re-parse
+// ("unsigned int*[4]") no longer exists anywhere in the pipeline.
+func hoverTypeOf(t ast.Type) hoverType {
+	dims := make([]int, len(t.Dims))
+	copy(dims, t.Dims)
+	return hoverType{elem: hoverTypeToCType(t), stars: t.Stars, dims: dims}
 }
 
 // isArray reports whether this type has at least one array dimension.

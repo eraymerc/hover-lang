@@ -34,10 +34,10 @@ func (g *generator) emitStmt(stmt ast.Statement, logic elaborator.LogicObject, i
 	switch s := stmt.(type) {
 
 	case *ast.LocalDeclStatement:
-		if s.Type == "wire" {
+		if s.Type.IsWire() {
 			return
 		}
-		ht := parseHoverType(s.Type)
+		ht := hoverTypeOf(s.Type)
 		for _, d := range s.Decls {
 			target := resolveWrite(d.Name, logic)
 			if s.IsState {

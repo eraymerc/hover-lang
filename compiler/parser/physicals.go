@@ -58,7 +58,7 @@ func (p *parser) parseModuleStatement() ast.Statement {
 		p.nextToken()
 		for p.currentTokenType() != token.GT && p.hasTokens() {
 			arg := ast.DeclStaticArg{}
-			arg.Type = p.parseTypeString()
+			arg.Type = p.parseType()
 			arg.Name = p.currentToken().Literal
 			p.expect(token.IDENT)
 			if p.currentTokenType() == token.ASSIGN {
@@ -82,7 +82,7 @@ func (p *parser) parseModuleStatement() ast.Statement {
 				arg.Direction = p.currentToken().Literal
 				p.nextToken()
 			}
-			arg.Type = p.parseTypeString()
+			arg.Type = p.parseType()
 			arg.Name = p.currentToken().Literal
 			p.expect(token.IDENT)
 			stmt.LogicArgs = append(stmt.LogicArgs, arg)
@@ -132,14 +132,14 @@ func (p *parser) parsePhysicalPrimitive() ast.Statement {
 
 func (p *parser) parseFuncDecl() ast.Statement {
 	stmt := &ast.FuncDeclStatement{Token: p.nextToken()}
-	stmt.ReturnType = p.parseTypeString()
+	stmt.ReturnType = p.parseType()
 	stmt.Name = p.currentToken().Literal
 	p.expect(token.IDENT)
 
 	p.expect(token.LPAREN)
 	for p.currentTokenType() != token.RPAREN && p.hasTokens() {
 		param := ast.FuncParam{}
-		param.Type = p.parseTypeString()
+		param.Type = p.parseType()
 		param.Name = p.currentToken().Literal
 		p.expect(token.IDENT)
 		stmt.Parameters = append(stmt.Parameters, param)

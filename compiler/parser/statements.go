@@ -78,7 +78,7 @@ func (p *parser) parseLocalDecl() ast.Statement {
 		p.nextToken()
 	}
 
-	stmt.Type = p.parseTypeString()
+	stmt.Type = p.parseType()
 
 	for {
 		decl := &ast.VarDecl{}
@@ -193,14 +193,14 @@ func (p *parser) parseExternFuncDecl() ast.Statement {
 	p.nextToken() // consume 'func'
 
 	stmt := &ast.FuncDeclStatement{Token: externTok, IsExtern: true}
-	stmt.ReturnType = p.parseTypeString()
+	stmt.ReturnType = p.parseType()
 	stmt.Name = p.currentToken().Literal
 	p.expect(token.IDENT)
 
 	p.expect(token.LPAREN)
 	for p.currentTokenType() != token.RPAREN && p.hasTokens() {
 		param := ast.FuncParam{}
-		param.Type = p.parseTypeString()
+		param.Type = p.parseType()
 		if p.currentTokenType() == token.IDENT { // param name optional (C-style)
 			param.Name = p.currentToken().Literal
 			p.nextToken()

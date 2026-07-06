@@ -83,7 +83,7 @@ func (g *generator) collectAllVars() []string {
 		}
 		switch s := stmt.(type) {
 		case *ast.LocalDeclStatement:
-			if s.Type == "wire" {
+			if s.Type.IsWire() {
 				return
 			}
 			for _, d := range s.Decls {
@@ -151,10 +151,10 @@ func (g *generator) collectVarTypes() map[string]hoverType {
 		}
 		switch s := stmt.(type) {
 		case *ast.LocalDeclStatement:
-			if s.Type == "wire" {
+			if s.Type.IsWire() {
 				return
 			}
-			ht := parseHoverType(s.Type)
+			ht := hoverTypeOf(s.Type)
 			for _, d := range s.Decls {
 				types[resolveWrite(d.Name, logic)] = ht
 			}
@@ -164,7 +164,7 @@ func (g *generator) collectVarTypes() map[string]hoverType {
 			if id, ok := s.Left.(*ast.IdentifierExpression); ok {
 				mangled := resolveWrite(id.Value, logic)
 				if _, exists := types[mangled]; !exists {
-					types[mangled] = parseHoverType("double")
+					types[mangled] = hoverTypeOf(ast.TDouble)
 				}
 			}
 		case *ast.BlockStatement:
@@ -193,14 +193,14 @@ func (g *generator) collectVarTypes() map[string]hoverType {
 	// walk g.prog.Functions and g.prog.AliasedFunctions to record them too.
 	for _, fn := range g.prog.Functions {
 		for _, p := range fn.Parameters {
-			types[mangle(fn.Name+"."+p.Name)] = parseHoverType(p.Type)
+			types[mangle(fn.Name+"."+p.Name)] = hoverTypeOf(p.Type)
 		}
 	}
 	for alias, byName := range g.prog.AliasedFunctions {
 		for _, fn := range byName {
 			cName := mangle(alias + "." + fn.Name)
 			for _, p := range fn.Parameters {
-				types[mangle(cName+"."+p.Name)] = parseHoverType(p.Type)
+				types[mangle(cName+"."+p.Name)] = hoverTypeOf(p.Type)
 			}
 		}
 	}
@@ -219,5 +219,5 @@ func (g *generator) typeOf(mangledName string) hoverType {
 	if t, ok := g.typeTable[mangledName]; ok {
 		return t
 	}
-	return parseHoverType("double")
+	return hoverTypeOf(ast.TDouble)
 }

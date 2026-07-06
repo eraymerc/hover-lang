@@ -171,7 +171,7 @@ func (g *generator) parseSaveDirectives() (mnaNodes []string, vmSignals []string
 			}
 
 			symType, declared := g.prog.Symbols[name]
-			if declared && symType == "wire" {
+			if declared && symType.IsWire() {
 				return nil, nil, fmt.Errorf(
 					".save(%s): '%s' is a declared wire, but it is not connected to any "+
 						"physical primitive — it has no MNA matrix row, so there is no "+
@@ -226,10 +226,10 @@ func saveableNodeNames(physicals []elaborator.PhysicalObject) []string {
 // saveableSignalNames returns every logic-variable name a .save() could
 // refer to — every elaborated symbol that isn't a wire (wires are either
 // MNA nodes, listed separately, or unconnected, which is an error).
-func saveableSignalNames(symbols map[string]string) []string {
+func saveableSignalNames(symbols map[string]ast.Type) []string {
 	names := make([]string, 0, len(symbols))
 	for name, symType := range symbols {
-		if symType != "wire" {
+		if !symType.IsWire() {
 			names = append(names, name)
 		}
 	}

@@ -5,13 +5,17 @@ import (
 	"strings"
 )
 
-func isNumeric(t string) bool {
-	base := getBaseType(t)
-	switch base {
+// isNumeric reports whether a value of type t can be used where a number is
+// expected. Deliberately checks the BASE only (matching the old string-based
+// behavior, which stripped array/pointer decorations first): an array or
+// pointer of a numeric base still passes, and rejecting those is left to the
+// specific contexts that care (indexing, conditions).
+func isNumeric(t ast.Type) bool {
+	switch t.Base {
 	case "double", "int", "float", "number", "unknown":
 		return true
 	}
-	return strings.HasPrefix(base, "unsigned")
+	return strings.HasPrefix(t.Base, "unsigned")
 }
 
 // isBitwiseOp reports whether op is one of the bitwise/shift operators
@@ -30,11 +34,10 @@ func isBitwiseOp(op string) bool {
 // would reject as an operand to a bitwise operator. "number" (untyped
 // literal) and "unknown" (already-errored expression) are deliberately
 // NOT considered floating here — literals like the integer constant `5`
-// parse as NumberExpression → "number", and rejecting those would
+// parse as NumberExpression -> TNumber, and rejecting those would
 // incorrectly flag every bitwise literal operand as an error.
-func isFloatingType(t string) bool {
-	base := getBaseType(t)
-	return base == "double" || base == "float"
+func isFloatingType(t ast.Type) bool {
+	return t.Base == "double" || t.Base == "float"
 }
 
 // isStructuralInit returns true if an expression is simple enough
@@ -52,26 +55,4 @@ func isStructuralInit(expr ast.Expression) bool {
 		return true
 	}
 	return false
-}
-
-func getBaseType(t string) string {
-	if idx := strings.Index(t, "["); idx != -1 {
-		t = t[:idx]
-	}
-	return strings.TrimRight(t, "*")
-}
-
-// stripOneArrayDim removes the OUTERMOST array dimension, mirroring what one
-// `[i]` does in C: "double[2][2]" -> "double[2]" -> "double".
-func stripOneArrayDim(t string) string {
-	open := strings.Index(t, "[")
-	if open == -1 {
-		return t
-	}
-	closeIdx := strings.Index(t[open:], "]")
-	if closeIdx == -1 {
-		return t
-	}
-	closeIdx += open
-	return t[:open] + t[closeIdx+1:]
 }

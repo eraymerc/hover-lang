@@ -21,7 +21,7 @@ func (a *Analyzer) checkStatement(stmt ast.Statement) {
 			}
 		}
 
-		if a.currentDomain == token.MODULE && node.Type != "wire" && !node.IsState {
+		if a.currentDomain == token.MODULE && !node.Type.IsWire() && !node.IsState {
 			for _, decl := range node.Decls {
 				a.addError(node, fmt.Sprintf(
 					"'%s' — variables in structural modules must be declared as 'state'. "+
@@ -60,7 +60,7 @@ func (a *Analyzer) checkStatement(stmt ast.Statement) {
 		}
 
 		condType := a.checkExpression(node.Condition)
-		if condType == "wire" {
+		if condType.IsWire() {
 			a.addError(node, "Condition expression cannot be a physical wire. Use V() or I() to read its value.")
 		}
 
@@ -85,18 +85,18 @@ func (a *Analyzer) checkStatement(stmt ast.Statement) {
 		a.checkExpression(node.Condition)
 
 		condType := a.checkExpression(node.Condition)
-		if condType == "wire" {
+		if condType.IsWire() {
 			a.addError(node, "Condition expression cannot be a physical wire.")
 		}
 
 		a.checkStatement(node.Body)
 	case *ast.ReturnStatement:
 		retType := a.checkExpression(node.ReturnValue)
-		if retType == "wire" {
+		if retType.IsWire() {
 			a.addError(node, "Functions cannot return physical wires.")
 		}
 	case *ast.ModuleDeclStatement:
-		a.currentScope.Define(&Symbol{Name: node.Name, Type: "module"})
+		a.currentScope.Define(&Symbol{Name: node.Name, Type: ast.TModule})
 		parent := a.currentScope
 		a.currentScope = NewScope(parent)
 		for _, arg := range node.StaticArgs {
@@ -106,7 +106,7 @@ func (a *Analyzer) checkStatement(stmt ast.Statement) {
 			a.currentScope.Define(&Symbol{Name: arg.Name, Type: arg.Type})
 		}
 		for _, port := range node.PhysPorts {
-			a.currentScope.Define(&Symbol{Name: port, Type: "wire"})
+			a.currentScope.Define(&Symbol{Name: port, Type: ast.TWire})
 		}
 
 		prevDomain := a.currentDomain
@@ -117,7 +117,7 @@ func (a *Analyzer) checkStatement(stmt ast.Statement) {
 		a.currentDomain = prevDomain
 		a.currentScope = parent
 	case *ast.FuncDeclStatement:
-		a.currentScope.Define(&Symbol{Name: node.Name, Type: "func"})
+		a.currentScope.Define(&Symbol{Name: node.Name, Type: ast.TFunc})
 		if node.Body == nil { // extern: nothing to analyze
 			return
 		}
@@ -143,7 +143,7 @@ func (a *Analyzer) checkStatement(stmt ast.Statement) {
 
 		for _, arg := range physArgs {
 			t := a.checkExpression(arg)
-			if t != "wire" && t != "unknown" {
+			if !t.IsWire() && t.Base != "unknown" {
 				a.addError(stmt, fmt.Sprintf("Physical port must be a wire, got '%s'", t))
 			}
 		}

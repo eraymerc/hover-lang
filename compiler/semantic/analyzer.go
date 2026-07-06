@@ -19,14 +19,14 @@ type Analyzer struct {
 
 func NewAnalyzer() *Analyzer {
 	globalScope := NewScope(nil)
-	globalScope.Define(&Symbol{Name: "time", Type: "double"})
-	globalScope.Define(&Symbol{Name: "dt", Type: "double"})
-	globalScope.Define(&Symbol{Name: "gnd", Type: "wire"})
-	globalScope.Define(&Symbol{Name: "V", Type: "func"})
-	globalScope.Define(&Symbol{Name: "I", Type: "func"})
-	globalScope.Define(&Symbol{Name: "idt", Type: "func"})
-	globalScope.Define(&Symbol{Name: "ddt", Type: "func"})
-	globalScope.Define(&Symbol{Name: "nr_prev", Type: "func"})
+	globalScope.Define(&Symbol{Name: "time", Type: ast.TDouble})
+	globalScope.Define(&Symbol{Name: "dt", Type: ast.TDouble})
+	globalScope.Define(&Symbol{Name: "gnd", Type: ast.TWire})
+	globalScope.Define(&Symbol{Name: "V", Type: ast.TFunc})
+	globalScope.Define(&Symbol{Name: "I", Type: ast.TFunc})
+	globalScope.Define(&Symbol{Name: "idt", Type: ast.TFunc})
+	globalScope.Define(&Symbol{Name: "ddt", Type: ast.TFunc})
+	globalScope.Define(&Symbol{Name: "nr_prev", Type: ast.TFunc})
 	return &Analyzer{currentScope: globalScope, Errors: []string{}, inLogicBlock: false, currentDomain: token.ILLEGAL}
 }
 
@@ -53,7 +53,7 @@ func NewAnalyzer() *Analyzer {
 func (a *Analyzer) RegisterImportedFunctions(importedProgram *ast.Program) {
 	for _, stmt := range importedProgram.Statements {
 		if f, ok := stmt.(*ast.FuncDeclStatement); ok {
-			a.currentScope.Define(&Symbol{Name: f.Name, Type: "func"})
+			a.currentScope.Define(&Symbol{Name: f.Name, Type: ast.TFunc})
 		}
 	}
 }

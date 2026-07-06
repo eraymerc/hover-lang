@@ -271,7 +271,7 @@ func (g *generator) emitUserFunctionCall(fnName string, argExprs []ast.Expressio
 	for i, arg := range argExprs {
 		argCode, argType := g.emitExpr(arg, logic)
 		if i < len(fnDecl.Parameters) {
-			pht := parseHoverType(fnDecl.Parameters[i].Type)
+			pht := hoverTypeOf(fnDecl.Parameters[i].Type)
 			switch {
 			case fnDecl.IsExtern:
 				// reconcile Hover storage with the header's real C types
@@ -289,7 +289,7 @@ func (g *generator) emitUserFunctionCall(fnName string, argExprs []ast.Expressio
 	if fnDecl.IsExtern {
 		callName = fnDecl.Name // raw C name, never mangled
 	}
-	returnType := parseHoverType(fnDecl.ReturnType).elem
+	returnType := hoverTypeOf(fnDecl.ReturnType).elem
 	return fmt.Sprintf("%s(%s)", callName, strings.Join(args, ", ")), returnType
 }
 

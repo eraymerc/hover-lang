@@ -98,9 +98,9 @@ func (e *Elaborator) flattenModule(mod *ast.ModuleDeclStatement, prefix string, 
 			})
 
 		case *ast.LocalDeclStatement:
-			if s.Type == "wire" {
+			if s.Type.IsWire() {
 				for _, d := range s.Decls {
-					e.output.Symbols[prefix+"."+d.Name] = "wire"
+					e.output.Symbols[prefix+"."+d.Name] = ast.TWire
 				}
 				continue
 			}

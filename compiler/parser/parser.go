@@ -2,6 +2,8 @@ package parser
 
 import (
 	"fmt"
+	"strconv"
+
 	ast "hover/compiler/ast"
 	token "hover/compiler/token"
 )
@@ -94,22 +96,38 @@ func (p *parser) addError(msg string) {
 	p.errors = append(p.errors, fmt.Sprintf("Error at line %d, col %d: %s", p.currentToken().Line, p.currentToken().Column, msg))
 }
 
-// Parses type signatures like "unsigned int", "double", or "double[2]"
-func (p *parser) parseTypeString() string {
-	t := ""
+// parseType parses a type signature like "unsigned int", "double*", or
+// "double[2][3]" directly into the structured ast.Type — the single place
+// in the whole pipeline where type syntax is parsed. (It used to build a
+// string that semantic and codegen each re-parsed with their own shadow
+// parsers; see ast/types.go.)
+func (p *parser) parseType() ast.Type {
+	t := ast.Type{}
 	if p.currentTokenType() == token.UNSIGNED {
-		t = "unsigned "
 		p.nextToken()
+		t.Base = "unsigned int"
+		if p.currentTokenType() == token.INT {
+			p.nextToken() // "unsigned int" — consume the int keyword too
+		}
+	} else {
+		t.Base = p.currentToken().Literal
+		p.nextToken() // base keyword
 	}
-	t += p.currentToken().Literal
-	p.nextToken() // base keyword
 	for p.currentTokenType() == token.ASTERISK {
-		t += "*"
+		t.Stars++
 		p.nextToken()
 	}
 	for p.currentTokenType() == token.LBRACKET {
 		p.nextToken()
-		t += "[" + p.currentToken().Literal + "]"
+		n, err := strconv.Atoi(p.currentToken().Literal)
+		if err != nil || n < 0 {
+			// The old string pipeline silently turned a non-numeric
+			// dimension into 0 three stages later (codegen's Atoi
+			// fallback) — surface it here where the line number is right.
+			p.addError(fmt.Sprintf("array dimension must be a non-negative integer literal, got '%s'", p.currentToken().Literal))
+			n = 0
+		}
+		t.Dims = append(t.Dims, n)
 		p.nextToken()
 		p.expect(token.RBRACKET)
 	}

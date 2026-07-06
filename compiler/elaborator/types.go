@@ -33,7 +33,7 @@ type ElaboratedProgram struct {
 	Physicals  []PhysicalObject
 	Logic      []LogicObject
 	Directives []*ast.DirectiveStatement
-	Symbols    map[string]string
+	Symbols    map[string]ast.Type
 	Functions  map[string]*ast.FuncDeclStatement // User-defined functions for runtime calls
 
 	// AliasedFunctions holds functions from `import "x.hvr" as Y;` style
@@ -100,7 +100,7 @@ func New(program *ast.Program) *Elaborator {
 		output: &ElaboratedProgram{
 			Physicals:        []PhysicalObject{},
 			Logic:            []LogicObject{},
-			Symbols:          make(map[string]string),
+			Symbols:          make(map[string]ast.Type),
 			Functions:        make(map[string]*ast.FuncDeclStatement),
 			AliasedFunctions: make(map[string]map[string]*ast.FuncDeclStatement),
 		},
@@ -137,7 +137,7 @@ func NewWithImports(files map[string]*ImportedFile, entryPath string) (*Elaborat
 		output: &ElaboratedProgram{
 			Physicals:        []PhysicalObject{},
 			Logic:            []LogicObject{},
-			Symbols:          make(map[string]string),
+			Symbols:          make(map[string]ast.Type),
 			Functions:        make(map[string]*ast.FuncDeclStatement),
 			AliasedFunctions: make(map[string]map[string]*ast.FuncDeclStatement),
 		},

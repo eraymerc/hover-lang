@@ -3,12 +3,11 @@ package semantic
 import (
 	"fmt"
 	ast "hover/compiler/ast"
-	"strings"
 )
 
-func (a *Analyzer) checkExpression(exp ast.Expression) string {
+func (a *Analyzer) checkExpression(exp ast.Expression) ast.Type {
 	if exp == nil {
-		return "unknown"
+		return ast.TUnknown
 	}
 	switch node := exp.(type) {
 	case *ast.IdentifierExpression:
@@ -16,9 +15,9 @@ func (a *Analyzer) checkExpression(exp ast.Expression) string {
 			return sym.Type
 		}
 		a.addError(node, fmt.Sprintf("Undeclared variable '%s'", node.Value))
-		return "unknown"
+		return ast.TUnknown
 	case *ast.NumberExpression:
-		return "number"
+		return ast.TNumber
 	case *ast.BinaryExpression:
 		l := a.checkExpression(node.Left)
 		r := a.checkExpression(node.Right)
@@ -27,9 +26,9 @@ func (a *Analyzer) checkExpression(exp ast.Expression) string {
 			return r
 		}
 
-		if l == "wire" || r == "wire" {
+		if l.IsWire() || r.IsWire() {
 			a.addError(node, "Cannot perform math on physical wires. Use V() or I() to read their values.")
-			return "unknown"
+			return ast.TUnknown
 		}
 
 		if isBitwiseOp(node.Operator) {
@@ -55,7 +54,7 @@ func (a *Analyzer) checkExpression(exp ast.Expression) string {
 		return l
 	case *ast.UnaryExpression:
 		r := a.checkExpression(node.Right)
-		if r == "wire" {
+		if r.IsWire() {
 			a.addError(node, "Cannot perform math on a physical wire. Use V() or I() to read its value.")
 		}
 		if node.Operator == "~" && isFloatingType(r) {
@@ -65,10 +64,14 @@ func (a *Analyzer) checkExpression(exp ast.Expression) string {
 				r))
 		}
 		if node.Operator == "&" {
-			return r + "*"
+			return r.AddrOf()
 		}
 		if node.Operator == "*" {
-			return getBaseType(r)
+			// One dereference removes one pointer level. (The old
+			// string-based code stripped ALL decorations at once via
+			// getBaseType — **pp dereferenced once now correctly yields a
+			// pointer instead of the bare element type.)
+			return r.Deref()
 		}
 		return r
 	case *ast.CallExpression:
@@ -76,18 +79,21 @@ func (a *Analyzer) checkExpression(exp ast.Expression) string {
 		for _, arg := range node.Arguments {
 			a.checkExpression(arg)
 		}
-		return "double"
+		return ast.TDouble
 	case *ast.IndexExpression:
 		lType := a.checkExpression(node.Left)
 		iType := a.checkExpression(node.Index)
-		if !isNumeric(iType) && iType != "wire" {
+		if !isNumeric(iType) && !iType.IsWire() {
 			a.addError(node, fmt.Sprintf("Array index must be numeric, got '%s'", iType))
 		}
-		if !strings.Contains(lType, "[") && !strings.HasSuffix(lType, "*") &&
-			lType != "unknown" && lType != "wire" {
+		if !lType.IsArray() && lType.Stars == 0 &&
+			lType.Base != "unknown" && !lType.IsWire() {
 			a.addError(node, fmt.Sprintf("Cannot index non-array type '%s'", lType))
 		}
-		return stripOneArrayDim(lType)
+		// One subscript removes the outermost array dimension (or one
+		// pointer level when indexing a pointer — the old code returned
+		// the pointer type unchanged, which was wrong).
+		return lType.IndexOnce()
 	}
-	return "unknown"
+	return ast.TUnknown
 }

@@ -1,6 +1,6 @@
 package codegen
 
-import "strings"
+import ast "hover/compiler/ast"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // C++ TYPE SYSTEM
@@ -41,22 +41,18 @@ func (c CType) String() string {
 	return "double"
 }
 
-// hoverTypeToCType maps a Hover declared-type string (as stored in
-// ast.LocalDeclStatement.Type, ast.FuncParam.Type, ast.FuncDeclStatement.ReturnType)
-// to its CType. Array suffixes ("double[4]") are stripped first — see
-// baseHoverType — since the element type is what determines arithmetic
-// behavior; array-ness itself doesn't affect promotion rules.
+// hoverTypeToCType maps a Hover declared type to its CType. Only the BASE
+// participates — the element type is what determines arithmetic behavior;
+// array/pointer shape doesn't affect promotion rules (declarator.go tracks
+// the full shape for declaration emission).
 //
 // "wire" has no CType — wires are topological, never stored as runtime
 // values, and callers must not call this on a wire-typed declaration.
 // "number" (the type of a bare literal, from semantic's untyped-literal
 // convention) defaults to CDouble — matching the existing behavior where
-// every literal was emitted as a double before this type system existed,
-// and avoiding a forced re-typing of every numeric literal in existing
-// Hover source.
-func hoverTypeToCType(hoverType string) CType {
-	base := baseHoverType(hoverType)
-	switch base {
+// every literal was emitted as a double before this type system existed.
+func hoverTypeToCType(t ast.Type) CType {
+	switch t.Base {
 	case "double", "number", "unknown", "":
 		return CDouble
 	case "float":
@@ -67,16 +63,6 @@ func hoverTypeToCType(hoverType string) CType {
 		return CUInt
 	}
 	return CDouble
-}
-
-// baseHoverType strips an array suffix like "[4]" from a Hover type string,
-// mirroring semantic.getBaseType's behavior on the codegen side.
-func baseHoverType(t string) string {
-	if idx := strings.IndexByte(t, '['); idx != -1 {
-		t = t[:idx]
-	}
-	t = strings.TrimRight(t, "*")
-	return strings.TrimSpace(t)
 }
 
 // promote computes the result CType of applying a binary operator to two

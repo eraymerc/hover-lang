@@ -139,7 +139,7 @@ func (rs *ReturnStatement) String() string {
 type LocalDeclStatement struct {
 	Token   token.Token
 	IsState bool
-	Type    string
+	Type    Type
 	Decls   []*VarDecl
 }
 
@@ -156,7 +156,7 @@ func (ld *LocalDeclStatement) String() string {
 	if ld.IsState {
 		out.WriteString("state ")
 	}
-	out.WriteString(ld.Type + " ")
+	out.WriteString(ld.Type.String() + " ")
 	decls := []string{}
 	for _, d := range ld.Decls {
 		decl := d.Name
@@ -196,7 +196,7 @@ func (as *AssignmentStatement) String() string {
 
 type FuncDeclStatement struct {
 	Token      token.Token
-	ReturnType string
+	ReturnType Type
 	Name       string
 	Parameters []FuncParam
 	Body       *BlockStatement
@@ -204,7 +204,7 @@ type FuncDeclStatement struct {
 }
 
 type FuncParam struct {
-	Type string
+	Type Type
 	Name string
 }
 
@@ -216,7 +216,7 @@ func (fd *FuncDeclStatement) String() string {
 	if fd.Body != nil {
 		body = fd.Body.String()
 	}
-	return "func " + fd.ReturnType + " " + fd.Name + "(...) " + body
+	return "func " + fd.ReturnType.String() + " " + fd.Name + "(...) " + body
 }
 
 type ModuleDeclStatement struct {
@@ -229,14 +229,14 @@ type ModuleDeclStatement struct {
 }
 
 type DeclStaticArg struct {
-	Type  string
+	Type  Type
 	Name  string
 	Value Expression
 }
 
 type DeclLogicArg struct {
 	Direction string
-	Type      string
+	Type      Type
 	Name      string
 }
 
