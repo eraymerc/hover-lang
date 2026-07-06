@@ -7,19 +7,32 @@ import (
 	"strings"
 )
 
-// ─────────────────────────────────────────────────────────────────────────────
-// STRING CLEANUP
-// ─────────────────────────────────────────────────────────────────────────────
-
-// cleanString removes spaces, quotes, and parentheses from AST stringification
-// to ensure precise matching between MNA matrices and VM signals.
-func cleanString(s string) string {
-	s = strings.ReplaceAll(s, " ", "")
-	s = strings.ReplaceAll(s, "\"", "")
-	s = strings.ReplaceAll(s, "'", "")
-	s = strings.ReplaceAll(s, "(", "")
-	s = strings.ReplaceAll(s, ")", "")
-	return s
+// dottedPath extracts a dotted name path ("main.q1_base") from an
+// expression STRUCTURALLY — IdentifierExpression or a chain of "."
+// BinaryExpressions — returning ok=false for anything else. This replaces
+// cleanString(expr.String()): round-tripping the AST through the debug
+// pretty-printer ("(main . q1_base)") and scrubbing the punctuation back
+// out was a shadow parser, and it silently "succeeded" on expressions
+// that were never valid name paths at all.
+func dottedPath(expr ast.Expression) (string, bool) {
+	switch e := expr.(type) {
+	case *ast.IdentifierExpression:
+		return e.Value, true
+	case *ast.BinaryExpression:
+		if e.Operator != "." {
+			return "", false
+		}
+		left, ok := dottedPath(e.Left)
+		if !ok {
+			return "", false
+		}
+		right, rok := e.Right.(*ast.IdentifierExpression)
+		if !rok {
+			return "", false
+		}
+		return left + "." + right.Value, true
+	}
+	return "", false
 }
 
 // mangle converts a dotted mangled name to a valid C++ identifier.

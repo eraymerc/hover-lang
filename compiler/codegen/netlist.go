@@ -57,16 +57,16 @@ func (g *generator) emitBuildNetlist() {
 func (g *generator) emitRegisterCall(phys elaborator.PhysicalObject) {
 	// Register all nodes this primitive touches
 	for _, n := range phys.Nodes {
-		cleanN := cleanString(n)
+		cleanN := n // elaborator names are structural now — nothing to scrub
 		if cleanN != "gnd" && cleanN != "0" && cleanN != "" {
 			g.line("sys->register_node(%s);", cStr(cleanN))
 		}
 	}
 	// Register branch if this primitive needs one
-	t := strings.ToLower(cleanString(phys.Type))
+	t := strings.ToLower(phys.Type)
 	if t == "l" || t == "inductor" || t == "v" || t == "voltage_source" ||
 		t == "e" || t == "vcvs" || t == "h" || t == "ccvs" {
-		g.line("sys->register_branch(%s);", cStr(cleanString(phys.Name)))
+		g.line("sys->register_branch(%s);", cStr(phys.Name))
 	}
 }
 

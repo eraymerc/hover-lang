@@ -18,6 +18,15 @@ func (e *Elaborator) mangleNode(n, prefix string, ports map[string]string) strin
 	return prefix + "." + n
 }
 
+// mangleExpression resolves a name-path expression (a port/signal argument
+// or a write target) to its mangled dotted name. Supported forms are
+// identifiers, "."-chains of identifiers, bare numeric literals (a constant
+// wired directly into a logic port, e.g. voltage_source(5)), and index
+// expressions (which resolve to their base variable — the write target of
+// arr[i] is arr). Anything else is an elaboration error: the old fallback
+// returned exp.String(), smuggling pretty-printer output ("(a * b)") into
+// the name space, where it eventually surfaced as either a C++ compile
+// error or a silently wrong signal name.
 func (e *Elaborator) mangleExpression(exp ast.Expression, prefix string, ports map[string]string) string {
 	if exp == nil {
 		return ""
@@ -25,12 +34,24 @@ func (e *Elaborator) mangleExpression(exp ast.Expression, prefix string, ports m
 	switch n := exp.(type) {
 	case *ast.IdentifierExpression:
 		return e.mangleNode(n.Value, prefix, ports)
+	case *ast.NumberExpression:
+		return n.Value
+	case *ast.IndexExpression:
+		return e.mangleExpression(n.Left, prefix, ports)
 	case *ast.BinaryExpression:
 		if n.Operator == "." {
-			return e.mangleExpression(n.Left, prefix, ports) + "." + n.Right.String()
+			right, ok := n.Right.(*ast.IdentifierExpression)
+			if !ok {
+				break
+			}
+			return e.mangleExpression(n.Left, prefix, ports) + "." + right.Value
 		}
 	}
-	return exp.String()
+	e.errors = append(e.errors, fmt.Sprintf(
+		"Line %d: expression '%s' cannot be used as a signal/port name — "+
+			"expected an identifier, a dotted path, or a numeric constant",
+		exp.Line(), exp.String()))
+	return ""
 }
 
 // evalStatic evaluates a compile-time-constant expression (a static module

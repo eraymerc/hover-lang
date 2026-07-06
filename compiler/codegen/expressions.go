@@ -153,7 +153,13 @@ func (g *generator) emitExpr(expr ast.Expression, logic elaborator.LogicObject) 
 		switch fnName {
 		case "V":
 			if len(n.Arguments) > 0 {
-				net := resolveNet(n.Arguments[0].String(), logic)
+				netName, ok := dottedPath(n.Arguments[0])
+				if !ok {
+					// Not a name path (e.g. V(a+b)) — pass the raw source text
+					// through so the runtime's net-not-found warning names it.
+					netName = n.Arguments[0].String()
+				}
+				net := resolveNet(netName, logic)
 				if g.usingPrevAPI {
 					return fmt.Sprintf(`api_V_prev(vm->api, %s)`, cStr(net)), CDouble
 				}
@@ -162,7 +168,13 @@ func (g *generator) emitExpr(expr ast.Expression, logic elaborator.LogicObject) 
 			return "0.0", CDouble
 		case "I":
 			if len(n.Arguments) > 0 {
-				net := resolveNet(n.Arguments[0].String(), logic)
+				netName, ok := dottedPath(n.Arguments[0])
+				if !ok {
+					// Not a name path (e.g. V(a+b)) — pass the raw source text
+					// through so the runtime's net-not-found warning names it.
+					netName = n.Arguments[0].String()
+				}
+				net := resolveNet(netName, logic)
 				if g.usingPrevAPI {
 					return fmt.Sprintf(`api_I_prev(vm->api, %s)`, cStr(net)), CDouble
 				}

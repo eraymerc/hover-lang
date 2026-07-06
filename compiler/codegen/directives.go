@@ -62,6 +62,25 @@ type simConfig struct {
 	saveVMSignals []string
 }
 
+// directiveNumber evaluates a directive argument that must be a numeric
+// literal (engineering suffixes allowed, unary minus allowed). Anything
+// else is an error — the old path stringified the AST and fed it to
+// ParseEngineering, whose ParseFloat fallback silently turned a
+// non-numeric argument into 0 (the same silent-zero disease evalStatic
+// had; see elaborator/evaluate.go).
+func directiveNumber(directive string, arg ast.Expression) (float64, error) {
+	switch e := arg.(type) {
+	case *ast.NumberExpression:
+		return elaborator.ParseEngineering(e.Value), nil
+	case *ast.UnaryExpression:
+		if e.Operator == "-" {
+			v, err := directiveNumber(directive, e.Right)
+			return -v, err
+		}
+	}
+	return 0, fmt.Errorf(".%s(...): argument '%s' must be a numeric literal", directive, arg.String())
+}
+
 // parseSimConfig walks g.prog.Directives once and extracts every directive
 // this compiler understands. Directives it doesn't recognize are silently
 // ignored — unknown directives are not a compile error today.
@@ -81,11 +100,22 @@ func (g *generator) parseSimConfig() (simConfig, error) {
 
 	for _, d := range g.prog.Directives {
 		if d.Name == "tran" && len(d.Args) >= 3 {
-			cfg.tEnd = fmt.Sprintf("%.17g", elaborator.ParseEngineering(d.Args[1].String()))
-			cfg.tStep = fmt.Sprintf("%.17g", elaborator.ParseEngineering(d.Args[2].String()))
+			tEnd, err := directiveNumber("tran", d.Args[1])
+			if err != nil {
+				return cfg, err
+			}
+			tStep, err := directiveNumber("tran", d.Args[2])
+			if err != nil {
+				return cfg, err
+			}
+			cfg.tEnd = fmt.Sprintf("%.17g", tEnd)
+			cfg.tStep = fmt.Sprintf("%.17g", tStep)
 
 			if len(d.Args) >= 4 {
-				maxStepVal := elaborator.ParseEngineering(d.Args[3].String())
+				maxStepVal, err := directiveNumber("tran", d.Args[3])
+				if err != nil {
+					return cfg, err
+				}
 				if maxStepVal == 0 {
 					return cfg, fmt.Errorf(
 						".tran(...)'s 4th argument (max_step) is 0 — a zero-size step is not valid. " +
@@ -95,10 +125,24 @@ func (g *generator) parseSimConfig() (simConfig, error) {
 			}
 		}
 		if d.Name == "solver" && len(d.Args) >= 1 {
-			cfg.solverType = d.Args[0].String()
-			cfg.rtol = parseOptionalSolverArg(d.Args, 1)
-			cfg.atol = parseOptionalSolverArg(d.Args, 2)
-			cfg.maxIter = parseOptionalSolverArg(d.Args, 3)
+			// The solver name is a bare identifier ("bdf2"); anything else
+			// falls through to solverStructName's unknown-solver hard error
+			// with the raw source text for the message.
+			if id, ok := d.Args[0].(*ast.IdentifierExpression); ok {
+				cfg.solverType = id.Value
+			} else {
+				cfg.solverType = d.Args[0].String()
+			}
+			var err error
+			if cfg.rtol, err = parseOptionalSolverArg(d.Args, 1); err != nil {
+				return cfg, err
+			}
+			if cfg.atol, err = parseOptionalSolverArg(d.Args, 2); err != nil {
+				return cfg, err
+			}
+			if cfg.maxIter, err = parseOptionalSolverArg(d.Args, 3); err != nil {
+				return cfg, err
+			}
 		}
 		if d.Name == "zcd" {
 			cfg.zcdEnabled = true
@@ -121,15 +165,18 @@ func (g *generator) parseSimConfig() (simConfig, error) {
 // wasn't supplied at all, OR if it evaluates to exactly 0 — both cases
 // mean "use this solver's own struct default" per the zero-means-default
 // convention.
-func parseOptionalSolverArg(args []ast.Expression, idx int) solverParam {
+func parseOptionalSolverArg(args []ast.Expression, idx int) (solverParam, error) {
 	if idx >= len(args) {
-		return solverParam{present: false}
+		return solverParam{present: false}, nil
 	}
-	val := elaborator.ParseEngineering(args[idx].String())
+	val, err := directiveNumber("solver", args[idx])
+	if err != nil {
+		return solverParam{}, err
+	}
 	if val == 0 {
-		return solverParam{present: false}
+		return solverParam{present: false}, nil
 	}
-	return solverParam{value: fmt.Sprintf("%.17g", val), present: true}
+	return solverParam{value: fmt.Sprintf("%.17g", val), present: true}, nil
 }
 
 // parseSaveDirectives extracts every .save(...) argument and classifies
@@ -154,9 +201,11 @@ func (g *generator) parseSaveDirectives() (mnaNodes []string, vmSignals []string
 			continue
 		}
 		for _, arg := range d.Args {
-			// arg.String() may return "(main . lc_out)" with spaces and parens
-			// from the AST BinaryExpression printer — clean it to "main.lc_out"
-			name := cleanString(arg.String())
+			name, ok := dottedPath(arg)
+			if !ok {
+				return nil, nil, fmt.Errorf(
+					".save(%s): argument must be a signal or node name (e.g. main.q1_base)", arg.String())
+			}
 
 			// Ground is always saveable (logger special-cases it to 0.0
 			// by definition, which for ground is correct, not a fallback).
@@ -203,7 +252,7 @@ func physNodeSet(physicals []elaborator.PhysicalObject) map[string]bool {
 	set := make(map[string]bool)
 	for _, phys := range physicals {
 		for _, n := range phys.Nodes {
-			set[cleanString(n)] = true
+			set[n] = true // elaborator-produced node names are already clean dotted paths
 		}
 	}
 	return set
