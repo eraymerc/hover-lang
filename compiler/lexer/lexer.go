@@ -221,7 +221,7 @@ func (l *Lexer) readNumber() string {
 	// not include 'e'/'E', so there's no ambiguity between the two: a
 	// number is read as scientific notation if 'e'/'E' is followed by a
 	// valid exponent, and falls through to the engineering-suffix check
-	// otherwise (which still only matches "munpkgG"/"Meg" — none starting
+	// otherwise (which still only matches "munpkG"/"Meg" — none starting
 	// with 'e'/'E', so the two paths never compete for the same input).
 	if l.ch == 'e' || l.ch == 'E' {
 		// Determine how far the sign+digits run extends before committing,
@@ -257,7 +257,7 @@ func (l *Lexer) readNumber() string {
 		l.readChar() // M
 		l.readChar() // e
 		l.readChar() // g
-	} else if strings.ContainsRune("munpkgG", rune(l.ch)) {
+	} else if strings.ContainsRune("munpkG", rune(l.ch)) {
 		l.readChar()
 	}
 
@@ -282,4 +282,3 @@ func (l *Lexer) peekChar() byte {
 func newToken(tokenType token.Type, ch byte, line int, column int) token.Token {
 	return token.Token{Type: tokenType, Literal: string(ch), Line: line, Column: column}
 }
-
