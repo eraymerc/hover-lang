@@ -38,7 +38,7 @@ func dottedPath(expr ast.Expression) (string, bool) {
 // mangle converts a dotted mangled name to a valid C++ identifier.
 // "main.ctrl_pid.integral" → "main_ctrl_pid_integral"
 func mangle(name string) string {
-	return strings.ReplaceAll(name, ".", "__")
+	return strings.ReplaceAll(name, ".", "_")
 }
 
 // cStr emits a C string literal for a net name (used in api_V / api_I calls).
