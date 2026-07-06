@@ -8,3 +8,10 @@ sim.exe
 /simulation_output.csv
 /hover
 /hover.exe
+
+# Build-output runtime libraries live in runtime/build/{linux,windows}/.
+# A stray lib at these root paths is PREFERRED by main.go and will hijack
+# the link with whatever toolchain built it (this happened: a g++/libstdc++
+# archive vs zig/libc++ sim.o -> undefined std::__cxx11 symbols).
+/runtime/libhover_runtime.a
+/runtime/hover_runtime.lib
