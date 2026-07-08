@@ -14,4 +14,8 @@ sim.exe
 # the link with whatever toolchain built it (this happened: a g++/libstdc++
 # archive vs zig/libc++ sim.o -> undefined std::__cxx11 symbols).
 /runtime/libhover_runtime.a
+<<<<<<< HEAD
 /runtime/hover_runtime.lib
+=======
+/runtime/hover_runtime.lib
+>>>>>>> e1b252df (Recompiled)

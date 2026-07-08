@@ -74,7 +74,7 @@ def main():
     #   lib.HVR_set_input_vref(5.0)
 
     for _ in range(10):
-        lib.HVR_run(1e-3)  # 1 ms of simulated time
+        lib.HVR_run(1)  # 1 ms of simulated time
         batch = to_dict(lib, lib.HVR_get_log_latest())
         if batch["time"]:
             print(f"t={batch['time'][-1]:.6f}  "
