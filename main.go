@@ -2,8 +2,8 @@ package main
 
 import (
 	"fmt"
-	codegen "hover/compiler/codegen"
 	"hover/compiler/ast"
+	codegen "hover/compiler/codegen"
 	"hover/compiler/elaborator"
 	"hover/compiler/lexer"
 	"hover/compiler/loader"
