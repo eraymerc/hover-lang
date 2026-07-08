@@ -148,6 +148,10 @@ func (g *generator) emitMain() error {
 
 	g.emitPhaseLog(cfg.saveVMSignals)
 
+	if g.LibraryMode {
+		return g.emitLibraryMain(cfg, strategyStruct)
+	}
+
 	g.raw(`// ── MAIN ─────────────────────────────────────────────────────────────────────`)
 	g.raw(`int main(void) {`)
 	g.push()

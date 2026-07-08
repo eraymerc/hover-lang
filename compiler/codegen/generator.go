@@ -37,6 +37,19 @@ func GenerateWithDiagnostics(prog *elaborator.ElaboratedProgram) (string, []stri
 	return g.sb.String(), g.unresolvedFunctions, nil
 }
 
+// GenerateLibrary is the --hovercraft entry point. Same signature and
+// diagnostics contract as GenerateWithDiagnostics — the only difference is
+// LibraryMode, which emitMain (main_emit.go) branches on to emit the HVR_*
+// C-ABI library surface (see hovercraft_emit.go) instead of a one-shot
+// main().
+func GenerateLibrary(prog *elaborator.ElaboratedProgram) (string, []string, error) {
+	g := &generator{prog: prog, LibraryMode: true}
+	if err := g.emit(); err != nil {
+		return "", nil, err
+	}
+	return g.sb.String(), g.unresolvedFunctions, nil
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // GENERATOR STATE
 // ─────────────────────────────────────────────────────────────────────────────
@@ -45,6 +58,11 @@ type generator struct {
 	prog   *elaborator.ElaboratedProgram
 	sb     strings.Builder
 	indent int
+
+	// LibraryMode is set by GenerateLibrary (--hovercraft). emitMain
+	// branches on it to emit the HVR_* C-ABI library surface
+	// (hovercraft_emit.go) instead of a one-shot main().
+	LibraryMode bool
 
 	// typeTable caches collectVarTypes()'s result — built lazily on first
 	// use via typeOf (see collect.go), since multiple emit* functions need

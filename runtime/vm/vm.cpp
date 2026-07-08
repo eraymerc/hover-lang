@@ -217,10 +217,16 @@ void vm_solve_op(VM *vm) {
 // MAIN RUN LOOP
 // ─────────────────────────────────────────────────────────────────────────────
 
-void vm_run(VM *vm) {
-    printf("[VM] Starting Co-Simulation... T_stop: %.3e, dt: %.3e\n",
-           vm->end_time, vm->time_step);
-
+// vm_boot / vm_run_until are the incremental split of what used to be the
+// entire body of vm_run: vm_boot is the one-time numerical init (DC
+// operating point, or the first Backward-Euler step + factorization),
+// vm_run_until advances the transient loop up to a target time. Splitting
+// them out lets the --hovercraft library API (runtime/hvr_runtime.hpp,
+// runtime/vm/hvr_runtime.cpp) drive a simulation incrementally via
+// HVR_step/HVR_run, while vm_run below is preserved byte-for-byte in
+// behavior for the standalone binary — it's now just boot() + run_until(end
+// _time) + the same CSV export it always did.
+void vm_boot(VM *vm) {
     if (vm->op_enabled) {
         vm_solve_op(vm);
     } else {
@@ -238,12 +244,31 @@ void vm_run(VM *vm) {
             vm->solver, 1.0, x_zero, alpha, nullptr, nullptr);
         solver_advance_time(vm->solver, x_init);
     }
+}
 
+void vm_run_until(VM *vm, double target_time) {
+    vm->end_time = target_time;
+    if (vm->time >= vm->end_time) {
+        return;
+    }
+
+    // g_dirty is set unconditionally here (matching the original vm_run,
+    // which set it after the boot if/else regardless of which branch ran)
+    // so every subsequent HVR_step/HVR_run call re-marks the solver dirty,
+    // not just the very first one.
     vm->solver->g_dirty = 1;
 
     if (vm->strategy) {
         vm->strategy->run(vm);
     }
+}
+
+void vm_run(VM *vm) {
+    printf("[VM] Starting Co-Simulation... T_stop: %.3e, dt: %.3e\n",
+           vm->end_time, vm->time_step);
+
+    vm_boot(vm);
+    vm_run_until(vm, vm->end_time);
 
     printf("[VM] Simulation Complete.\n");
     logger_export_csv(&vm->logger, "simulation_output.csv");

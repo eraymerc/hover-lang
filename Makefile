@@ -34,6 +34,7 @@ SRCS := \
     $(RUNTIME_DIR)/vm/snapshot.cpp    \
     $(RUNTIME_DIR)/vm/zcd.cpp         \
     $(RUNTIME_DIR)/vm/vm.cpp          \
+    $(RUNTIME_DIR)/vm/hvr_runtime.cpp \
     $(RUNTIME_DIR)/solvers/euler_fixed.cpp \
 	$(RUNTIME_DIR)/solvers/gauss_siedel.cpp   \
     $(RUNTIME_DIR)/solvers/euler_adaptive.cpp \

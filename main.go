@@ -28,6 +28,18 @@ func main() {
 	dumpAST := len(os.Args) >= 3 && os.Args[2] == "--dump-ast"
 	entryFile := os.Args[1]
 
+	// --hovercraft switches codegen + build to library-output mode: instead
+	// of a one-shot binary that runs to completion and exits, the compiler
+	// emits a reusable HVR_* C-ABI shared library (see codegen.GenerateLibrary
+	// and compiler/codegen/hovercraft_emit.go). Scanned across all args (not
+	// just os.Args[2] like --dump-ast) so it composes regardless of order.
+	libraryMode := false
+	for _, a := range os.Args[2:] {
+		if a == "--hovercraft" {
+			libraryMode = true
+		}
+	}
+
 	// ── 0. Load — discover entry file + every (non-transitive) import ────────
 	loadResult, err := loader.Load(entryFile)
 	if err != nil {
@@ -160,7 +172,13 @@ func main() {
 		len(flatProg.Logic), len(flatProg.Physicals))
 
 	// ── 5. Code Generation ───────────────────────────────────────────────────
-	simCpp, unresolved, err := codegen.GenerateWithDiagnostics(flatProg)
+	var simCpp string
+	var unresolved []string
+	if libraryMode {
+		simCpp, unresolved, err = codegen.GenerateLibrary(flatProg)
+	} else {
+		simCpp, unresolved, err = codegen.GenerateWithDiagnostics(flatProg)
+	}
 	if err != nil {
 		fmt.Printf("[Codegen] Error: %v\n", err)
 		os.Exit(1)
@@ -222,6 +240,12 @@ func main() {
 	exeName := "sim"
 	if runtime.GOOS == "windows" {
 		exeName = "sim.exe"
+	}
+	if libraryMode {
+		exeName = "libhovercraft.so"
+		if runtime.GOOS == "windows" {
+			exeName = "hovercraft.dll"
+		}
 	}
 
 	zigPath := "zig"
@@ -295,6 +319,12 @@ func main() {
 		"-O3",
 		"-w",
 	}
+	if libraryMode {
+		compileArgs = append(compileArgs, "-shared")
+		if runtime.GOOS != "windows" {
+			compileArgs = append(compileArgs, "-fPIC")
+		}
+	}
 
 	if runtime.GOOS == "windows" {
 		compileArgs = append(compileArgs, "-target", "x86_64-windows-gnu")
@@ -319,6 +349,13 @@ func main() {
 	}
 
 	// ── 7. Run ───────────────────────────────────────────────────────────────
+	// A --hovercraft build produces a library, not something to execute —
+	// the host program (see examples/hovercraft/) drives it instead.
+	if libraryMode {
+		fmt.Printf("[Hovercraft] %s built — see examples/hovercraft/ for usage.\n", exeName)
+		return
+	}
+
 	fmt.Println("[Run] Starting simulation...")
 
 	runPath := "./" + exeName
