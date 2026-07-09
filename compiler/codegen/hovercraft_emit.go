@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	ast "hover/compiler/ast"
 	"hover/compiler/elaborator"
 )
 
@@ -39,6 +40,8 @@ func (g *generator) emitLibraryMain(cfg simConfig, strategyStruct string) error 
 	g.raw("static bool   hvr_wired   = false;")
 	g.raw("static bool   hvr_started = false;")
 	g.raw("")
+
+	g.emitHvrApplyDeferredStateInits()
 
 	g.raw("// hvr_boot() wires System/Solver/API/VM together exactly once. It")
 	g.raw("// deliberately does NOT run the numerical OP/first-step init — that is")
@@ -81,6 +84,7 @@ func (g *generator) emitLibraryMain(cfg simConfig, strategyStruct string) error 
 	g.emitSolverTuningOverrides(strategyStruct, cfg)
 	g.line("vm.strategy = &strategy;")
 	g.raw("")
+	g.line("hvr_apply_deferred_state_inits();")
 	g.line("hvr_wired = true;")
 	g.pop()
 	g.raw("}")
@@ -102,6 +106,48 @@ func (g *generator) emitLibraryMain(cfg simConfig, strategyStruct string) error 
 	g.emitLibraryAPI(cfg)
 
 	return nil
+}
+
+func (g *generator) isConstFoldableStateInit(si stateInit) bool {
+	switch v := si.value.(type) {
+	case nil:
+		return true
+	case *ast.NumberExpression:
+		return true
+	case *ast.CallExpression:
+		if decl := g.lookupFunctionDecl(callExpressionName(v.Function)); decl != nil && decl.IsExtern {
+			return true
+		}
+		return false
+	default:
+		return false
+	}
+}
+
+func (g *generator) emitHvrApplyDeferredStateInits() {
+	stateInits := g.collectStateInits()
+	pending := false
+	for _, name := range g.collectAllVars() {
+		si, isState := stateInits[name]
+		if !isState || g.typeOf(name).isArray() || g.isConstFoldableStateInit(si) {
+			continue
+		}
+		if !pending {
+			g.raw("static void hvr_apply_deferred_state_inits(void) {")
+			g.push()
+			pending = true
+		}
+		ht := g.typeOf(name)
+		code, ct := g.emitExpr(si.value, si.logic)
+		g.line("%s = %s;", name, castToHover(code, ct, ht))
+	}
+	if pending {
+		g.pop()
+		g.raw("}")
+	} else {
+		g.raw("static void hvr_apply_deferred_state_inits(void) {}")
+	}
+	g.raw("")
 }
 
 // emitHvrResetState emits hvr_reset_state(), which resets every state
@@ -146,6 +192,7 @@ func (g *generator) emitLibraryAPI(cfg simConfig) {
 	g.push()
 	g.line("hvr_ensure_started();")
 	g.line("hvr_reset_state();")
+	g.line("hvr_apply_deferred_state_inits(); // re-sample current inputs, same as boot did")
 	g.line("vm.time = 0.0;")
 	g.line("vm_boot(&vm); // re-run OP / first-step init against the reset state")
 	g.line("return HVR_OK;")
