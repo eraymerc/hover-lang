@@ -2,6 +2,7 @@ package elaborator
 
 import (
 	"fmt"
+	"hover/compiler/ast"
 	"hover/compiler/token"
 	"strings"
 )
@@ -28,7 +29,37 @@ func (e *Elaborator) Elaborate() (*ElaboratedProgram, error) {
 		}
 	}
 
-	e.flattenModule(main, "main", make(map[string]float64), make(map[string]string), main.Token.Type)
+	// 1. Bootstrap main's StaticArgs (<> params) so hovercraft_emit can generate HVR_set_param_*
+	mainParams := make(map[string]float64)
+	for _, param := range main.StaticArgs {
+		if param.Value != nil {
+			mainParams[param.Name] = e.evalStatic(param.Value, nil)
+		} else {
+			mainParams[param.Name] = 0.0
+		}
+	}
+
+	// 2. Bootstrap main's LogicArgs (() inputs) so hovercraft_emit can generate HVR_set_input_*
+	mainPorts := make(map[string]string)
+	var injectedDecls []ast.Statement
+	for _, arg := range main.LogicArgs {
+		mainPorts[arg.Name] = "main." + arg.Name
+		// Inject a local declaration for the input so codegen allocates a backing C++ global
+		// and tracks its type correctly.
+		injectedDecls = append(injectedDecls, &ast.LocalDeclStatement{
+			Token: main.Token,
+			Type:  arg.Type,
+			Decls: []*ast.VarDecl{
+				{Name: arg.Name, Value: nil},
+			},
+		})
+	}
+	// Prepend the injected declarations to main's body
+	if len(injectedDecls) > 0 {
+		main.Body.Body = append(injectedDecls, main.Body.Body...)
+	}
+
+	e.flattenModule(main, "main", mainParams, mainPorts, main.Token.Type)
 
 	if len(e.errors) > 0 {
 		return nil, fmt.Errorf("elaboration failed:\n%s", strings.Join(e.errors, "\n"))
