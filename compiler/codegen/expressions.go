@@ -197,19 +197,34 @@ func (g *generator) emitExpr(expr ast.Expression, logic elaborator.LogicObject) 
 			}
 			return "0.0", CDouble
 		case "I":
+			// I() reads a named element's branch current. Unlike V(), a bad
+			// argument is a hard compile error rather than a runtime warning:
+			// api_I would otherwise print once to stderr and log a plausible
+			// column of zeros forever, which is exactly the failure mode
+			// .save()'s unknown-name check was written to kill.
 			if len(n.Arguments) > 0 {
-				netName, ok := dottedPath(n.Arguments[0])
+				elemName, ok := dottedPath(n.Arguments[0])
 				if !ok {
-					// Not a name path (e.g. V(a+b)) — pass the raw source text
-					// through so the runtime's net-not-found warning names it.
-					netName = n.Arguments[0].String()
+					g.errors = append(g.errors, fmt.Sprintf(
+						"I(%s): argument must be a circuit element name, e.g. I(vsense)",
+						n.Arguments[0].String()))
+					return "0.0", CDouble
 				}
-				net := resolveNet(netName, logic)
+				// resolveNet's Prefix+"."+name rule is exactly the elaborator's
+				// element-naming rule, so a bare name resolves to the element
+				// of that name in the same module instance. Element references
+				// are module-local, same as V()'s nets.
+				elem := resolveNet(elemName, logic)
+				if !g.branchElements()[elem] {
+					g.errors = append(g.errors, g.badBranchRefMsg("I", elemName, elem))
+					return "0.0", CDouble
+				}
 				if g.usingPrevAPI {
-					return fmt.Sprintf(`api_I_prev(vm->api, %s)`, cStr(net)), CDouble
+					return fmt.Sprintf(`api_I_prev(vm->api, %s)`, cStr(elem)), CDouble
 				}
-				return fmt.Sprintf(`api_I(vm->api, %s)`, cStr(net)), CDouble
+				return fmt.Sprintf(`api_I(vm->api, %s)`, cStr(elem)), CDouble
 			}
+			g.errors = append(g.errors, "I() requires a circuit element name, e.g. I(vsense)")
 			return "0.0", CDouble
 		case "nr_prev":
 			// nr_prev(expr) emits expr's full C++ translation with every

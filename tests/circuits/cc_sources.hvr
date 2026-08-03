@@ -1,0 +1,57 @@
+// Golden test circuit: named physical primitives, the 0 V ammeter idiom, the
+// current-controlled sources (CCCS/CCVS), I() reads in logic, and .save() of an
+// element's branch current.
+//
+// Before primitives could be named there was no way to say WHOSE current a
+// CCCS/CCVS senses, so those two stamps were unreachable — see the workaround
+// comment in examples/DCMotor/h_bridge.hvr, which fakes a controlled source out
+// of a sense resistor plus a VCCS. This circuit is what makes that unnecessary.
+//
+// The operating point is chosen so every saved column has an exact closed-form
+// value, making the golden verifiable by inspection rather than by trust:
+//
+//     I(vsense)  = 5 V / 1 kOhm   = 5 mA
+//     V(vout)    = 2 * 5 mA * 500 = 5 V     (CCCS gain 2 into 500 Ohm)
+//     V(vmirror) = 1 kOhm * 5 mA  = 5 V     (CCVS transresistance 1k)
+//     milliamps  = 5
+//
+// The capacitor makes it a real transient (tau = 1k * 100n = 100 us) rather
+// than a DC solve dressed up as one, so the solver path is genuinely exercised
+// before it settles to the values above.
+.tran(0, 5m, 1u);
+.solver(trapezoidal_fixed);
+.save(main.mid, main.vout, main.vmirror, main.probe.vsense, main.probe.milliamps);
+
+// The ammeter idiom, packaged. A 0 V source is electrically a short, but unlike
+// a wire it owns an MNA branch row, so its current is a solved unknown that I()
+// can read and CCCS/CCVS can sense. R and C have no such row, which is why
+// measuring their current needs one of these in series.
+//
+// The I() read lives here rather than in main because element references are
+// module-local (same rule as V()'s nets) and because main is a structural
+// module, which cannot contain logic at all.
+analog module Ammeter<>() [wire p, wire n] {
+    voltage_source vsense<0>() [p, n];
+    double milliamps = I(vsense) * 1000.0;
+}
+
+module main<>()[] {
+    wire vin, mid, vout, vmirror;
+
+    voltage_source<5>() [vin, gnd];
+    R<1k>()   [vin, mid];
+    C<100n>() [mid, gnd];
+
+    module probe = Ammeter<>() [mid, gnd];
+
+    // Current-controlled sources sensing the ammeter's branch, reached by a
+    // dotted path into the child instance. Both are declared BELOW the module
+    // that owns vsense, but forward references would work equally well:
+    // register_netlist runs entirely before stamp_netlist, so the netlist
+    // imposes no ordering.
+    CCCS<2>()  [gnd, vout, probe.vsense];
+    R<500>()   [vout, gnd];
+
+    CCVS<1k>() [vmirror, gnd, probe.vsense];
+    R<10k>()   [vmirror, gnd];
+}

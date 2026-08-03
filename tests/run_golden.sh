@@ -21,6 +21,7 @@ TESTS=(
     "examples/Diode/rectifier.hvr"
     "examples/DCMotor/h_bridge.hvr"
     "tests/circuits/types_exercise.hvr"
+    "tests/circuits/cc_sources.hvr"
 )
 
 UPDATE=0

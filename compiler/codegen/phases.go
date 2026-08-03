@@ -53,25 +53,43 @@ func (g *generator) emitPhaseAnalog() {
 	g.emitPhaseByDomain(token.ANALOG, "phase_analog")
 }
 
-// emitPhaseLog emits phase_log, which copies the requested .save() VM
-// signals from their C globals into vm->values so the logger can read them
-// generically (logger.cpp only knows how to read a string-keyed map, not
+// branchCurrentColumn is the vm->values key (and hence CSV column header) for
+// a .save()d element current. Element and net names are disjoint by
+// construction — the elaborator rejects a collision — but the "I(...)" wrapper
+// keeps the CSV self-describing: a reader can tell a current column from a
+// voltage column without having the netlist in front of them.
+func branchCurrentColumn(element string) string { return "I(" + element + ")" }
+
+// emitPhaseLog emits phase_log, which publishes every .save()d quantity that
+// isn't already in the solution vector into vm->values, so the logger can read
+// them generically (logger.cpp only knows how to read a string-keyed map, not
 // C globals by pointer).
 //
-// Signals that don't correspond to an actual logic-block variable (for
-// example a raw MNA branch current referenced via I(...) in a .save())
-// are skipped with an explanatory comment rather than emitted as a broken
+// Two kinds land here:
+//   - VM signals — logic variables, copied from their C globals.
+//   - Branch currents — read back out of the solved system with api_I. This is
+//     why .save(main.vsense) needs no logger change at all: every solver calls
+//     logger_log_step -> phase_log -> logger_log_signals in that order, after
+//     api_update_solution has published this timestep's solution, so api_I here
+//     returns exactly the value logger_log_step just recorded voltages from.
+//
+// A VM signal that doesn't correspond to an actual logic-block variable is
+// skipped with an explanatory comment rather than emitted as a broken
 // reference to a nonexistent C global.
-func (g *generator) emitPhaseLog(vmSignals []string) {
+func (g *generator) emitPhaseLog(vmSignals, branchCurrents []string) {
 	allVars := g.collectAllVars()
 	known := make(map[string]bool, len(allVars))
 	for _, v := range allVars {
 		known[v] = true
 	}
 
-	g.raw(`// ── PHASE LOG — copy C globals into vm->values for logger ────────────────────`)
+	g.raw(`// ── PHASE LOG — publish saved values into vm->values for logger ──────────────`)
 	g.raw(`static void phase_log(VM *vm) {`)
 	g.push()
+	for _, elem := range branchCurrents {
+		g.line(`vm->values[%s] = api_I(vm->api, %s);`,
+			cStr(branchCurrentColumn(elem)), cStr(elem))
+	}
 	for _, sig := range vmSignals {
 		mangled := mangle(sig)
 		if !known[mangled] {

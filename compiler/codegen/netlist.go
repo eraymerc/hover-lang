@@ -63,11 +63,28 @@ func (g *generator) emitRegisterCall(phys elaborator.PhysicalObject) {
 		}
 	}
 	// Register branch if this primitive needs one
-	t := strings.ToLower(phys.Type)
-	if t == "l" || t == "inductor" || t == "v" || t == "voltage_source" ||
-		t == "e" || t == "vcvs" || t == "h" || t == "ccvs" {
+	if branchBearingType(phys.Type) {
 		g.line("sys->register_branch(%s);", cStr(phys.Name))
 	}
+}
+
+// branchBearingType reports whether a primitive gets its own MNA branch row —
+// an extra unknown for its current. Inductors and voltage-defined sources need
+// one; resistors, capacitors and current sources do not, since their current
+// is derived from node voltages rather than solved for.
+//
+// This predicate is THE authority on which elements register a branch, and so
+// on which names resolve_branch can later answer for. I() and .save() gate on
+// it (directives.go), and the elaborator mirrors it in branchBearing
+// (elaborator/elements.go) to validate CCCS/CCVS sense references. If those
+// copies ever drift apart, generated code calls resolve_branch on a branch
+// nobody registered and stamps into row -1.
+func branchBearingType(primType string) bool {
+	switch strings.ToLower(primType) {
+	case "l", "inductor", "v", "voltage_source", "e", "vcvs", "h", "ccvs":
+		return true
+	}
+	return false
 }
 
 // emitStampCall emits the pass-2 stamping call for one physical primitive,
@@ -122,22 +139,27 @@ func (g *generator) emitStampCall(phys elaborator.PhysicalObject) {
 		g.line("{ int br = sys->resolve_branch(%s); stamp_vcvs(sys, %s, %s, %s, %s, %s, br); }",
 			name, node(0), node(1), node(2), node(3), param(0))
 
+	// SenseElement carries the name of the branch whose current is sensed —
+	// the last [] entry, resolved by the elaborator against the flattened
+	// design (elaborator/elements.go: resolveSenseElements). Reaching here
+	// with it empty means elaboration let an unresolved reference through,
+	// which is a compiler bug rather than a user error; the emitted #error
+	// makes that loud instead of silently producing a circuit missing one
+	// element.
 	case "cccs", "f":
-		// SenseElement carries the name of the branch whose current is sensed.
-		// Not yet supported by the elaborator — emit a comment as a placeholder.
-		if phys.SenseElement != "" {
-			g.line("{ int sens = sys->resolve_branch(%s); stamp_cccs(sys, %s, %s, sens, %s); }",
-				cStr(phys.SenseElement), node(0), node(1), param(0))
-		} else {
-			g.line("/* CCCS %s: sense element unknown — not yet supported by elaborator */", phys.Name)
+		if phys.SenseElement == "" {
+			g.line("#error unresolved sense element for CCCS %s", phys.Name)
+			break
 		}
+		g.line("{ int sens = sys->resolve_branch(%s); stamp_cccs(sys, %s, %s, sens, %s); }",
+			cStr(phys.SenseElement), node(0), node(1), param(0))
 
 	case "ccvs", "h":
-		if phys.SenseElement != "" {
-			g.line("{ int sens = sys->resolve_branch(%s); int br = sys->resolve_branch(%s); stamp_ccvs(sys, %s, %s, sens, %s, br); }",
-				cStr(phys.SenseElement), name, node(0), node(1), param(0))
-		} else {
-			g.line("/* CCVS %s: sense element unknown — not yet supported by elaborator */", phys.Name)
+		if phys.SenseElement == "" {
+			g.line("#error unresolved sense element for CCVS %s", phys.Name)
+			break
 		}
+		g.line("{ int sens = sys->resolve_branch(%s); int br = sys->resolve_branch(%s); stamp_ccvs(sys, %s, %s, sens, %s, br); }",
+			cStr(phys.SenseElement), name, node(0), node(1), param(0))
 	}
 }

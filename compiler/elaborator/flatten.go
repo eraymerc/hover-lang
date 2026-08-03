@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"hover/compiler/ast"
 	"hover/compiler/token"
-	"strconv"
 )
 
 func (e *Elaborator) flattenModule(mod *ast.ModuleDeclStatement, prefix string, params map[string]float64, ports map[string]string, domain token.Type) {
@@ -73,8 +72,22 @@ func (e *Elaborator) flattenModule(mod *ast.ModuleDeclStatement, prefix string, 
 			delete(e.expanding, s.ModuleName)
 
 		case *ast.PhysicalPrimitiveStatement:
+			physIdx := len(e.output.Physicals)
+
+			// Split [] into wire terminals and, for CCCS/CCVS, the trailing
+			// controlling-element reference. The sense entry must NOT end up in
+			// Nodes: codegen's emitRegisterCall calls sys->register_node on
+			// every entry there, which would mint a bogus MNA row named after
+			// an element that is not a net at all.
+			physArgs := s.PhysArgs
+			var senseArg ast.Expression
+			if s.IsCurrentControlled() && len(physArgs) > 0 {
+				senseArg = physArgs[len(physArgs)-1]
+				physArgs = physArgs[:len(physArgs)-1]
+			}
+
 			nodes := []string{}
-			for _, n := range s.PhysArgs {
+			for _, n := range physArgs {
 				nodes = append(nodes, e.mangleNode(n.String(), prefix, ports))
 			}
 			pMap := make(map[string]float64)
@@ -89,13 +102,40 @@ func (e *Elaborator) flattenModule(mod *ast.ModuleDeclStatement, prefix string, 
 				ctrlSignal = e.mangleExpression(s.LogicArgs[0], prefix, ports)
 			}
 
+			name, userNamed := e.elementName(s, prefix, physIdx)
+
 			e.output.Physicals = append(e.output.Physicals, PhysicalObject{
 				Type:       s.PrimType,
-				Name:       prefix + "." + s.PrimType + "_" + strconv.Itoa(len(e.output.Physicals)),
+				Name:       name,
 				Parameters: pMap,
 				Nodes:      nodes,
 				CtrlSignal: ctrlSignal,
+				UserNamed:  userNamed,
+				Line:       s.Line(),
 			})
+			e.elementIndex[name] = physIdx
+
+			if senseArg != nil {
+				// A sense reference is an ELEMENT path, never a wire, so it
+				// deliberately skips mangleNode: no port lookup, no gnd special
+				// case. A bare "vsense" means the element of that name in this
+				// instance; "probe.vsense" reaches into a child instance. Both
+				// are just prefix + "." + path once flattened, which is exactly
+				// the rule elementName applied when creating the name.
+				path, ok := elementPath(senseArg)
+				if !ok {
+					e.errors = append(e.errors, fmt.Sprintf(
+						"Line %d: %s's sense element must be an element name (e.g. vsense or probe.vsense), got '%s'",
+						s.Line(), s.PrimType, senseArg.String()))
+				} else {
+					e.pendingSense = append(e.pendingSense, senseRef{
+						physIdx: physIdx,
+						target:  prefix + "." + path,
+						raw:     path,
+						line:    s.Line(),
+					})
+				}
+			}
 
 		case *ast.LocalDeclStatement:
 			if s.Type.IsWire() {

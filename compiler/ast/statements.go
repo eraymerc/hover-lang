@@ -268,8 +268,16 @@ func (mi *ModuleInstStatement) String() string {
 }
 
 type PhysicalPrimitiveStatement struct {
-	Token      token.Token
-	PrimType   string
+	Token    token.Token
+	PrimType string
+	// Name is the optional user-supplied instance name in
+	//     R rsense<1m>() [b, s];
+	// Empty for the unnamed form, which stays the common case. A non-empty
+	// Name becomes the element's flattened name (prefix + "." + Name) instead
+	// of the positional PrimType_<n> the elaborator synthesizes otherwise —
+	// and that flattened name is what the runtime keys its branch map by, so
+	// naming an element is what makes I() and CCCS/CCVS able to refer to it.
+	Name       string
 	StaticArgs []Expression
 	LogicArgs  []Expression
 	PhysArgs   []Expression
@@ -279,7 +287,31 @@ func (pp *PhysicalPrimitiveStatement) statementNode()       {}
 func (pp *PhysicalPrimitiveStatement) TokenLiteral() string { return pp.Token.Literal }
 func (pp *PhysicalPrimitiveStatement) Line() int            { return pp.Token.Line }
 func (pp *PhysicalPrimitiveStatement) String() string {
+	if pp.Name != "" {
+		return pp.PrimType + " " + pp.Name + "<...>(...)[...];"
+	}
 	return pp.PrimType + "<...>(...)[...];"
+}
+
+// IsCurrentControlled reports whether this primitive's LAST [] entry is a
+// controlling-element reference rather than a wire terminal.
+//
+// CCCS/CCVS are the only primitives whose control input is a current, and a
+// current in the MNA formulation is a branch variable belonging to a specific
+// element — not something addressable by node pair the way VCCS/VCVS's control
+// voltage is. So they name the element, SPICE-style:
+//
+//	CCCS<beta>() [out_p, out_n, vsense];
+//
+// Lives on the AST node so semantic analysis and the elaborator share one
+// definition of the set — the same reason isPhysicalPrimitive lives in one
+// place in the parser.
+func (pp *PhysicalPrimitiveStatement) IsCurrentControlled() bool {
+	switch strings.ToUpper(pp.PrimType) {
+	case "CCCS", "F", "CCVS", "H":
+		return true
+	}
+	return false
 }
 
 type DirectiveStatement struct {

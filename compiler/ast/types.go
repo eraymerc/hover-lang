@@ -41,9 +41,17 @@ var (
 	TWire    = Type{Base: "wire"}
 	TFunc    = Type{Base: "func"}
 	TModule  = Type{Base: "module"}
+	// TElement is a named physical primitive (`R rsense<1m>() [a, b];`).
+	// It exists purely so semantic analysis can put element names in scope
+	// alongside wires and variables and catch collisions between them. It is
+	// deliberately never written into ElaboratedProgram.Symbols — that map is
+	// what .save() consults to classify a name as a VM signal, and an element
+	// name landing there would compile into a column that logs 0.0 forever.
+	TElement = Type{Base: "element"}
 )
 
 func (t Type) IsWire() bool    { return t.Base == "wire" }
+func (t Type) IsElement() bool { return t.Base == "element" }
 func (t Type) IsArray() bool   { return len(t.Dims) > 0 }
 func (t Type) IsPointer() bool { return t.Stars > 0 && len(t.Dims) == 0 }
 func (t Type) IsScalar() bool  { return t.Stars == 0 && len(t.Dims) == 0 }

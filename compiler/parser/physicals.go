@@ -123,6 +123,18 @@ func (p *parser) parsePhysicalPrimitive() ast.Statement {
 	stmt := &ast.PhysicalPrimitiveStatement{Token: p.currentToken(), PrimType: p.currentToken().Literal}
 	p.nextToken() // consume prim name (e.g. 'R')
 
+	// Optional instance name: `R rsense<1m>() [b, s];`
+	//
+	// Unambiguous by construction — the only tokens the grammar ever allowed
+	// in this position were '<', '(', '[' or ';', never an IDENT, so an IDENT
+	// here can only be a name and every existing unnamed form still parses
+	// exactly as before. No validation here: the parser has no scope, so
+	// duplicates and collisions are semantic/elaborator business.
+	if p.currentTokenType() == token.IDENT {
+		stmt.Name = p.currentToken().Literal
+		p.nextToken()
+	}
+
 	stmt.StaticArgs = p.parseArgList(token.LT, token.GT)
 	stmt.LogicArgs = p.parseArgList(token.LPAREN, token.RPAREN)
 	stmt.PhysArgs = p.parseArgList(token.LBRACKET, token.RBRACKET)

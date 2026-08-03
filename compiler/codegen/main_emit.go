@@ -146,7 +146,7 @@ func (g *generator) emitMain() error {
 		return err
 	}
 
-	g.emitPhaseLog(cfg.saveVMSignals)
+	g.emitPhaseLog(cfg.saveVMSignals, cfg.saveBranchCurrents)
 
 	if g.LibraryMode {
 		return g.emitLibraryMain(cfg, strategyStruct)
@@ -196,7 +196,7 @@ func (g *generator) emitMain() error {
 
 	g.line("// Logger")
 	g.line("std::vector<std::string> mna_nodes = {%s};", quotedList(cfg.saveMNANodes))
-	g.line("std::vector<std::string> vm_signals = {%s};", quotedList(cfg.saveVMSignals))
+	g.line("std::vector<std::string> vm_signals = {%s};", quotedList(cfg.loggerSignalList()))
 	g.line("logger_init(&vm.logger, mna_nodes, vm_signals);")
 	g.raw("")
 

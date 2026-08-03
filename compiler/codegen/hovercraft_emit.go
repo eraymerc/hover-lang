@@ -78,7 +78,7 @@ func (g *generator) emitLibraryMain(cfg simConfig, strategyStruct string) error 
 	g.line("vm.restore_state_vars = restore_state_vars;")
 	g.raw("")
 	g.line("std::vector<std::string> mna_nodes = {%s};", quotedList(cfg.saveMNANodes))
-	g.line("std::vector<std::string> vm_signals = {%s};", quotedList(cfg.saveVMSignals))
+	g.line("std::vector<std::string> vm_signals = {%s};", quotedList(cfg.loggerSignalList()))
 	g.line("logger_init(&vm.logger, mna_nodes, vm_signals);")
 	g.raw("")
 	g.emitSolverTuningOverrides(strategyStruct, cfg)

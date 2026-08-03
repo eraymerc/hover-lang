@@ -13,6 +13,18 @@ type PhysicalObject struct {
 	Nodes        []string
 	CtrlSignal   string // Mangled logic signal driving this primitive (voltage_source / current_source)
 	SenseElement string // Sensing branch name for CCCS / CCVS (e.g. "main.Vsense")
+
+	// UserNamed distinguishes `R rsense<1m>()` (Name == "main.rsense") from an
+	// unnamed primitive whose Name was synthesized positionally ("main.R_3").
+	// Only user-named elements are offered as suggestions in I()/.save()
+	// diagnostics — a synthesized name is an implementation detail that
+	// nobody should be typing, and suggesting it would be actively bad advice.
+	UserNamed bool
+
+	// Line is the source line of the declaring statement, kept so post-flatten
+	// validation (sense resolution, name collisions) can point at real source
+	// instead of a flattened name that has no location of its own.
+	Line int
 }
 
 type LogicObject struct {
@@ -87,6 +99,34 @@ type Elaborator struct {
 	// file, with no imports involved at all, and the loader's check
 	// (which only looks at import statements) cannot see it.
 	expanding map[string]bool
+
+	// elementIndex maps a flattened element name ("main.motor.vsense") to its
+	// index in output.Physicals. EVERY physical is registered here, user-named
+	// or not, because both share a single namespace: the runtime keys its
+	// branch_map by exactly these strings, so a hand-written `R R_3<...>` and
+	// a synthesized "R_3" would otherwise silently collide there.
+	//
+	// It is also the resolution target for a CCCS/CCVS sense reference. It is
+	// intentionally not exported on ElaboratedProgram — codegen rebuilds the
+	// small subsets it needs from Physicals, mirroring physNodeSet.
+	elementIndex map[string]int
+
+	// pendingSense holds CCCS/CCVS sense references discovered while
+	// flattening, resolved in a post-pass (resolveSenseElements in
+	// elements.go). It cannot be resolved inline: the sensed voltage source is
+	// frequently declared AFTER the controlled source in the same module body,
+	// and that has to work — codegen emits register_netlist (all branches)
+	// strictly before stamp_netlist (all resolve_branch calls), so the netlist
+	// imposes no ordering constraint for this to inherit.
+	pendingSense []senseRef
+}
+
+// senseRef is one unresolved CCCS/CCVS controlling-element reference.
+type senseRef struct {
+	physIdx int    // index into output.Physicals of the CCCS/CCVS itself
+	target  string // fully-flattened candidate name, e.g. "main.vsense"
+	raw     string // as written in source, for the error message
+	line    int
 }
 
 // New builds an Elaborator from a single already-parsed program, with no
@@ -97,6 +137,7 @@ func New(program *ast.Program) *Elaborator {
 		modules:        make(map[string]*ast.ModuleDeclStatement),
 		aliasedModules: make(map[string]map[string]*ast.ModuleDeclStatement),
 		expanding:      make(map[string]bool),
+		elementIndex:   make(map[string]int),
 		output: &ElaboratedProgram{
 			Physicals:        []PhysicalObject{},
 			Logic:            []LogicObject{},
@@ -134,6 +175,7 @@ func NewWithImports(files map[string]*ImportedFile, entryPath string) (*Elaborat
 		modules:        make(map[string]*ast.ModuleDeclStatement),
 		aliasedModules: make(map[string]map[string]*ast.ModuleDeclStatement),
 		expanding:      make(map[string]bool),
+		elementIndex:   make(map[string]int),
 		output: &ElaboratedProgram{
 			Physicals:        []PhysicalObject{},
 			Logic:            []LogicObject{},

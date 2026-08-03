@@ -61,6 +61,14 @@ func (e *Elaborator) Elaborate() (*ElaboratedProgram, error) {
 
 	e.flattenModule(main, "main", mainParams, mainPorts, main.Token.Type)
 
+	// 3. Post-flatten validation (elements.go). Both passes need the COMPLETE
+	//    design: a CCCS/CCVS sense reference legitimately points forward, and a
+	//    wire colliding with an element name can be declared anywhere in the
+	//    hierarchy — including in an imported file, which semantic analysis
+	//    never walks.
+	e.resolveSenseElements()
+	e.checkElementNameCollisions()
+
 	if len(e.errors) > 0 {
 		return nil, fmt.Errorf("elaboration failed:\n%s", strings.Join(e.errors, "\n"))
 	}

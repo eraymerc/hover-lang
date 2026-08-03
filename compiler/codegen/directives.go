@@ -1,6 +1,7 @@
 package codegen
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -60,6 +61,35 @@ type simConfig struct {
 	// variable instead — these are copied into vm->values by phase_log
 	// (see emitPhaseLog in phases.go) before logger_log_signals reads them.
 	saveVMSignals []string
+
+	// saveBranchCurrents are .save() arguments that resolved to a
+	// branch-bearing circuit element — `.save(main.vsense)` or the explicit
+	// `.save(I(main.vsense))`. They ride the VM-signal channel rather than
+	// needing a logger change of their own: phase_log emits
+	// vm->values["I(main.vsense)"] = api_I(...), and the key is appended to
+	// the vm_signals list handed to logger_init. That works because every
+	// solver calls logger_log_step -> phase_log -> logger_log_signals in that
+	// order, after api_update_solution has published the timestep's solution.
+	//
+	// Held separately from saveVMSignals (rather than pre-mixed) so
+	// emitPhaseLog can tell which entries need an api_I call instead of a
+	// C-global read.
+	saveBranchCurrents []string
+}
+
+// loggerSignalList is the vm_signals vector handed to logger_init: the logic
+// variables, then the branch-current columns.
+//
+// Branch columns go LAST so that a design without any of them produces a CSV
+// byte-identical to what it produced before this feature existed —
+// compare_csv.py compares headers for exact equality, so column order is part
+// of the golden-test contract.
+func (c simConfig) loggerSignalList() []string {
+	sigs := append([]string(nil), c.saveVMSignals...)
+	for _, elem := range c.saveBranchCurrents {
+		sigs = append(sigs, branchCurrentColumn(elem))
+	}
+	return sigs
 }
 
 // directiveNumber evaluates a directive argument that must be a numeric
@@ -153,7 +183,7 @@ func (g *generator) parseSimConfig() (simConfig, error) {
 	}
 
 	var saveErr error
-	cfg.saveMNANodes, cfg.saveVMSignals, saveErr = g.parseSaveDirectives()
+	cfg.saveMNANodes, cfg.saveVMSignals, cfg.saveBranchCurrents, saveErr = g.parseSaveDirectives()
 	if saveErr != nil {
 		return cfg, saveErr
 	}
@@ -179,12 +209,14 @@ func parseOptionalSolverArg(args []ast.Expression, idx int) (solverParam, error)
 	return solverParam{value: fmt.Sprintf("%.17g", val), present: true}, nil
 }
 
-// parseSaveDirectives extracts every .save(...) argument and classifies
-// each one as either an MNA node (a wire that's a terminal of some
-// physical primitive — read straight from the solution vector) or a VM
-// signal (a logic variable — copied into vm->values by phase_log first).
+// parseSaveDirectives extracts every .save(...) argument and classifies each
+// one as an MNA node (a wire that's a terminal of some physical primitive —
+// read straight from the solution vector), a VM signal (a logic variable —
+// copied into vm->values by phase_log first), or a branch current (a named
+// branch-bearing element — also routed through vm->values, see
+// simConfig.saveBranchCurrents).
 //
-// A name that is NEITHER is a hard error, not a silent fallthrough. The
+// A name that is NONE of those is a hard error, not a silent fallthrough. The
 // previous behavior classified any unrecognized name as a VM signal; at
 // runtime logger_log_signals then found nothing in vm->values and logged
 // 0.0 forever — so a typo'd .save argument compiled cleanly and produced
@@ -195,16 +227,35 @@ func parseOptionalSolverArg(args []ast.Expression, idx int) (solverParam, error)
 // A declared-but-unconnected wire is its own distinct error: it exists as
 // a symbol, but it has no row in the MNA matrix, so there is no voltage
 // to record — logger_log_step would log 0.0 for it just like a typo.
-func (g *generator) parseSaveDirectives() (mnaNodes []string, vmSignals []string, err error) {
+func (g *generator) parseSaveDirectives() (mnaNodes, vmSignals, branchCurrents []string, err error) {
 	for _, d := range g.prog.Directives {
 		if d.Name != "save" {
 			continue
 		}
 		for _, arg := range d.Args {
+			// Explicit current form: .save(I(main.vsense)). Handled before
+			// dottedPath, which would reject a call expression outright.
+			if call, isCall := arg.(*ast.CallExpression); isCall && callExpressionName(call.Function) == "I" {
+				if len(call.Arguments) != 1 {
+					return nil, nil, nil, fmt.Errorf(
+						".save(%s): I() takes exactly one element name", arg.String())
+				}
+				elem, ok := dottedPath(call.Arguments[0])
+				if !ok {
+					return nil, nil, nil, fmt.Errorf(
+						".save(%s): I()'s argument must be an element name", arg.String())
+				}
+				if !g.branchElements()[elem] {
+					return nil, nil, nil, errors.New(g.badBranchRefMsg("I", elem, elem))
+				}
+				branchCurrents = append(branchCurrents, elem)
+				continue
+			}
+
 			name, ok := dottedPath(arg)
 			if !ok {
-				return nil, nil, fmt.Errorf(
-					".save(%s): argument must be a signal or node name (e.g. main.q1_base)", arg.String())
+				return nil, nil, nil, fmt.Errorf(
+					".save(%s): argument must be a signal, node, or element name (e.g. main.q1_base)", arg.String())
 			}
 
 			// Ground is always saveable (logger special-cases it to 0.0
@@ -219,9 +270,23 @@ func (g *generator) parseSaveDirectives() (mnaNodes []string, vmSignals []string
 				continue
 			}
 
+			// Bare element name: .save(main.vsense) on a branch-bearing
+			// element logs its current. Element and net names are guaranteed
+			// disjoint by the elaborator (checkElementNameCollisions), so this
+			// can never shadow the node branch above.
+			if g.branchElements()[name] {
+				branchCurrents = append(branchCurrents, name)
+				continue
+			}
+			if _, isElement := g.elementByName()[name]; isElement {
+				// An element, but one with no branch row — say so and point at
+				// the ammeter idiom rather than claiming the name is unknown.
+				return nil, nil, nil, errors.New(g.badBranchRefMsg("save", name, name))
+			}
+
 			symType, declared := g.prog.Symbols[name]
 			if declared && symType.IsWire() {
-				return nil, nil, fmt.Errorf(
+				return nil, nil, nil, fmt.Errorf(
 					".save(%s): '%s' is a declared wire, but it is not connected to any "+
 						"physical primitive — it has no MNA matrix row, so there is no "+
 						"voltage to record. Connect it to a component or remove it from .save().",
@@ -234,15 +299,114 @@ func (g *generator) parseSaveDirectives() (mnaNodes []string, vmSignals []string
 				continue
 			}
 
-			return nil, nil, fmt.Errorf(
-				".save(%s): no MNA node or logic signal with this name exists — "+
-					"did you mean one of these?\n  MNA nodes:    %s\n  Logic signals: %s",
+			return nil, nil, nil, fmt.Errorf(
+				".save(%s): no MNA node, logic signal, or circuit element with this name exists — "+
+					"did you mean one of these?\n  MNA nodes:       %s\n  Logic signals:   %s\n  Element currents: %s",
 				name,
 				joinSortedOrNone(saveableNodeNames(g.prog.Physicals)),
-				joinSortedOrNone(saveableSignalNames(g.prog.Symbols)))
+				joinSortedOrNone(saveableSignalNames(g.prog.Symbols)),
+				joinSortedOrNone(namedBranchElements(g.prog.Physicals)))
 		}
 	}
-	return mnaNodes, vmSignals, nil
+	return mnaNodes, vmSignals, branchCurrents, nil
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ELEMENT LOOKUPS
+//
+// I() and .save() both need to answer "is this name an element, and does it
+// have a branch current?" Both lookups are cached on the generator since
+// emitExpr can hit I() many times.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// branchElements is the set of element names that own an MNA branch row — the
+// only names sys->resolve_branch can answer for, and therefore the only legal
+// arguments to I() or to a .save() current column.
+func (g *generator) branchElements() map[string]bool {
+	if g.branchSet == nil {
+		g.branchSet = make(map[string]bool)
+		for _, p := range g.prog.Physicals {
+			if branchBearingType(p.Type) {
+				g.branchSet[p.Name] = true
+			}
+		}
+	}
+	return g.branchSet
+}
+
+// elementByName maps every element name (branch-bearing or not) to its index
+// in prog.Physicals — the codegen-side twin of elaborator.elementIndex. Used
+// to tell "that's a resistor, it has no branch" apart from "no such element",
+// which are very different things to tell a user.
+func (g *generator) elementByName() map[string]int {
+	if g.elementIdx == nil {
+		g.elementIdx = make(map[string]int, len(g.prog.Physicals))
+		for i, p := range g.prog.Physicals {
+			g.elementIdx[p.Name] = i
+		}
+	}
+	return g.elementIdx
+}
+
+// namedBranchElements lists the elements whose current can be read, for "did
+// you mean" suggestions. Restricted to user-named ones: a synthesized
+// "main.L_4" is an implementation detail whose number shifts whenever a
+// component is added above it, so suggesting it would be bad advice.
+func namedBranchElements(physicals []elaborator.PhysicalObject) []string {
+	var names []string
+	for _, p := range physicals {
+		if p.UserNamed && branchBearingType(p.Type) {
+			names = append(names, p.Name)
+		}
+	}
+	return names
+}
+
+// badBranchRefMsg explains why `name` can't be read as a branch current.
+// ctx is the construct that asked: "I" for an I() call in logic, "save" for a
+// .save() argument.
+//
+// The three cases are genuinely different problems with different fixes, and
+// collapsing them into one "not found" would send users hunting for a typo
+// when what they actually need is an ammeter.
+func (g *generator) badBranchRefMsg(ctx, written, resolved string) string {
+	// how a reference to `n` is spelled in the construct that asked
+	ref := func(n string) string {
+		if ctx == "save" {
+			return ".save(" + n + ")"
+		}
+		return "I(" + n + ")"
+	}
+
+	if idx, isElement := g.elementByName()[resolved]; isElement {
+		// The suggested ammeter is a DECLARATION, so it must be spelled as a
+		// bare identifier — a flattened path like "main.rload_amp" is a valid
+		// reference but not valid syntax to declare one. The follow-up
+		// reference, by contrast, keeps whatever qualification the user's own
+		// spelling had: .save() takes full paths, I() takes module-local names.
+		bare := written
+		if i := strings.LastIndexByte(bare, '.'); i >= 0 {
+			bare = bare[i+1:]
+		}
+		return fmt.Sprintf(
+			"%s: '%s' is a %s, which has no branch current in the MNA formulation "+
+				"(its current is derived from node voltages, not solved for directly).\n"+
+				"  Put a 0 V voltage source in series with it as an ammeter and read that instead:\n"+
+				"      voltage_source %s_amp<0>() [<node>, <node>];\n"+
+				"  then refer to it as %s",
+			ref(written), written, g.prog.Physicals[idx].Type, bare, ref(written+"_amp"))
+	}
+	if physNodeSet(g.prog.Physicals)[resolved] {
+		return fmt.Sprintf(
+			"%s: '%s' is a net, not a circuit element — a branch current belongs to an element. "+
+				"Did you mean V(%s)?",
+			ref(written), written, written)
+	}
+	return fmt.Sprintf(
+		"%s: no circuit element named '%s' exists.\n"+
+			"  Name the element you want to read, e.g.  voltage_source vsense<0>() [a, b];\n"+
+			"  Elements whose current can be read: %s",
+		ref(written), resolved, joinSortedOrNone(namedBranchElements(g.prog.Physicals)))
 }
 
 // physNodeSet builds the set of every (cleaned) node name that appears as

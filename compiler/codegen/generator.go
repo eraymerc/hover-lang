@@ -91,6 +91,19 @@ type generator struct {
 	// (which would be unusual but should still nest correctly rather than
 	// silently doing the wrong thing).
 	usingPrevAPI bool
+
+	// errors collects hard validation failures found while emitting
+	// expressions, where emitExpr's (string, CType) signature leaves no room
+	// for an error return. Same deferred-diagnostic shape as
+	// unresolvedFunctions above, but these are fatal and reported by emit()
+	// itself rather than handed back to the caller as a hint.
+	errors []string
+
+	// branchSet and elementIdx cache the two element lookups I() and .save()
+	// need, built lazily from prog.Physicals (see directives.go). Cached
+	// because emitExpr can hit I() many times and each rebuild is a full walk.
+	branchSet  map[string]bool
+	elementIdx map[string]int
 }
 
 // emit drives the full sim.cpp generation pipeline, section by section.
@@ -108,7 +121,16 @@ func (g *generator) emit() error {
 	g.emitPhaseB()
 	g.emitStateVarSnapshot()
 	g.emitBuildNetlist()
-	return g.emitMain()
+	if err := g.emitMain(); err != nil {
+		return err
+	}
+	// Deferred diagnostics from expression emission (bad I() references and
+	// the like) — reported after the whole walk so a user sees every one at
+	// once rather than fixing them one recompile at a time.
+	if len(g.errors) > 0 {
+		return fmt.Errorf("%s", strings.Join(g.errors, "\n"))
+	}
+	return nil
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

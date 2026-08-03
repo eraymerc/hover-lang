@@ -39,6 +39,16 @@ func (a *Analyzer) checkStatement(stmt ast.Statement) {
 			if decl.Value != nil {
 				a.checkExpression(decl.Value)
 			}
+			// A wire or variable sharing a name with a circuit element would
+			// make V(x)/I(x)/.save(x) ambiguous. Caught here for the precise
+			// line number; the elaborator repeats the check across the whole
+			// flattened design, since semantic analysis only walks the entry
+			// file and never sees imported modules.
+			if prev, ok := a.currentScope.Resolve(decl.Name); ok && prev.Type.IsElement() {
+				a.addError(node, fmt.Sprintf(
+					"'%s' collides with a circuit element of the same name declared in this module",
+					decl.Name))
+			}
 			a.currentScope.Define(&Symbol{Name: decl.Name, Type: node.Type, IsState: node.IsState})
 		}
 	case *ast.AssignmentStatement:
@@ -109,6 +119,26 @@ func (a *Analyzer) checkStatement(stmt ast.Statement) {
 			a.currentScope.Define(&Symbol{Name: port, Type: ast.TWire})
 		}
 
+		// Named circuit elements go into the module's scope UP FRONT, not as
+		// the body walk reaches them. A logic block may legitimately read
+		// I(vsense) above the line declaring vsense, and a CCCS may sense an
+		// element declared later — netlist construction is order-independent
+		// (register_netlist runs entirely before stamp_netlist), so source
+		// order carries no meaning here and forward references must not error.
+		for _, s := range bodyStatements(node.Body) {
+			pp, ok := s.(*ast.PhysicalPrimitiveStatement)
+			if !ok || pp.Name == "" {
+				continue
+			}
+			if prev, exists := a.currentScope.Store[pp.Name]; exists {
+				a.addError(pp, fmt.Sprintf(
+					"duplicate name '%s' in module '%s' — already used by a %s",
+					pp.Name, node.Name, describeSymbol(prev)))
+				continue
+			}
+			a.currentScope.Define(&Symbol{Name: pp.Name, Type: ast.TElement})
+		}
+
 		prevDomain := a.currentDomain
 		a.currentDomain = node.Token.Type
 
@@ -137,11 +167,35 @@ func (a *Analyzer) checkStatement(stmt ast.Statement) {
 		if mi, ok := stmt.(*ast.ModuleInstStatement); ok {
 			physArgs = mi.PhysArgs
 		}
-		if pp, ok := stmt.(*ast.PhysicalPrimitiveStatement); ok {
-			physArgs = pp.PhysArgs
+		prim, isPrim := stmt.(*ast.PhysicalPrimitiveStatement)
+		if isPrim {
+			physArgs = prim.PhysArgs
 		}
 
-		for _, arg := range physArgs {
+		// nWires is how many leading [] entries are wire terminals. For a
+		// current-controlled source the LAST entry is an element reference
+		// instead — SPICE-style `CCCS<beta>() [out_p, out_n, vsense]` — and is
+		// deliberately left unchecked here. It may name an element declared
+		// later in the module, or reach into a child instance via a dotted
+		// path whose first segment is an instance name semantic analysis never
+		// defines as a symbol. The elaborator validates it for real, against
+		// the flattened design (elements.go: resolveSenseElements).
+		nWires := len(physArgs)
+		if isPrim {
+			if want, ok := physArity[prim.PrimType]; ok && len(physArgs) != want {
+				hint := ""
+				if prim.IsCurrentControlled() {
+					hint = " — [out_p, out_n, sense_element]"
+				}
+				a.addError(stmt, fmt.Sprintf("%s expects %d terminals in [], got %d%s",
+					prim.PrimType, want, len(physArgs), hint))
+			}
+			if prim.IsCurrentControlled() && nWires > 0 {
+				nWires--
+			}
+		}
+
+		for _, arg := range physArgs[:nWires] {
 			t := a.checkExpression(arg)
 			if !t.IsWire() && t.Base != "unknown" {
 				a.addError(stmt, fmt.Sprintf("Physical port must be a wire, got '%s'", t))
