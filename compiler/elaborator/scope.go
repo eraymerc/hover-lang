@@ -34,12 +34,11 @@ import (
 // it's why buildModuleScopes below reads exclusively from the per-file "own
 // declarations" table rather than from another file's finished scope.
 //
-// STAGE 1 SCOPE: modules only. Functions (e.output.Functions /
-// AliasedFunctions) and importc headers are still gathered from the entry
-// file's imports alone, unchanged — moving those requires threading the
-// declaring file through LogicObject into codegen, and inverting codegen's
-// alias-based function mangling so that one declaration reached through two
-// different aliases emits ONE C function rather than two.
+// FUNCTIONS follow the same rule, via buildFunctionScopes at the bottom of
+// this file. Getting there required inverting how a function's C name is
+// chosen: it now belongs to the declaration (elaborator.FunctionInfo.CName),
+// not to the caller's spelling, so one declaration reached bare from one file
+// and as `M.fabs` from another emits exactly one C function.
 // ─────────────────────────────────────────────────────────────────────────────
 
 // fileScope is one source file's view of the module namespace: what it
@@ -201,6 +200,129 @@ func describeScope(s *fileScope) string {
 	}
 	return fmt.Sprintf(" — modules visible%s: %s (add an import if the one you want is missing)",
 		where, strings.Join(names, ", "))
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PER-FILE FUNCTION SCOPES
+// ─────────────────────────────────────────────────────────────────────────────
+
+// buildFunctionScopes assigns every function declaration in the loaded set a
+// unique C identifier, then builds one call-spelling→declaration table per
+// file from that file's own imports. It also gathers importc headers, which
+// must come from EVERY file rather than just the entry's: a library's extern
+// declarations are emitted whether or not the entry file knows they exist, so
+// the header that defines them has to be included regardless.
+//
+// Structure mirrors buildModuleScopes, and the two-pass split is load-bearing
+// for the same reason: pass 1 records each file's OWN declarations, pass 2
+// wires up imports reading only from that table, so imports cannot become
+// accidentally transitive through map iteration order.
+func (e *Elaborator) buildFunctionScopes(files map[string]*ImportedFile) error {
+	// Sorted, so C names and emission order are a property of the program
+	// rather than of Go's randomized map iteration. Two builds of the same
+	// source must produce the same sim.cpp.
+	paths := make([]string, 0, len(files))
+	for path := range files {
+		paths = append(paths, path)
+	}
+	sort.Strings(paths)
+
+	// Pass 0 — extern names are fixed: they name a real C function in a header
+	// and cannot be renamed. Reserve them all before uniquing anything else, so
+	// a Hover-level function never takes a name the linker has already promised
+	// to something in a header.
+	taken := make(map[string]bool)
+	for _, path := range paths {
+		for _, stmt := range files[path].Program.Statements {
+			if f, ok := stmt.(*ast.FuncDeclStatement); ok && f.IsExtern {
+				taken[f.Name] = true
+			}
+		}
+	}
+
+	// Pass 1 — own declarations, unique C names, and importc headers.
+	own := make(map[string]map[string]*FunctionInfo, len(files))
+	for _, path := range paths {
+		decls := make(map[string]*FunctionInfo)
+		for _, stmt := range files[path].Program.Statements {
+			if ic, ok := stmt.(*ast.ImportCStatement); ok {
+				e.output.CIncludes = append(e.output.CIncludes, ic.Path)
+			}
+			f, ok := stmt.(*ast.FuncDeclStatement)
+			if !ok {
+				continue
+			}
+			if existing, dup := decls[f.Name]; dup {
+				return fmt.Errorf("function '%s' is declared twice in the same file (lines %d and %d)",
+					f.Name, existing.Decl.Line(), f.Line())
+			}
+			info := &FunctionInfo{Decl: f, CName: uniqueCName(f, taken), File: path}
+			decls[f.Name] = info
+			e.output.Functions = append(e.output.Functions, info)
+		}
+		own[path] = decls
+		e.output.FuncScopes[path] = make(map[string]*FunctionInfo)
+	}
+
+	// Pass 2 — fold each file's own declarations, then its own imports.
+	for _, path := range paths {
+		sc := e.output.FuncScopes[path]
+		for name, info := range own[path] {
+			sc[name] = info
+		}
+
+		for _, imp := range files[path].Imports {
+			resolvedPath := resolveImportPathFor(path, imp.Path, imp.IsSystem)
+			imported, ok := own[resolvedPath]
+			if !ok {
+				// buildModuleScopes runs first and reports unresolvable imports
+				// with a better message; nothing to add here.
+				continue
+			}
+
+			if imp.Alias != "" {
+				// Aliased names always contain a dot, and a bare function name
+				// never can, so an alias can't collide with the flat namespace.
+				for name, info := range imported {
+					sc[imp.Alias+"."+name] = info
+				}
+				continue
+			}
+
+			for name, info := range imported {
+				if existing, exists := sc[name]; exists && existing != info {
+					if existing.Decl.IsExtern && info.Decl.IsExtern {
+						continue // two headers declaring the same C function — harmless
+					}
+					return fmt.Errorf("line %d: function '%s' from %q collides with an existing function '%s' (declared at line %d) — use an aliased import (`as Name`) to avoid this",
+						imp.Token.Line, name, imp.Path, existing.Decl.Name, existing.Decl.Line())
+				}
+				sc[name] = info
+			}
+		}
+	}
+
+	return nil
+}
+
+// uniqueCName picks the C identifier a function will be emitted under,
+// recording it in taken.
+//
+// Extern functions keep their exact name — it IS the C symbol the header
+// declares, so renaming it would break the link. Everything else prefers its
+// Hover name and falls back to a numbered suffix, which only happens now that
+// two different files may each declare a private helper of the same name. The
+// suffix is deterministic because callers walk files in sorted order.
+func uniqueCName(f *ast.FuncDeclStatement, taken map[string]bool) string {
+	if f.IsExtern {
+		return f.Name
+	}
+	name := f.Name
+	for n := 2; taken[name]; n++ {
+		name = fmt.Sprintf("%s__%d", f.Name, n)
+	}
+	taken[name] = true
+	return name
 }
 
 // allModules returns every module declaration across every loaded file,

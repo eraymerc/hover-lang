@@ -234,7 +234,7 @@ func (g *generator) formatStateInitializer(ht hoverType, si stateInit) string {
 	case *ast.NumberExpression:
 		return formatTypedLiteral(elaborator.ParseEngineering(v.Value), ht.elem)
 	case *ast.CallExpression:
-		if decl := g.lookupFunctionDecl(callExpressionName(v.Function)); decl != nil && decl.IsExtern {
+		if decl := g.lookupFunctionDecl(callExpressionName(v.Function), si.logic); decl != nil && decl.IsExtern {
 			code, ct := g.emitExpr(v, si.logic)
 			return castToHover(code, ct, ht)
 		}

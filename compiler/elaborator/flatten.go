@@ -16,6 +16,15 @@ func (e *Elaborator) flattenModule(mod *ast.ModuleDeclStatement, prefix string, 
 	// its own dependencies and choose its own aliases. See scope.go.
 	scope := e.scopeFor(mod)
 
+	// The declaring file also selects the FUNCTION namespace every statement
+	// below is emitted against (LogicObject.File → ElaboratedProgram.FuncScopes),
+	// for the same reason: a library's fabs() call must find the library's own
+	// <math/math.hvr> import, not whatever the consumer happened to import.
+	declFile := e.entryFile
+	if p, ok := e.declFile[mod]; ok {
+		declFile = p
+	}
+
 	for _, stmt := range mod.Body.Body {
 		switch s := stmt.(type) {
 		case *ast.ModuleInstStatement:
@@ -107,9 +116,27 @@ func (e *Elaborator) flattenModule(mod *ast.ModuleDeclStatement, prefix string, 
 
 			// Capture the controlling logic signal for driven primitives.
 			// voltage_source / current_source use LogicArgs[0] as their control.
+			//
+			// A literal control — current_source<>(0.01) — is NOT a signal, and
+			// must not travel this path. mangleExpression happily returns the
+			// digit string "0.01" as if it were a name (its NumberExpression
+			// case), and codegen's phase_b then mangles that into an identifier
+			// (mangle("0.01") == "v10201") and emits
+			// api_set_current_source(..., v10201), which nothing declares. The
+			// C++ compiler reported an undeclared identifier three layers away
+			// from the source line that caused it.
+			//
+			// Folding the constant into param0 instead makes `<>(0.01)` mean
+			// exactly what `<0.01>()` means — a fixed source stamped once at
+			// build time with no per-step update, which is the only sensible
+			// reading of a compile-time constant anyway.
 			ctrlSignal := ""
 			if len(s.LogicArgs) > 0 {
-				ctrlSignal = e.mangleExpression(s.LogicArgs[0], prefix, ports)
+				if val, isConst := literalValue(s.LogicArgs[0]); isConst {
+					pMap["param0"] = val
+				} else {
+					ctrlSignal = e.mangleExpression(s.LogicArgs[0], prefix, ports)
+				}
 			}
 
 			name, userNamed := e.elementName(s, prefix, physIdx)
@@ -164,6 +191,7 @@ func (e *Elaborator) flattenModule(mod *ast.ModuleDeclStatement, prefix string, 
 					Prefix: prefix,
 					Params: copyMapSF(params),
 					Ports:  copyMapSS(ports),
+					File:   declFile,
 					Domain: domain,
 				})
 			}
@@ -176,6 +204,7 @@ func (e *Elaborator) flattenModule(mod *ast.ModuleDeclStatement, prefix string, 
 				Prefix: prefix,
 				Params: copyMapSF(params),
 				Ports:  copyMapSS(ports),
+				File:   declFile,
 				Domain: domain,
 			})
 
@@ -188,6 +217,7 @@ func (e *Elaborator) flattenModule(mod *ast.ModuleDeclStatement, prefix string, 
 				Prefix: prefix,
 				Params: copyMapSF(params),
 				Ports:  copyMapSS(ports),
+				File:   declFile,
 				Domain: domain,
 			})
 
@@ -199,6 +229,7 @@ func (e *Elaborator) flattenModule(mod *ast.ModuleDeclStatement, prefix string, 
 				Prefix: prefix,
 				Params: copyMapSF(params),
 				Ports:  copyMapSS(ports),
+				File:   declFile,
 				Domain: domain,
 			})
 		}

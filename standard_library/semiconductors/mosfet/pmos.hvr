@@ -1,0 +1,116 @@
+import <math/math.hvr>;
+import <semiconductors/diode.hvr> as Body;
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  P-Channel MOSFET — Level 1 (Shichman-Hodges) square law
+//
+//  Polarity:
+//  Inverted relative to the NMOS. The device turns on when the GATE is pulled
+//  BELOW the source, and conventional current flows source -> drain. Every
+//  voltage below is therefore measured as source-referenced-downward (Vsg,
+//  Vsd) rather than drain-referenced-upward.
+//
+//  Parameter sign convention:
+//  Vth is a MAGNITUDE — pass 0.7 for a device whose threshold is -0.7 V. Same
+//  choice pnp.hvr makes with Is/Bf/Br: keep every parameter positive and put
+//  the polarity in the equations, where it is visible, instead of in the
+//  caller's sign discipline. Kp and lambda are likewise positive.
+//
+//  Everything else works exactly as in nmos.hvr, which carries the full
+//  explanation of each piece:
+//
+//    * nr_prev() per-iteration limiting (manual 13.1) — SPICE's fetlim on the
+//      gate drive and limvds on the channel voltage, scaled to the overdrive
+//      rather than to a thermal voltage, since a square law has no exponential
+//      scale of its own.
+//    * The Rpar companion resistor, which is REQUIRED, not an optimization:
+//      Hover's current_source stamps into B_static only and contributes no
+//      conductance, so the nonlinear loop is damped fixed-point rather than
+//      Newton, and a MOSFET in triode is not contractive without a linear
+//      conductance in G. Limiting bounds the excursion but cannot fix the
+//      divergence. Rpar supplies the conductance and is cancelled exactly by
+//      the residual source at convergence, so it is invisible in the answer
+//      and leaks nothing in cutoff. Set it near the device's Rds(on).
+//    * (1 + lambda*Vsd) applied in both regions, which makes Isd C1-continuous
+//      across the triode/saturation boundary.
+//    * The third-quadrant swap, re-referencing the overdrive to Vdg when the
+//      drain rises above the source.
+// ─────────────────────────────────────────────────────────────────────────────
+
+analog module PMOS<double Kp,     double W,      double L,
+                   double Vth,    double lambda, double Rpar,
+                   double Cgs,    double Cgd,    double Cdb>
+    [wire gate, wire drain, wire source]
+{
+    double K = Kp * W / L;
+
+    // Source-referenced, so both are positive in normal conduction. vsd_true
+    // is what the Rpar resistor stamps, so the residual source must reference
+    // it rather than the limited copy for the two to cancel at convergence.
+    double vsg_true = V(source) - V(gate);
+    double vsd_true = V(source) - V(drain);
+
+    double vsg_old = nr_prev(V(source) - V(gate));
+    double vsd_old = nr_prev(V(source) - V(drain));
+
+    // fetlim, mirrored: bound proportional to overdrive, 2 V floor.
+    double dvg_max = 2.0 * fabs(vsg_old - Vth) + 2.0;
+    double dvg     = vsg_true - vsg_old;
+    if (dvg >  dvg_max) { dvg =  dvg_max; }
+    if (dvg < -dvg_max) { dvg = -dvg_max; }
+    double vsg = vsg_old + dvg;
+
+    // limvds, mirrored.
+    double dvd_max = 2.0 * fabs(vsd_old) + 2.0;
+    double dvd     = vsd_true - vsd_old;
+    if (dvd >  dvd_max) { dvd =  dvd_max; }
+    if (dvd < -dvd_max) { dvd = -dvd_max; }
+    double vsd = vsd_old + dvd;
+
+    // Forward orientation: source above drain, overdrive measured at source.
+    double flip = 1.0;
+    double vch  = vsd;
+    double vov  = vsg - Vth;
+
+    // Reverse (third-quadrant) orientation: the physical source is the drain
+    // terminal, so the overdrive re-references to Vdg = Vsg - Vsd.
+    if (vsd < 0.0) {
+        flip = -1.0;
+        vch  = 0.0 - vsd;
+        vov  = vsg - vsd - Vth;
+    }
+
+    // Physical bound on overdrive (velocity saturation); also covers the first
+    // iteration, before nr_prev() has any NR history to report.
+    if (vov > 20.0) { vov = 20.0; }
+
+    double isd = 0.0;
+    if (vov > 0.0) {
+        if (vch < vov) {
+            // Triode
+            isd = K * (vov * vch - 0.5 * vch * vch) * (1.0 + lambda * vch);
+        } else {
+            // Saturation
+            isd = 0.5 * K * vov * vov * (1.0 + lambda * vch);
+        }
+    }
+    isd = isd * flip;
+
+    // Linear part into G, residual into B. Terminal order is [source, drain]
+    // here — the mirror of the NMOS — so a positive isd means current flowing
+    // source -> drain through the channel, which is the PMOS's on-state.
+    double ires = isd - vsd_true / Rpar;
+    R<Rpar>() [source, drain];
+    current_source<>(ires) [source, drain];
+
+    // Fixed parasitics. Same roles as the NMOS: Cgd is the Miller capacitance.
+    C<Cgs>() [gate,  source];
+    C<Cgd>() [gate,  drain];
+    C<Cdb>() [drain, source];
+
+    // Intrinsic body diode, reversed relative to the NMOS: the n-well bulk is
+    // tied to the source (cathode) and the p-drain is the anode, so it conducts
+    // on V(drain) > V(source) — clamping the drain to just above the source
+    // rail, which is exactly the high-side recirculation path in a bridge.
+    module bodydiode = Body.Diode<1p, 1.0, 0.026>() [drain, source];
+}

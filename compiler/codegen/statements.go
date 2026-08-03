@@ -134,22 +134,15 @@ func (g *generator) emitStmt(stmt ast.Statement, logic elaborator.LogicObject, i
 
 // currentFunctionReturnType looks up the return type of the function
 // currently being emitted, identified by logic.Prefix (the function's
-// mangled C name, set by emitOneFunction). Falls back to CDouble if the
+// assigned C name, set by emitOneFunction). Falls back to CDouble if the
 // prefix doesn't match any known function — this can legitimately happen
 // for ReturnStatement nodes reached outside a function body in contexts
 // this compiler doesn't otherwise restrict at parse time; CDouble matches
 // the pre-existing behavior before return types were tracked.
 func (g *generator) currentFunctionReturnType(logic elaborator.LogicObject) CType {
 	for _, fn := range g.prog.Functions {
-		if fn.Name == logic.Prefix {
-			return hoverTypeToCType(fn.ReturnType)
-		}
-	}
-	for alias, byName := range g.prog.AliasedFunctions {
-		for _, fn := range byName {
-			if mangle(alias+"."+fn.Name) == logic.Prefix {
-				return hoverTypeToCType(fn.ReturnType)
-			}
+		if fn.CName == logic.Prefix {
+			return hoverTypeToCType(fn.Decl.ReturnType)
 		}
 	}
 	return CDouble

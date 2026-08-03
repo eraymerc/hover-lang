@@ -115,7 +115,7 @@ func (g *generator) isConstFoldableStateInit(si stateInit) bool {
 	case *ast.NumberExpression:
 		return true
 	case *ast.CallExpression:
-		if decl := g.lookupFunctionDecl(callExpressionName(v.Function)); decl != nil && decl.IsExtern {
+		if decl := g.lookupFunctionDecl(callExpressionName(v.Function), si.logic); decl != nil && decl.IsExtern {
 			return true
 		}
 		return false

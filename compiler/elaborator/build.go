@@ -32,6 +32,16 @@ func (e *Elaborator) Elaborate() (*ElaboratedProgram, error) {
 		}
 	}
 
+	// Header well-formedness, before anything is flattened. A module whose
+	// header declares one name twice cannot be flattened meaningfully — the
+	// duplicate resolves to whichever port kind was written into childPorts
+	// last — so every error after this point would be a consequence rather
+	// than a cause. Bail immediately (ports.go).
+	e.checkModulePortNames()
+	if len(e.errors) > 0 {
+		return nil, fmt.Errorf("elaboration failed:\n%s", strings.Join(e.errors, "\n"))
+	}
+
 	// 1. Bootstrap main's StaticArgs (<> params) so hovercraft_emit can generate HVR_set_param_*
 	mainParams := make(map[string]float64)
 	for _, param := range main.StaticArgs {
@@ -71,6 +81,7 @@ func (e *Elaborator) Elaborate() (*ElaboratedProgram, error) {
 	//    never walks.
 	e.resolveSenseElements()
 	e.checkElementNameCollisions()
+	e.checkSourceControls()
 
 	if len(e.errors) > 0 {
 		return nil, fmt.Errorf("elaboration failed:\n%s", strings.Join(e.errors, "\n"))

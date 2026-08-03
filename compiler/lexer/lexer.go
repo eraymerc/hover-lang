@@ -251,13 +251,19 @@ func (l *Lexer) readNumber() string {
 		}
 	}
 
-	// Check for engineering suffixes (m, u, n, p, k, Meg, G)
-	// We handle "Meg" specifically as it's multiple chars
+	// Check for engineering suffixes (f, p, n, u, m, k, Meg, G)
+	// We handle "Meg" specifically as it's multiple chars.
+	//
+	// 'f' (femto, 1e-15) is here because gate and junction capacitances are
+	// routinely written in femtofarads — a MOSFET model's Cgd is 10f, not
+	// 0.01p — and without it the lexer stopped at the digits, handed the
+	// parser a stray identifier, and produced a cascade of syntax errors
+	// nowhere near the real mistake.
 	if l.ch == 'M' && l.peekChar() == 'e' {
 		l.readChar() // M
 		l.readChar() // e
 		l.readChar() // g
-	} else if strings.ContainsRune("munpkG", rune(l.ch)) {
+	} else if strings.ContainsRune("fmunpkG", rune(l.ch)) {
 		l.readChar()
 	}
 

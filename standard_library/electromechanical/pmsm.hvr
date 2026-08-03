@@ -1,3 +1,9 @@
+// sin/cos in the Park transform below. Required now that functions resolve
+// against the declaring file's own imports rather than the entry file's —
+// this file used to work only because every circuit that instantiated it
+// happened to import math itself.
+import <math/math.hvr>;
+
 analog module PMSM<double Rs, double Ld, double Lq, double flux_m, double p, double J, double B>
     (output double omega_m_out, output double i_d_out, output double i_q_out, output double theta_e_out)
     [wire va, wire vb, wire vc] // Girişler: Artık va, vb, vc yok. Vd ve Vq var.

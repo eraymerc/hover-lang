@@ -2,10 +2,10 @@ package codegen
 
 import (
 	"fmt"
-	"math"
-	"strconv"
 	ast "hover/compiler/ast"
 	"hover/compiler/elaborator"
+	"math"
+	"strconv"
 	"strings"
 )
 
@@ -286,15 +286,15 @@ func (g *generator) identifierType(name string, logic elaborator.LogicObject) CT
 }
 
 // emitUserFunctionCall resolves and emits a call to a user-defined Hover
-// function (bare or qualified via an aliased import — see
-// resolveFunctionCName in names.go), casting each argument to the
-// function's declared parameter type and returning the function's
-// declared return type.
+// function (bare or qualified via an aliased import), resolved against the
+// import list of the file that declared the calling statement — see
+// resolveFunction in names.go. Each argument is cast to the function's
+// declared parameter type, and the function's declared return type is
+// returned.
 func (g *generator) emitUserFunctionCall(fnName string, argExprs []ast.Expression, logic elaborator.LogicObject) (string, CType) {
-	cName, ok := g.resolveFunctionCName(fnName)
-	fnDecl := g.lookupFunctionDecl(fnName)
+	info := g.resolveFunction(fnName, logic)
 
-	if !ok || fnDecl == nil {
+	if info == nil {
 		// Unknown function — emit a clearly broken call rather than
 		// silently producing 0.0, so the C++ compiler's "undeclared
 		// identifier" error points back to a real Hover-side bug instead
@@ -312,7 +312,7 @@ func (g *generator) emitUserFunctionCall(fnName string, argExprs []ast.Expressio
 			g.unresolvedFunctions = append(g.unresolvedFunctions, fnName)
 		}
 
-		cName = fmt.Sprintf("/* UNRESOLVED_FUNCTION_%s */ %s", mangle(fnName), mangle(fnName))
+		cName := fmt.Sprintf("/* UNRESOLVED_FUNCTION_%s */ %s", mangle(fnName), mangle(fnName))
 		args := []string{"vm"}
 		for _, arg := range argExprs {
 			argCode, _ := g.emitExpr(arg, logic)
@@ -321,6 +321,7 @@ func (g *generator) emitUserFunctionCall(fnName string, argExprs []ast.Expressio
 		return fmt.Sprintf("%s(%s)", cName, strings.Join(args, ", ")), CDouble
 	}
 
+	fnDecl := info.Decl
 	args := []string{}
 	if !fnDecl.IsExtern {
 		args = append(args, "vm") // extern C funcs take no VM
@@ -342,30 +343,9 @@ func (g *generator) emitUserFunctionCall(fnName string, argExprs []ast.Expressio
 		args = append(args, argCode)
 	}
 
-	callName := cName
-	if fnDecl.IsExtern {
-		callName = fnDecl.Name // raw C name, never mangled
-	}
+	// info.CName is already the raw header name for an extern, so no special
+	// case is needed here any more.
+	callName := info.CName
 	returnType := hoverTypeOf(fnDecl.ReturnType).elem
 	return fmt.Sprintf("%s(%s)", callName, strings.Join(args, ", ")), returnType
-}
-
-// lookupFunctionDecl finds the *ast.FuncDeclStatement for a bare or
-// qualified function name, mirroring resolveFunctionCName's bare/aliased
-// split but returning the declaration itself (needed for parameter/return
-// types) rather than just the mangled C name.
-func (g *generator) lookupFunctionDecl(fnName string) *ast.FuncDeclStatement {
-	alias, bare, isQualified := splitQualifiedCallName(fnName)
-	if !isQualified {
-		if fn, ok := g.prog.Functions[fnName]; ok {
-			return fn
-		}
-		return nil
-	}
-	if byName, ok := g.prog.AliasedFunctions[alias]; ok {
-		if fn, ok := byName[bare]; ok {
-			return fn
-		}
-	}
-	return nil
 }

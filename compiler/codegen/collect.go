@@ -189,19 +189,11 @@ func (g *generator) collectVarTypes() map[string]hoverType {
 	}
 
 	// Function parameters are locals inside their own function body, resolved
-	// as cName.paramName -> mangle(); they never appear in g.prog.Logic, so
-	// walk g.prog.Functions and g.prog.AliasedFunctions to record them too.
+	// as CName.paramName -> mangle(); they never appear in g.prog.Logic, so
+	// walk g.prog.Functions to record them too.
 	for _, fn := range g.prog.Functions {
-		for _, p := range fn.Parameters {
-			types[mangle(fn.Name+"."+p.Name)] = hoverTypeOf(p.Type)
-		}
-	}
-	for alias, byName := range g.prog.AliasedFunctions {
-		for _, fn := range byName {
-			cName := mangle(alias + "." + fn.Name)
-			for _, p := range fn.Parameters {
-				types[mangle(cName+"."+p.Name)] = hoverTypeOf(p.Type)
-			}
+		for _, p := range fn.Decl.Parameters {
+			types[mangle(fn.CName+"."+p.Name)] = hoverTypeOf(p.Type)
 		}
 	}
 

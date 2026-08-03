@@ -57,18 +57,6 @@ func cStr(name string) string {
 // QUALIFIED NAME HANDLING (aliased imports — Alias.Thing)
 // ─────────────────────────────────────────────────────────────────────────────
 
-// splitQualifiedCallName splits "Motor.sineWave" into ("Motor", "sineWave", true),
-// or returns ("", "sineWave", false) for an unqualified "sineWave". Mirrors
-// elaborator.splitQualifiedName — duplicated locally since codegen doesn't
-// otherwise depend on elaborator's internal (unexported) helpers.
-func splitQualifiedCallName(name string) (alias string, bare string, isQualified bool) {
-	idx := strings.IndexByte(name, '.')
-	if idx == -1 {
-		return "", name, false
-	}
-	return name[:idx], name[idx+1:], true
-}
-
 // callExpressionName extracts the real callable name from a CallExpression's
 // Function field, handling both bare calls (sineWave(...), where Function is
 // an *ast.IdentifierExpression) and qualified calls from aliased imports
@@ -90,29 +78,32 @@ func callExpressionName(fn ast.Expression) string {
 	return fn.TokenLiteral()
 }
 
-// resolveFunctionCName looks up fnName (bare "sineWave" or qualified
-// "Motor.sineWave") against the elaborated program's function tables and
-// returns the mangled C identifier to use at the call site, plus whether
-// it was found at all.
+// resolveFunction looks up fnName (bare "sineWave" or qualified
+// "Motor.sineWave") in the function namespace of the file that declared the
+// statement being emitted, and returns the declaration's compilation identity.
 //
-// The returned name is always mangled (dots replaced with underscores) so
-// that two aliases each contributing a function with the same bare name
-// (Motor.sineWave and Aux.sineWave) emit as distinct C functions
-// (Motor_sineWave, Aux_sineWave) rather than colliding.
-func (g *generator) resolveFunctionCName(fnName string) (string, bool) {
-	alias, bare, isQualified := splitQualifiedCallName(fnName)
-	if !isQualified {
-		if _, ok := g.prog.Functions[fnName]; ok {
-			return fnName, true // bare functions keep their plain name
-		}
-		return "", false
-	}
-	if byName, ok := g.prog.AliasedFunctions[alias]; ok {
-		if _, ok := byName[bare]; ok {
-			return mangle(alias + "." + bare), true
+// The scope is logic.File, NOT the entry file: a module body in a library
+// resolves its calls against that library's own imports. Falling back to
+// EntryFile covers a LogicObject with no recorded origin (the single-file
+// path, where both are "").
+func (g *generator) resolveFunction(fnName string, logic elaborator.LogicObject) *elaborator.FunctionInfo {
+	scope, ok := g.prog.FuncScopes[logic.File]
+	if !ok {
+		scope, ok = g.prog.FuncScopes[g.prog.EntryFile]
+		if !ok {
+			return nil
 		}
 	}
-	return "", false
+	return scope[fnName]
+}
+
+// lookupFunctionDecl is resolveFunction for callers that only need the
+// declaration (parameter/return types, IsExtern) and not the C name.
+func (g *generator) lookupFunctionDecl(fnName string, logic elaborator.LogicObject) *ast.FuncDeclStatement {
+	if info := g.resolveFunction(fnName, logic); info != nil {
+		return info.Decl
+	}
+	return nil
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -18,49 +18,31 @@ import (
 // ─────────────────────────────────────────────────────────────────────────────
 
 func (g *generator) emitFunctions() {
-	hasAliased := false
-	for _, byName := range g.prog.AliasedFunctions {
-		if len(byName) > 0 {
-			hasAliased = true
-			break
-		}
-	}
-	if len(g.prog.Functions) == 0 && !hasAliased {
+	if len(g.prog.Functions) == 0 {
 		return
 	}
 	g.raw(`// ── USER-DEFINED FUNCTIONS ───────────────────────────────────────────────────`)
 
-	// Forward declarations (skip extern — header provides them).
+	// One C function per DECLARATION, under the name the elaborator assigned
+	// it (FunctionInfo.CName) — not per call spelling. A function imported
+	// bare by one file and under an alias by another is still one declaration
+	// and must not be emitted twice.
+	//
+	// Iteration order is the elaborator's deterministic one (declaring file
+	// path, then source order), so sim.cpp is byte-reproducible.
 	for _, fn := range g.prog.Functions {
-		if fn.IsExtern {
+		if fn.Decl.IsExtern {
 			continue
 		}
-		g.emitForwardDecl(fn.Name, fn)
-	}
-	for alias, byName := range g.prog.AliasedFunctions {
-		for _, fn := range byName {
-			if fn.IsExtern {
-				continue
-			}
-			g.emitForwardDecl(mangle(alias+"."+fn.Name), fn)
-		}
+		g.emitForwardDecl(fn.CName, fn.Decl)
 	}
 	g.raw("")
 
-	// Bodies (skip extern — header provides them).
 	for _, fn := range g.prog.Functions {
-		if fn.IsExtern {
+		if fn.Decl.IsExtern {
 			continue
 		}
-		g.emitOneFunction(fn.Name, fn)
-	}
-	for alias, byName := range g.prog.AliasedFunctions {
-		for _, fn := range byName {
-			if fn.IsExtern {
-				continue
-			}
-			g.emitOneFunction(mangle(alias+"."+fn.Name), fn)
-		}
+		g.emitOneFunction(fn)
 	}
 }
 
@@ -76,32 +58,38 @@ func (g *generator) emitForwardDecl(cName string, fn *ast.FuncDeclStatement) {
 	g.raw(fmt.Sprintf("static %s %s(%s);", ret.cReturnType(), cName, strings.Join(params, ", ")))
 }
 
-// emitOneFunction emits a single function under the given C name. cName is both
-// the emitted identifier and the Prefix used to resolve the function's own
-// parameters as locals inside its body.
-func (g *generator) emitOneFunction(cName string, fn *ast.FuncDeclStatement) {
+// emitOneFunction emits a single function under its assigned C name, which is
+// both the emitted identifier and the Prefix used to resolve the function's
+// own parameters as locals inside its body.
+//
+// The synthesized LogicObject carries fn.File, so calls made from inside this
+// body resolve against the imports of the file that DECLARED it — the same
+// rule module bodies follow.
+func (g *generator) emitOneFunction(fn *elaborator.FunctionInfo) {
+	decl := fn.Decl
 	fnLogic := elaborator.LogicObject{
-		Prefix: cName,
+		Prefix: fn.CName,
 		Params: make(map[string]float64),
 		Ports:  make(map[string]string),
+		File:   fn.File,
 	}
 
 	params := []string{"VM *vm"}
-	for _, p := range fn.Parameters {
+	for _, p := range decl.Parameters {
 		params = append(params, hoverTypeOf(p.Type).cParamDecl(p.Name))
-		fnLogic.Ports[p.Name] = cName + "." + p.Name
+		fnLogic.Ports[p.Name] = fn.CName + "." + p.Name
 	}
 
-	ret := hoverTypeOf(fn.ReturnType)
-	g.raw(fmt.Sprintf("static %s %s(%s) {", ret.cReturnType(), cName, strings.Join(params, ", ")))
+	ret := hoverTypeOf(decl.ReturnType)
+	g.raw(fmt.Sprintf("static %s %s(%s) {", ret.cReturnType(), fn.CName, strings.Join(params, ", ")))
 	g.push()
 
-	for _, p := range fn.Parameters {
-		localName := mangle(cName + "." + p.Name)
+	for _, p := range decl.Parameters {
+		localName := mangle(fn.CName + "." + p.Name)
 		g.line("%s", hoverTypeOf(p.Type).cDecayedLocalDecl(localName, p.Name))
 	}
 
-	g.emitStmt(fn.Body, fnLogic, true)
+	g.emitStmt(decl.Body, fnLogic, true)
 	g.line("return %s; // fallthrough", formatTypedLiteral(0.0, ret.elem))
 	g.pop()
 	g.raw("}")

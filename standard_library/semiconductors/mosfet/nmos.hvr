@@ -1,0 +1,162 @@
+import <math/math.hvr>;
+import <semiconductors/diode.hvr> as Body;
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  N-Channel MOSFET — Level 1 (Shichman-Hodges) square law
+//
+//  Three terminals, with the bulk tied internally to the source. That is the
+//  overwhelmingly common connection for a discrete device and for any digital
+//  switch, and it lets the body diode be instantiated as a real Diode rather
+//  than left to the user to remember. Body effect (gamma/phi) is the thing you
+//  give up; it only matters for stacked devices sharing a well.
+//
+//  ── Per-iteration limiting (manual 13.1) ────────────────────────────────────
+//
+//  Same nr_prev() technique led.hvr uses for its junction, but the MOSFET
+//  analogue: SPICE calls these fetlim (on Vgs) and limvds (on Vds). Both bound
+//  how far the working voltage guess may move from the previous NR iterate.
+//
+//  The scale is different from a junction's. A diode has a natural one — the
+//  thermal voltage — because its nonlinearity is exponential. A square law has
+//  no such scale, so the bound is taken proportional to the overdrive itself
+//  with a fixed floor (SPICE's vtsthi = 2*|Vgs_old - Vth| + 2), which keeps the
+//  limiter loose once the device is solidly on and tight near threshold, where
+//  the region boundary lives and where jumping across it costs the most.
+//
+//  ── Why this model also has a resistor in it ────────────────────────────────
+//
+//  Limiting bounds how far an iterate may travel; it does not make a divergent
+//  iteration convergent. Those are separate failure modes and the MOSFET has
+//  both.
+//
+//  Hover stamps a current_source into B_static only — it contributes no
+//  conductance to G (runtime/mna/matrices.cpp, stamp_current_source). So the
+//  nonlinear loop is damped fixed-point iteration, not true Newton: there is no
+//  device Jacobian anywhere in the runtime. Convergence therefore requires the
+//  iteration to be contractive, i.e. |dI/dV| / G_node < 1.
+//
+//  The BJT and diode models get that from their voltage clamps — past a clamp
+//  the derivative is exactly zero. A MOSFET cannot be rescued that way. In
+//  triode dIds/dVds ~ 1/Ron, and Vds is the very node the current drives, so
+//  the loop gain is ~ Rload/Ron. For a switch that is by definition >> 1, and a
+//  MOSFET written in the naive style of npn.hvr limit-cycles in exactly the
+//  on-state it was built for, limiter or no limiter.
+//
+//  Rpar fixes this by moving the channel's linear part into G where the solver
+//  can see it, leaving the current_source to carry only the residual:
+//
+//      saturation (gds ~ 0):  gain = (1/Rpar)/(1/Rpar + Gload)  < 1  always
+//      triode (gds ~ 1/Ron):  gain = |1/Ron - 1/Rpar| / (1/Rpar + Gload) -> 0
+//                                                            when Rpar ~ Ron
+//
+//  Rpar is a NUMERICAL parameter, not a physical shunt. At convergence the
+//  residual source subtracts back exactly what the resistor injected, so the
+//  net device current is ids for any Rpar — and in cutoff ids is 0, so the
+//  cancellation is exact and there is no off-state leakage. Set Rpar to roughly
+//  the device's expected Rds(on). It also keeps the drain node conductive in
+//  cutoff, which is what stops .op from hitting a singular matrix when the only
+//  other path off the drain is a parasitic capacitor.
+//
+//  ── Channel-length modulation ───────────────────────────────────────────────
+//
+//  (1 + lambda*Vds) is applied in BOTH regions, unlike classic SPICE MOS1 which
+//  applies it only in saturation. That choice makes Ids C1-continuous across
+//  the triode/saturation boundary (both value and slope match at Vds = Vov),
+//  which the fixed-point iteration cares about a great deal more than it cares
+//  about reproducing SPICE's discontinuity.
+//
+//  ── Third quadrant ──────────────────────────────────────────────────────────
+//
+//  The channel is physically symmetric, so on Vds < 0 the roles of the drain
+//  and source terminals swap and the overdrive re-references to the drain
+//  (Vgd = Vgs - Vds). Without this the model is wrong wherever it is most
+//  useful — a synchronous bridge runs current backwards through the channel on
+//  purpose, and leaving that to the body diode alone would fake a diode drop
+//  that a real device shorts out.
+// ─────────────────────────────────────────────────────────────────────────────
+
+analog module NMOS<double Kp,     double W,      double L,
+                   double Vth,    double lambda, double Rpar,
+                   double Cgs,    double Cgd,    double Cdb>
+    [wire gate, wire drain, wire source]
+{
+    // Transconductance parameter. Kp is the process constant (mu*Cox), W/L the
+    // device geometry, so K is what the square law actually scales by.
+    double K = Kp * W / L;
+
+    // True terminal voltages. vds_true is what the Rpar resistor actually sees
+    // and stamps, so the residual current source below must reference it — not
+    // the limited copy — for the two to cancel exactly at convergence.
+    double vgs_true = V(gate)  - V(source);
+    double vds_true = V(drain) - V(source);
+
+    double vgs_old = nr_prev(V(gate)  - V(source));
+    double vds_old = nr_prev(V(drain) - V(source));
+
+    // fetlim: bound proportional to overdrive, with a 2 V floor.
+    double dvg_max = 2.0 * fabs(vgs_old - Vth) + 2.0;
+    double dvg     = vgs_true - vgs_old;
+    if (dvg >  dvg_max) { dvg =  dvg_max; }
+    if (dvg < -dvg_max) { dvg = -dvg_max; }
+    double vgs = vgs_old + dvg;
+
+    // limvds: same idea on the channel voltage. This is the one that matters
+    // in triode, where a single unbounded iterate can overshoot the rail and
+    // hand the next iteration a wildly wrong region.
+    double dvd_max = 2.0 * fabs(vds_old) + 2.0;
+    double dvd     = vds_true - vds_old;
+    if (dvd >  dvd_max) { dvd =  dvd_max; }
+    if (dvd < -dvd_max) { dvd = -dvd_max; }
+    double vds = vds_old + dvd;
+
+    // Forward orientation: drain above source, overdrive measured at source.
+    double flip = 1.0;
+    double vch  = vds;
+    double vov  = vgs - Vth;
+
+    // Reverse (third-quadrant) orientation: the physical source is the drain
+    // terminal, so the overdrive re-references to Vgd = Vgs - Vds.
+    if (vds < 0.0) {
+        flip = -1.0;
+        vch  = 0.0 - vds;
+        vov  = vgs - vds - Vth;
+    }
+
+    // Physical bound on overdrive. A pure square law is unbounded in Vgs; a
+    // real device runs out of carriers (velocity saturation) long before this.
+    // Also covers the very first iteration, where there is no NR history yet
+    // and nr_prev() just returns the cold-start guess.
+    if (vov > 20.0) { vov = 20.0; }
+
+    double ids = 0.0;
+    if (vov > 0.0) {
+        if (vch < vov) {
+            // Triode
+            ids = K * (vov * vch - 0.5 * vch * vch) * (1.0 + lambda * vch);
+        } else {
+            // Saturation
+            ids = 0.5 * K * vov * vov * (1.0 + lambda * vch);
+        }
+    }
+    ids = ids * flip;
+
+    // Linear part into G, residual into B. See the header — the pair is exact
+    // at convergence for any Rpar.
+    double ires = ids - vds_true / Rpar;
+    R<Rpar>() [drain, source];
+    current_source<>(ires) [drain, source];
+
+    // Fixed parasitics. Cgd is the Miller capacitance and dominates switching
+    // loss and gate-drive behaviour, which is why it is a parameter here rather
+    // than a hardcoded constant like the BJT models use.
+    C<Cgs>() [gate,  source];
+    C<Cgd>() [gate,  drain];
+    C<Cdb>() [drain, source];
+
+    // Intrinsic body diode: p-bulk (tied to source) is the anode, n-drain the
+    // cathode, so it conducts on V(source) > V(drain) and catches the inductive
+    // kick when the channel opens. This is the part a BJT bridge has to add by
+    // hand — see the four discrete flyback diodes in examples/DCMotor/h_bridge.hvr.
+    // Note it brings its own 2p junction capacitance, in parallel with Cdb.
+    module bodydiode = Body.Diode<1p, 1.0, 0.026>() [source, drain];
+}
