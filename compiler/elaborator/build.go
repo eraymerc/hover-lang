@@ -17,12 +17,15 @@ import (
 // discarded that second return entirely, so the Go MNA package and the
 // stamping pass here were deleted.
 func (e *Elaborator) Elaborate() (*ElaboratedProgram, error) {
-	main, ok := e.modules["main"]
+	main, ok := e.entryScope.resolveModule("main")
 	if !ok {
 		return nil, fmt.Errorf("module 'main' not found")
 	}
 
-	for _, mod := range e.modules {
+	// Macro rewriting applies to every analog module in the whole loaded set,
+	// not just the entry file's — a library's analog module needs its idt()/
+	// ddt() expanded whether or not the entry file can name it.
+	for _, mod := range e.allModules() {
 		if mod.Token.Type == token.ANALOG {
 			e.processAnalogIdt(mod)
 			e.processAnalogDdt(mod)

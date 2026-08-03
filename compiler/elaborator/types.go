@@ -69,19 +69,22 @@ type ImportedFile struct {
 }
 
 type Elaborator struct {
-	// modules and output.Functions hold the ENTRY FILE's own declarations
-	// plus everything merged in from bare (non-aliased) imports. This is
-	// the flat, non-namespaced lookup that flattenModule/evaluate already
-	// use today — unchanged in shape, just populated from more than one
-	// file now.
-	modules map[string]*ast.ModuleDeclStatement
+	// scopes maps an absolute file path to that file's module namespace, and
+	// declFile maps a module declaration back to the file that declared it.
+	// Together they let flattenModule resolve a module body's references
+	// against the importing file's OWN import list — see scope.go for why
+	// that matters and what the previous entry-file-owns-everything model
+	// broke.
+	//
+	// output.Functions / output.AliasedFunctions are deliberately NOT part of
+	// this yet: function resolution is still entry-file-scoped (stage 2).
+	scopes   map[string]*fileScope
+	declFile map[*ast.ModuleDeclStatement]string
 
-	// aliasedModules holds modules from imports that used `as Name` —
-	// reachable only as Name.Thing, never merged into the bare namespace
-	// above. e.output.AliasedFunctions plays the equivalent role for
-	// functions and is exposed directly on ElaboratedProgram since codegen
-	// needs to resolve qualified function calls after elaboration finishes.
-	aliasedModules map[string]map[string]*ast.ModuleDeclStatement
+	// entryScope is the scope of the file compilation started from. It owns
+	// 'main', and serves as the fallback for modules with no recorded origin
+	// file (the single-file New() path).
+	entryScope *fileScope
 
 	output *ElaboratedProgram
 	errors []string
@@ -98,7 +101,11 @@ type Elaborator struct {
 	// cycle detection — a module cycle can happen entirely within one
 	// file, with no imports involved at all, and the loader's check
 	// (which only looks at import statements) cannot see it.
-	expanding map[string]bool
+	// Keyed by the resolved declaration rather than the reference spelling:
+	// under per-file scoping the same module can be named differently from
+	// different files (bare "LED" here, "L.LED" there), and a cycle is a
+	// property of the declaration, not of how someone spelled it.
+	expanding map[*ast.ModuleDeclStatement]bool
 
 	// elementIndex maps a flattened element name ("main.motor.vsense") to its
 	// index in output.Physicals. EVERY physical is registered here, user-named
@@ -133,11 +140,32 @@ type senseRef struct {
 // import support. Existing callers that only ever had one file keep working
 // unchanged.
 func New(program *ast.Program) *Elaborator {
-	e := &Elaborator{
-		modules:        make(map[string]*ast.ModuleDeclStatement),
-		aliasedModules: make(map[string]map[string]*ast.ModuleDeclStatement),
-		expanding:      make(map[string]bool),
-		elementIndex:   make(map[string]int),
+	e := newElaborator()
+	// One file, no imports: a single scope holding its own declarations, which
+	// is also the entry scope every module resolves against.
+	sc := newFileScope("")
+	for _, stmt := range program.Statements {
+		if m, ok := stmt.(*ast.ModuleDeclStatement); ok {
+			sc.modules[m.Name] = m
+			e.declFile[m] = ""
+		}
+	}
+	e.scopes[""] = sc
+	e.entryScope = sc
+
+	e.registerFileDecls(program)
+	return e
+}
+
+// newElaborator allocates the maps shared by both constructors. Kept in one
+// place so a newly added field can't be initialised in one constructor and
+// silently left nil in the other.
+func newElaborator() *Elaborator {
+	return &Elaborator{
+		scopes:       make(map[string]*fileScope),
+		declFile:     make(map[*ast.ModuleDeclStatement]string),
+		expanding:    make(map[*ast.ModuleDeclStatement]bool),
+		elementIndex: make(map[string]int),
 		output: &ElaboratedProgram{
 			Physicals:        []PhysicalObject{},
 			Logic:            []LogicObject{},
@@ -146,8 +174,6 @@ func New(program *ast.Program) *Elaborator {
 			AliasedFunctions: make(map[string]map[string]*ast.FuncDeclStatement),
 		},
 	}
-	e.registerFileDecls(program)
-	return e
 }
 
 // NewWithImports builds an Elaborator from the entry file plus every file
@@ -156,36 +182,35 @@ func New(program *ast.Program) *Elaborator {
 //
 // Resolution rules:
 //   - Bare import (`import "x.hvr";`)        → x.hvr's modules/functions are
-//     merged directly into the entry file's flat namespace. A name that
-//     already exists (from the entry file itself, or from another bare
-//     import) is a collision error.
+//     merged directly into the importing file's flat namespace. A name that
+//     already exists (from the file itself, or from another bare import) is a
+//     collision error.
 //   - Aliased import (`import "x.hvr" as Y;`) → x.hvr's modules/functions
 //     are reachable only as Y.Thing, kept in a separate per-alias map.
 //
-// Imports are non-transitive: only the entry file's own `import` statements
-// are consulted. If x.hvr itself imports y.hvr, that import is irrelevant
-// here — the entry file never sees y.hvr unless it imports it directly.
+// Imports are non-transitive: if x.hvr itself imports y.hvr, the importer sees
+// x.hvr's own declarations only, never y.hvr's.
+//
+// MODULES are scoped per file (scope.go): every file resolves module
+// references against its own import list, so a library can declare its own
+// dependencies and pick its own aliases. FUNCTIONS are still resolved from the
+// entry file's imports alone — that's stage 2, and it additionally requires
+// codegen changes, so the two registration paths below deliberately differ.
 func NewWithImports(files map[string]*ImportedFile, entryPath string) (*Elaborator, error) {
 	entry, ok := files[entryPath]
 	if !ok {
 		return nil, fmt.Errorf("entry file %q not found in loaded file set", entryPath)
 	}
 
-	e := &Elaborator{
-		modules:        make(map[string]*ast.ModuleDeclStatement),
-		aliasedModules: make(map[string]map[string]*ast.ModuleDeclStatement),
-		expanding:      make(map[string]bool),
-		elementIndex:   make(map[string]int),
-		output: &ElaboratedProgram{
-			Physicals:        []PhysicalObject{},
-			Logic:            []LogicObject{},
-			Symbols:          make(map[string]ast.Type),
-			Functions:        make(map[string]*ast.FuncDeclStatement),
-			AliasedFunctions: make(map[string]map[string]*ast.FuncDeclStatement),
-		},
-	}
+	e := newElaborator()
 
-	// 1. Register the entry file's own declarations first, so collision
+	// 1. Per-file module scopes, for every loaded file.
+	if err := e.buildModuleScopes(files); err != nil {
+		return nil, err
+	}
+	e.entryScope = e.scopes[entryPath]
+
+	// 2. Register the entry file's own declarations first, so collision
 	//    errors can correctly say "already declared in the entry file"
 	//    rather than attributing the original declaration to an import.
 	e.registerFileDecls(entry.Program)
@@ -215,15 +240,16 @@ func NewWithImports(files map[string]*ImportedFile, entryPath string) (*Elaborat
 	return e, nil
 }
 
-// registerFileDecls walks one file's top-level statements and populates
-// e.modules / e.output.Functions / e.output.Directives directly — this is
-// exactly what the old New() did inline, factored out so both constructors
-// share it.
+// registerFileDecls walks the ENTRY file's top-level statements and populates
+// e.output.Functions / Directives / CIncludes.
+//
+// Modules are deliberately absent: they live in per-file scopes built by
+// buildModuleScopes (scope.go), so registering them here too would create a
+// second, entry-only namespace that could disagree with the scoped one.
+// Directives are entry-only by design — an imported library has no business
+// setting .tran or .save on its consumer.
 func (e *Elaborator) registerFileDecls(program *ast.Program) {
 	for _, stmt := range program.Statements {
-		if m, ok := stmt.(*ast.ModuleDeclStatement); ok {
-			e.modules[m.Name] = m
-		}
 		if d, ok := stmt.(*ast.DirectiveStatement); ok {
 			e.output.Directives = append(e.output.Directives, d)
 		}
@@ -236,22 +262,15 @@ func (e *Elaborator) registerFileDecls(program *ast.Program) {
 	}
 }
 
-// mergeBareFile merges program's module/function declarations directly
-// into e.modules / e.output.Functions. Returns an error if any name
-// already exists — bare imports share one flat namespace with the entry
-// file, so collisions must be caught rather than silently shadowed.
+// mergeBareFile merges a bare-imported file's FUNCTION declarations into
+// e.output.Functions. Returns an error if any name already exists — bare
+// imports share one flat namespace, so collisions must be caught rather than
+// silently shadowed.
+//
+// Modules are handled by buildModuleScopes (scope.go), which applies the same
+// collision rule per importing file rather than globally.
 func (e *Elaborator) mergeBareFile(program *ast.Program) error {
 	for _, stmt := range program.Statements {
-		if m, ok := stmt.(*ast.ModuleDeclStatement); ok {
-			if existing, exists := e.modules[m.Name]; exists {
-				if existing == m {
-					continue // same declaration via two import paths (diamond) — fine
-				}
-				return fmt.Errorf("module '%s' declared at line %d collides with an existing module '%s' (already declared at line %d) — use an aliased import (`as Name`) to avoid this",
-					m.Name, m.Line(), existing.Name, existing.Line())
-			}
-			e.modules[m.Name] = m
-		}
 		if f, ok := stmt.(*ast.FuncDeclStatement); ok {
 			if existing, exists := e.output.Functions[f.Name]; exists {
 				if existing == f {
@@ -272,26 +291,18 @@ func (e *Elaborator) mergeBareFile(program *ast.Program) error {
 	return nil
 }
 
-// registerAliasedFile registers program's module/function declarations
-// under the given alias, reachable as Alias.Thing. Unlike bare imports,
-// aliased imports never collide with the entry namespace or with each
-// other — each alias gets its own isolated map. The only error case is a
-// file importing the same alias twice with different targets, which
-// mergeBareFile-style collision logic doesn't apply to since aliases are
-// keyed independently per file; that case is left as future work if it
-// becomes a problem in practice.
+// registerAliasedFile registers an aliased import's FUNCTION declarations
+// under the given alias, reachable as Alias.funcName. Each alias gets its own
+// isolated map, so aliased imports never collide with the flat namespace or
+// with each other.
+//
+// Modules are handled by buildModuleScopes (scope.go), per importing file.
 func (e *Elaborator) registerAliasedFile(alias string, program *ast.Program) error {
-	if e.aliasedModules[alias] == nil {
-		e.aliasedModules[alias] = make(map[string]*ast.ModuleDeclStatement)
-	}
 	if e.output.AliasedFunctions[alias] == nil {
 		e.output.AliasedFunctions[alias] = make(map[string]*ast.FuncDeclStatement)
 	}
 
 	for _, stmt := range program.Statements {
-		if m, ok := stmt.(*ast.ModuleDeclStatement); ok {
-			e.aliasedModules[alias][m.Name] = m
-		}
 		if f, ok := stmt.(*ast.FuncDeclStatement); ok {
 			e.output.AliasedFunctions[alias][f.Name] = f
 		}
@@ -302,29 +313,17 @@ func (e *Elaborator) registerAliasedFile(alias string, program *ast.Program) err
 	return nil
 }
 
-// resolveQualifiedModule looks up a possibly-aliased module name like
-// "Motor.PMSM". If name contains no dot, it's a plain lookup in the flat
-// (entry + bare-imports) namespace — e.modules. If it contains a dot, the
-// part before the first dot is treated as an import alias.
+// resolveQualifiedFunction looks up "Alias.funcName" or a plain "funcName".
 //
-// Returns (decl, ok). ok is false if the name doesn't resolve at all
-// (unknown alias, or unknown name within a known alias).
-func (e *Elaborator) resolveQualifiedModule(name string) (*ast.ModuleDeclStatement, bool) {
-	alias, bare, isQualified := splitQualifiedName(name)
-	if !isQualified {
-		decl, ok := e.modules[name]
-		return decl, ok
-	}
-	byName, ok := e.aliasedModules[alias]
-	if !ok {
-		return nil, false
-	}
-	decl, ok := byName[bare]
-	return decl, ok
-}
-
-// resolveQualifiedFunction is the function-call equivalent of
-// resolveQualifiedModule — looks up "Alias.funcName" or a plain "funcName".
+// STAGE 2 NOTE: unlike module resolution, this is still ENTRY-FILE scoped —
+// it consults one global table built from the entry file's imports, so a
+// library calling a function it imported itself still won't resolve. Moving
+// functions to fileScope (scope.go) additionally requires threading the
+// declaring file through LogicObject into codegen, and inverting codegen's
+// alias-based mangling so one declaration reached through two aliases emits a
+// single C function. standard_library/electromechanical/pmsm.hvr will need
+// `import <math/math.hvr>;` added when that lands — it calls sin/cos today
+// without importing them.
 func (e *Elaborator) resolveQualifiedFunction(name string) (*ast.FuncDeclStatement, bool) {
 	alias, bare, isQualified := splitQualifiedName(name)
 	if !isQualified {

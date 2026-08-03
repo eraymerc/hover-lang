@@ -11,23 +11,33 @@ func (e *Elaborator) flattenModule(mod *ast.ModuleDeclStatement, prefix string, 
 		return
 	}
 
+	// Module references in this body resolve against the import list of the
+	// file that DECLARED mod, not the entry file's — so a library can import
+	// its own dependencies and choose its own aliases. See scope.go.
+	scope := e.scopeFor(mod)
+
 	for _, stmt := range mod.Body.Body {
 		switch s := stmt.(type) {
 		case *ast.ModuleInstStatement:
-			target, ok := e.resolveQualifiedModule(s.ModuleName)
+			target, ok := scope.resolveModule(s.ModuleName)
 			if !ok {
-				e.errors = append(e.errors, fmt.Sprintf("Line %d: undeclared module '%s'", s.Line(), s.ModuleName))
+				e.errors = append(e.errors, fmt.Sprintf("Line %d: undeclared module '%s'%s",
+					s.Line(), s.ModuleName, describeScope(scope)))
 				continue
 			}
 
-			// Module instantiation cycle check: if s.ModuleName is already
+			// Module instantiation cycle check: if this declaration is already
 			// being expanded somewhere up the current call stack, this
 			// instantiation would recurse forever (A instantiates B
 			// instantiates A, directly or through any chain of
 			// intermediate modules). This is unrelated to the loader's
 			// file-import cycle check — a module cycle can exist entirely
 			// within one file, with no imports involved.
-			if e.expanding[s.ModuleName] {
+			//
+			// Keyed by the resolved DECLARATION rather than the reference
+			// spelling, so that two files reaching the same module under
+			// different aliases still share one cycle key.
+			if e.expanding[target] {
 				e.errors = append(e.errors, fmt.Sprintf(
 					"Line %d: module instantiation cycle detected — '%s' is already being expanded (it instantiates itself, directly or through other modules)",
 					s.Line(), s.ModuleName))
@@ -67,9 +77,9 @@ func (e *Elaborator) flattenModule(mod *ast.ModuleDeclStatement, prefix string, 
 				}
 			}
 
-			e.expanding[s.ModuleName] = true
+			e.expanding[target] = true
 			e.flattenModule(target, prefix+"."+s.InstanceName, childParams, childPorts, target.Token.Type)
-			delete(e.expanding, s.ModuleName)
+			delete(e.expanding, target)
 
 		case *ast.PhysicalPrimitiveStatement:
 			physIdx := len(e.output.Physicals)
