@@ -1,6 +1,7 @@
 package codegen
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -291,6 +292,16 @@ func (g *generator) emitLibraryAPI(cfg simConfig) {
 	g.raw("}")
 	g.raw("")
 
+	g.raw("// Current simulation time. Deliberately does NOT boot the VM: asking")
+	g.raw("// what time it is must not be the thing that starts the clock, and a")
+	g.raw("// host uses this to decide whether HVR_set_param_* is still allowed.")
+	g.raw("double HVR_get_time(void) {")
+	g.push()
+	g.line("return vm.time;")
+	g.pop()
+	g.raw("}")
+	g.raw("")
+
 	g.raw("void HVR_clear_log_before(double t) {")
 	g.push()
 	g.line("hvr_rt_clear_before(&vm, t);")
@@ -307,11 +318,105 @@ func (g *generator) emitLibraryAPI(cfg simConfig) {
 
 	g.emitInputSetters()
 	g.emitParamSetters()
-	g.emitOutputGetters(cfg)
+	getters := g.emitOutputGetters(cfg)
+	g.emitHvrManifest(cfg, getters)
 
 	g.pop()
 	g.raw("}")
 	g.raw("")
+}
+
+// emitHvrManifest emits HVR_manifest(), returning a JSON description of
+// this library's generated ABI: every param, input and output, with the
+// exact symbol name to call and enough type information to call it
+// correctly.
+//
+// This exists because the generated half of the ABI cannot be safely
+// discovered from the outside. A host can read the exported symbol names
+// out of the binary, but symbols carry no signatures — and
+// HVR_set_input_<name> is a one-argument scalar setter for a scalar input
+// and a two-argument (pointer, length) setter for an array one. Calling
+// the array form as if it were scalar passes a double in xmm0 while the
+// callee reads a pointer from rdi: an immediate segfault, not a catchable
+// error. The manifest turns that guess into a lookup.
+//
+// It is emitted as a raw string literal so the JSON needs no C escaping,
+// and travels inside the library itself rather than as a sidecar file, so
+// a .so handed around on its own stays fully self-describing.
+func (g *generator) emitHvrManifest(cfg simConfig, getters map[string]string) {
+	var b strings.Builder
+	b.WriteString("{\n")
+	b.WriteString(`  "hovercraft_abi": 1,` + "\n")
+	b.WriteString(fmt.Sprintf("  \"time_step\": %s,\n", cfg.tStep))
+	b.WriteString(fmt.Sprintf("  \"end_time\": %s,\n", cfg.tEnd))
+
+	b.WriteString(`  "params": [` + "\n")
+	paramNames := sortedKeys(g.prog.MainParams)
+	for i, name := range paramNames {
+		b.WriteString(fmt.Sprintf(
+			`    {"name": %s, "symbol": "HVR_set_param_%s", "default": %s}`,
+			jsonStr(name), sanitizeIdent(name), formatTypedLiteral(g.prog.MainParams[name], CDouble)))
+		b.WriteString(sep(i, len(paramNames)))
+	}
+	b.WriteString("  ],\n")
+
+	b.WriteString(`  "inputs": [` + "\n")
+	ins := g.hvrInputs()
+	for i, in := range ins {
+		kind, length := "scalar", 1
+		if in.ht.isArray() {
+			kind, length = "array", in.ht.elemCount()
+		}
+		b.WriteString(fmt.Sprintf(
+			`    {"name": %s, "symbol": "HVR_set_input_%s", "kind": %s, "ctype": %s, "length": %d}`,
+			// elem.String(), not cName(): the setter is DECLARED with the
+			// former (int64_t, not int), and a host sizing its argument
+			// from a narrower spelling would corrupt the call.
+			jsonStr(in.name), in.ident, jsonStr(kind), jsonStr(in.ht.elem.String()), length))
+		b.WriteString(sep(i, len(ins)))
+	}
+	b.WriteString("  ],\n")
+
+	b.WriteString(`  "outputs": [` + "\n")
+	outs := g.hvrOutputs(cfg)
+	for i, o := range outs {
+		// getters[o.column] is absent only when the per-signal getter name
+		// collided; "" then tells the host to use HVR_get_output instead.
+		b.WriteString(fmt.Sprintf(
+			`    {"column": %s, "symbol": %s, "kind": %s}`,
+			jsonStr(o.column), jsonStr(getters[o.column]), jsonStr(o.kind)))
+		b.WriteString(sep(i, len(outs)))
+	}
+	b.WriteString("  ]\n}")
+
+	g.raw("// Machine-readable description of everything generated above —")
+	g.raw("// see runtime/hovercraft.h and hovercraft_drivers/python/.")
+	g.raw("static const char HVR_manifest_json[] = R\"HVRJSON(")
+	g.raw(b.String())
+	g.raw(")HVRJSON\";")
+	g.raw("")
+	g.raw("const char *HVR_manifest(void) { return HVR_manifest_json; }")
+	g.raw("")
+}
+
+// sep terminates a JSON array element: comma unless it's the last one.
+func sep(i, n int) string {
+	if i == n-1 {
+		return "\n"
+	}
+	return ",\n"
+}
+
+// jsonStr renders a Go string as a JSON string literal. Hover names are
+// identifiers and dotted paths, but element names reach this from user
+// source, so quotes/backslashes/controls are escaped rather than assumed
+// absent. json.Marshal on a string cannot fail.
+func jsonStr(s string) string {
+	out, err := json.Marshal(s)
+	if err != nil {
+		return `""`
+	}
+	return string(out)
 }
 
 // hvrOutput is one readable quantity: the column name it carries in the
@@ -320,6 +425,7 @@ func (g *generator) emitLibraryAPI(cfg simConfig) {
 type hvrOutput struct {
 	column string
 	expr   string
+	kind   string // "node" | "signal" | "current" — reported in the manifest
 }
 
 // hvrOutputs enumerates every .save()d quantity as a directly-readable
@@ -338,7 +444,7 @@ func (g *generator) hvrOutputs(cfg simConfig) []hvrOutput {
 
 	var outs []hvrOutput
 	for _, node := range cfg.saveMNANodes {
-		outs = append(outs, hvrOutput{node, fmt.Sprintf("api_V(&api, %s)", cStr(node))})
+		outs = append(outs, hvrOutput{node, fmt.Sprintf("api_V(&api, %s)", cStr(node)), "node"})
 	}
 	for _, sig := range cfg.saveVMSignals {
 		mangled := mangle(sig)
@@ -349,10 +455,10 @@ func (g *generator) hvrOutputs(cfg simConfig) []hvrOutput {
 		if !known[mangled] || ht.isArray() || ht.isPointer() {
 			continue
 		}
-		outs = append(outs, hvrOutput{sig, emitCast(mangled, ht.elem, CDouble)})
+		outs = append(outs, hvrOutput{sig, emitCast(mangled, ht.elem, CDouble), "signal"})
 	}
 	for _, elem := range cfg.saveBranchCurrents {
-		outs = append(outs, hvrOutput{branchCurrentColumn(elem), fmt.Sprintf("api_I(&api, %s)", cStr(elem))})
+		outs = append(outs, hvrOutput{branchCurrentColumn(elem), fmt.Sprintf("api_I(&api, %s)", cStr(elem)), "current"})
 	}
 	return outs
 }
@@ -372,9 +478,13 @@ func (g *generator) hvrOutputs(cfg simConfig) []hvrOutput {
 // the generated file. HVR_get_output(name, out) is name-keyed and so can
 // live in the fixed public header — the only option for a host that
 // discovers its columns at runtime (e.g. from HVRLogResult::names).
-func (g *generator) emitOutputGetters(cfg simConfig) {
+// Returns column name → emitted per-signal getter name, for the manifest;
+// a column whose getter name collided is absent from the map (it is still
+// reachable through the name-keyed HVR_get_output).
+func (g *generator) emitOutputGetters(cfg simConfig) map[string]string {
 	outs := g.hvrOutputs(cfg)
 
+	getters := map[string]string{}
 	emitted := map[string]bool{}
 	for _, o := range outs {
 		fn := "HVR_get_output_" + sanitizeIdent(o.column)
@@ -389,6 +499,7 @@ func (g *generator) emitOutputGetters(cfg simConfig) {
 			continue
 		}
 		emitted[fn] = true
+		getters[o.column] = fn
 		g.raw(fmt.Sprintf("double %s(void) {", fn))
 		g.push()
 		g.line("hvr_ensure_started();")
@@ -413,6 +524,7 @@ func (g *generator) emitOutputGetters(cfg simConfig) {
 	g.pop()
 	g.raw("}")
 	g.raw("")
+	return getters
 }
 
 // emitInputSetters emits HVR_set_input_<name>(...) for every `()` logic
@@ -428,35 +540,62 @@ func (g *generator) emitOutputGetters(cfg simConfig) {
 // clamped to the array's declared capacity, and a caller passing fewer
 // than the full capacity only overwrites that many leading elements.
 func (g *generator) emitInputSetters() {
-	allVars := map[string]bool{}
-	for _, v := range g.collectAllVars() {
-		allVars[v] = true
-	}
-	for _, name := range sortedKeys(g.prog.MainPorts) {
-		mangled := mangle(g.prog.MainPorts[name])
-		if !allVars[mangled] {
-			continue
-		}
-		ht := g.typeOf(mangled)
-		if ht.isArray() {
-			g.raw(fmt.Sprintf("void HVR_set_input_%s(const %s *values, long n) {", sanitizeIdent(name), ht.elem.String()))
+	for _, in := range g.hvrInputs() {
+		if in.ht.isArray() {
+			g.raw(fmt.Sprintf("void HVR_set_input_%s(const %s *values, long n) {", in.ident, in.ht.elem.String()))
 			g.push()
 			g.line("if (n <= 0) return;")
-			g.line("long cap = %d;", ht.elemCount())
+			g.line("long cap = %d;", in.ht.elemCount())
 			g.line("long count = n < cap ? n : cap;")
-			g.line("memcpy(%s, values, (size_t)count * sizeof(%s));", mangled, ht.elem.String())
+			g.line("memcpy(%s, values, (size_t)count * sizeof(%s));", in.global, in.ht.elem.String())
 			g.pop()
 			g.raw("}")
 			g.raw("")
 			continue
 		}
-		g.raw(fmt.Sprintf("void HVR_set_input_%s(%s v) {", sanitizeIdent(name), ht.elem.String()))
+		g.raw(fmt.Sprintf("void HVR_set_input_%s(%s v) {", in.ident, in.ht.elem.String()))
 		g.push()
-		g.line("%s = v;", mangled)
+		g.line("%s = v;", in.global)
 		g.pop()
 		g.raw("}")
 		g.raw("")
 	}
+}
+
+// hvrInput is one settable `()` logic arg: its Hover name, the identifier
+// segment its setter is spelled with, the C++ global behind it, and the
+// full type (which decides scalar vs explicit-length array setter).
+type hvrInput struct {
+	name   string
+	ident  string
+	global string
+	ht     hoverType
+}
+
+// hvrInputs enumerates main's `()` args that have real runtime storage,
+// skipping the ones that resolved to no C++ global at all — physical/wire
+// ports are topological and hold nothing a host could write. Shared by
+// emitInputSetters and the manifest so the two can never disagree about
+// which inputs exist or what shape their setters have.
+func (g *generator) hvrInputs() []hvrInput {
+	allVars := map[string]bool{}
+	for _, v := range g.collectAllVars() {
+		allVars[v] = true
+	}
+	var ins []hvrInput
+	for _, name := range sortedKeys(g.prog.MainPorts) {
+		mangled := mangle(g.prog.MainPorts[name])
+		if !allVars[mangled] {
+			continue
+		}
+		ins = append(ins, hvrInput{
+			name:   name,
+			ident:  sanitizeIdent(name),
+			global: mangled,
+			ht:     g.typeOf(mangled),
+		})
+	}
+	return ins
 }
 
 // emitParamSetters emits HVR_set_param_<name>(value) for every `<>` static

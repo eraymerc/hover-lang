@@ -20,3 +20,10 @@ sim.exe
 /runtime/hover_runtime.lib
 >>>>>>> e1b252df (Recompiled)
 docs/hovercraft-issues.md
+
+# Python driver library
+__pycache__/
+*.py[cod]
+# Compiled example hovercraft — `Hovercraft("rc_filter.hvr")` builds this
+# next to the source, named without the .hvr suffix.
+/hovercraft_drivers/python/examples/rc_filter
