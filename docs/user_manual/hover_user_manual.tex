@@ -1,0 +1,1428 @@
+\documentclass[11pt, a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{geometry}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{longtable}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{titlesec}
+\usepackage{parskip}
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+\usepackage{microtype}
+\usepackage{lmodern}
+\usepackage{amsmath}
+
+\geometry{margin=2.5cm}
+
+% ── Colour palette ──────────────────────────────────────────────────────────
+\definecolor{codebg}{RGB}{245,245,245}
+\definecolor{codecomment}{RGB}{100,100,100}
+\definecolor{codekeyword}{RGB}{0,0,180}
+\definecolor{codestring}{RGB}{160,0,0}
+\definecolor{codenumber}{RGB}{0,120,0}
+\definecolor{linkcolor}{RGB}{30,80,160}
+\definecolor{headrule}{RGB}{60,60,60}
+
+% ── Listings style ───────────────────────────────────────────────────────────
+\lstdefinelanguage{HVR}{
+  morekeywords={module, func, state, wire, double, float, int, unsigned,
+                input, output, if, else, while, return, gnd, time,
+                voltage_source, current_source, R, L, C, VCCS, VCVS,
+                CCCS, CCVS, tran, save, import},
+  sensitive=true,
+  morecomment=[l]{//},
+  morestring=[b]",
+}
+
+\lstset{
+  language=HVR,
+  backgroundcolor=\color{codebg},
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{codekeyword}\bfseries,
+  commentstyle=\color{codecomment}\itshape,
+  stringstyle=\color{codestring},
+  numberstyle=\tiny\color{codenumber},
+  numbers=left,
+  numbersep=8pt,
+  stepnumber=1,
+  breaklines=true,
+  breakatwhitespace=false,
+  frame=single,
+  framesep=4pt,
+  rulecolor=\color{gray!50},
+  xleftmargin=1.5em,
+  framexleftmargin=1.5em,
+  showstringspaces=false,
+  tabsize=4,
+  captionpos=b,
+}
+
+
+% Inline code style
+\newcommand{\code}[1]{\texttt{\small #1}}
+
+% ── Hyperref setup ───────────────────────────────────────────────────────────
+\hypersetup{
+  colorlinks=true,
+  linkcolor=linkcolor,
+  urlcolor=linkcolor,
+  pdfauthor={Eray Mercan},
+  pdftitle={Hover Language Manual},
+  pdfsubject={A Mixed-Systems Co-Simulation Language},
+}
+
+% ── Header / footer ──────────────────────────────────────────────────────────
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\textit{Hover Language Manual}}
+\fancyhead[R]{\small\textit{A Mixed-Systems Co-Simulation Language}}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+% ── Section formatting ───────────────────────────────────────────────────────
+\titleformat{\section}
+  {\large\bfseries}{\thesection.}{0.6em}{}[\vspace{-0.3em}\rule{\linewidth}{0.6pt}]
+\titleformat{\subsection}
+  {\normalsize\bfseries}{\thesubsection}{0.6em}{}
+\titleformat{\subsubsection}
+  {\normalsize\itshape}{\thesubsubsection}{0.6em}{}
+
+% ── Table column types ───────────────────────────────────────────────────────
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{C}[1]{>{\centering\arraybackslash}p{#1}}
+
+%% ════════════════════════════════════════════════════════════════════════════
+\begin{document}
+
+% ── Title page ───────────────────────────────────────────────────────────────
+\begin{titlepage}
+  \centering
+  \vspace*{3cm}
+  {\Huge\bfseries Hover v0.7.0 Language Manual\par}
+  \vspace{0.6cm}
+  \rule{0.5\linewidth}{1pt}\par
+  \vspace{0.4cm}
+  {\Large A Mixed-Systems Co-Simulation Language\par}
+  {\large Eray Mercan\par}
+  \vspace{2cm}
+  \tableofcontents
+\end{titlepage}
+
+%% ── 1. Overview ─────────────────────────────────────────────────────────────
+\section{Overview}
+
+Hover is a co-simulation language that combines \textbf{logic} (software-style
+computation) with \textbf{physical} (circuit) descriptions in a single source
+file. The compiler flattens a module hierarchy into a netlist, solves the
+circuit using Modified Nodal Analysis (MNA) at each timestep, and executes the
+logic blocks between steps.
+
+
+%% ── 2. File Structure & Imports ─────────────────────────────────────────────
+\section{File Structure \& Imports}
+
+Hover supports modularizing your code across multiple source files. You can bring external components, such as device models from the standard library or custom sub-circuits, into your current file using the \code{import} directive.
+
+\subsection{The \code{import} Directive}
+
+Imports must be declared at the top of the file, outside of any module or function definitions. The target file is specified as a string literal, representing a path relative to the current file's directory or the compiler's include path.
+
+\begin{lstlisting}
+// Import standard math functions from the standard library
+import </math/math.hvr>; 
+
+// Import a standard BJT device model from exact path
+import "./standard_library/semiconductors/npn_bjt.hvr";
+
+module main<>()[] {
+    // NPN from the imported file is now available in the global scope
+    module q1 = NPN<1e-14, 100, 0.026>()[base, coll, emit];
+}
+\end{lstlisting}
+
+%% ── 2. Simulation Directives ────────────────────────────────────────────────
+\section{Simulation Directives}
+
+Directives appear at the top level, outside any module, and start with
+\code{.}
+
+\subsection{.tran — Transient Analysis}
+
+\begin{lstlisting}
+.tran(start, stop, step/min_step, max_step);
+\end{lstlisting}
+
+\begin{center}
+\begin{tabular}{@{} L{3cm} L{9cm} @{}}
+  \toprule
+  \textbf{Argument} & \textbf{Description} \\
+  \midrule
+  \code{start} & Start time (currently always 0) \\
+  \code{stop}  & End time \\
+  \code{step/min\_step}  & Timestep on fixed solvers, minimum step size on adaptive solvers (\(dt\))\\
+  \code{max\_step} & Max step size on adaptive solvers, not compulsory on fixed solvers \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+\begin{lstlisting}
+.tran(0, 40m, 1u); // 0 to 40 ms, 1 us steps -> 40 000 points
+\end{lstlisting}
+
+\subsection{.save — Signal Logging}
+
+\begin{lstlisting}
+.save(signal1, signal2, ...);
+\end{lstlisting}
+
+Signals are referenced by their fully-qualified mangled name using dot notation.
+
+\begin{lstlisting}
+.save(main.lc_out, main.generator.carrierWave);
+\end{lstlisting}
+
+\begin{itemize}
+  \item If the name matches an MNA node it is read from the circuit solution
+        vector.
+  \item Otherwise it is read from the logic values map (VM signal).
+\end{itemize}
+
+Results are exported to \code{simulation\_output.csv}.
+
+\subsection{.zcd — Zero-Crossing Detection}
+
+\begin{lstlisting}
+.zcd;
+\end{lstlisting}
+
+Enables zero-crossing detection for circuits whose logic outputs switch
+discretely — comparators, PWM generators, digital controllers. When active,
+the solver probes one step ahead at each timestep before committing. If any
+logic variable jumps by more than 1.0 between the current state and the
+probe, a discontinuity is declared and the crossing time is isolated by
+bisection down to 1\,ps resolution. The timestep is then shortened to land
+exactly on the event boundary, preventing the integrator from stepping across
+a discontinuity and introducing phase error or false transients.
+
+\textbf{Bisection tolerance:} \(10^{-12}\,\text{s}\) (1 picosecond).
+
+\textbf{Performance:} the detection check is entirely skipped when
+\code{.zcd} is absent — analog-only circuits pay no overhead.
+
+\textbf{When to use:} any circuit where a logic block produces a step
+output, such as a PWM comparator, a relay model, or a digital PI controller
+whose output saturates.
+
+\subsection{.op — DC Operating Point}
+
+\begin{lstlisting}
+.op;
+\end{lstlisting}
+
+Instructs the VM to solve for the DC operating point before the transient
+begins. Without \code{.op}, all capacitors start uncharged and voltage sources
+snap to their values in a single linear solve — the circuit charges from zero
+initial conditions, producing a potentially long startup transient before
+reaching steady state.
+
+With \code{.op}, the solver uses source stepping: the supply voltages and
+driven sources are scaled from 5\,\% to 100\,\% in twelve alpha steps. At
+each alpha level, up to 500 Newton-Raphson iterations are run with a
+0.05\,V per-iteration damping limit. The converged solution at
+$\alpha = 1.0$ is committed as the initial condition for the transient,
+so the waveform begins at the settled operating point.
+
+\textbf{When to use:} any circuit with a well-defined DC bias point —
+amplifiers, filters, motor drives. Omit \code{.op} only when the startup
+transient itself is the subject of the simulation.
+\newpage
+\subsection{.solver --- Solver Type}
+\begin{lstlisting}
+.solver(solverName, reltol, abstol, max_iter);
+\end{lstlisting}
+Same with SPICE.
+
+\subsubsection*{Solvers}
+Implicit solvers treat the circuit as a Differential-Algebraic system and
+solve $G x = b$ at each timepoint, enforcing Kirchhoff's laws and voltage
+source constraints simultaneously. They are unconditionally stable for linear
+circuits. Nonlinear devices require an inner Newton-Raphson loop. Every HVR
+implicit solver uses \textbf{Modified Newton}: the Jacobian is reused across
+multiple inner iterations rather than recomputed every iteration, reducing
+cost relative to a full Newton scheme. Reuse policy differs by solver ---
+some recompute once per timestep unconditionally, others carry a Jacobian
+across many timesteps and only refresh it once a convergence failure proves
+it stale --- see each solver's entry below.
+
+Per-iteration step damping also differs by solver. All use
+\textbf{diagonally-scaled trust-region} damping: each variable's proposed
+step is measured relative to its own current magnitude rather than against
+a single global voltage budget, so the same solver behaves correctly on a
+millivolt-scale junction and a kilovolt-scale bus within one circuit.
+
+\begin{center}
+\renewcommand{\arraystretch}{1.5}
+\begin{tabular}{@{} L{3.5cm} L{6.8cm} L{2.2cm} L{2cm} @{}}
+\toprule
+\textbf{Solver} & \textbf{Description} & \textbf{Simulink} & \textbf{SPICE} \\
+\midrule
+\code{euler\_fixed}
+& Backward Euler, fixed timestep, first-order, no tunable parameters.
+      A single implicit solve per step with no error control. Use as a
+      debugging baseline or when a known-simple, always-converges
+      reference trace is needed.
+& \code{ode1}
+& \code{N/A} \\
+\code{euler\_adaptive}
+& Backward Euler with Modified Newton-Raphson, diagonally-scaled
+      trust-region damping, and convergence-driven adaptive timestepping.
+      Expands $dt$ by $1.5\times$ when the inner loop converges quickly,
+      contracts by $0.5\times$ on failure. General-purpose first-order
+      solver when a fixed-order, fixed-step solver is too slow.
+& \code{ode15s} (1st order)
+& \code{N/A} \\
+\code{gauss\_siedel}
+& Backward Euler with fixed-point relaxation under-relaxation
+      ($\omega = 0.05$). No Jacobian formed at all --- structurally
+      independent of every Jacobian-related failure mode the other
+      solvers share. Converges slowly but predictably; useful as a
+      diagnostic cross-check when a Newton-based solver's convergence
+      behavior is in question, since a difference in outcome isolates
+      the problem to the Jacobian/Newton machinery rather than the
+      circuit itself. Not recommended for general use.
+& N/A
+& N/A \\
+\code{trapezoidal}
+& Variable-step Crank-Nicolson with Modified Newton-Raphson and
+      diagonally-scaled trust-region damping. A-stable.
+      Falls back to Backward Euler for one step after a ZCD event or a
+      rejected step, to suppress numerical ringing before resuming
+      2nd-order accuracy.
+& \code{ode23t}
+& \code{Trap} \\
+\bottomrule
+\end{tabular}
+\end{center}
+\newpage
+\begin{center}
+\renewcommand{\arraystretch}{1.5}
+\begin{tabular}{@{} L{3.5cm} L{6.8cm} L{2.2cm} L{2cm} @{}}
+\toprule
+\textbf{Solver} & \textbf{Description} & \textbf{Simulink} & \textbf{SPICE} \\
+\midrule
+\code{trapezoidal\_fixed}
+& The fixed-step counterpart to \code{trapezoidal}: same 2nd-order
+      Crank-Nicolson formula and the same Modified Newton loop, but with
+      diagonally-scaled trust-region damping and no
+      adaptive step-size control at all. Intended as a foundation-testing
+      tool --- isolates whether a convergence failure comes from the core
+      Newton/Jacobian mechanics or from the adaptive step-size layer on
+      top of it.
+& \code{ode23t}
+& \code{Trap} \\
+\code{bdf2}
+& 2nd-order Backward Differentiation Formula (Gear's method) with
+      Modified Newton-Raphson, diagonally-scaled trust-region damping, and
+      adaptive timestepping. L-stable --- actively damps spurious
+      oscillations after switching events. Uses a Backward Euler primer
+      on startup and after any step rejection.
+& \code{ode15s}
+& \code{Gear} \\
+\code{ndf2}
+& Shampine \& Reichelt's order-2 Numerical Differentiation Formula ---
+      the real algorithm underlying \code{ode15s} --- with diagonally-scaled
+      trust-region damping. Adds a $\kappa$-weighted correction term to
+      plain BDF2, improving accuracy within the same A-stable order-2
+      regime (per the Dahlquist second barrier, no linear multistep method
+      of order 3 or higher can be A-stable, so this solver deliberately
+      does not extend past order 2). Starts at order 1 and promotes to
+      order 2 once enough step history exists.
+& \code{ode15s}
+& \code{Gear} (NDF variant) \\
+\bottomrule
+\end{tabular}
+\end{center}
+\newpage
+%% ── 3. Data Types ───────────────────────────────────────────────────────────
+\section{Data Types}
+
+Hover provides distinct data types to represent both physical electrical nets and software-style logic variables.
+
+\subsection{Structural Types}
+
+Structural types are used purely for circuit topology and cannot hold logic states or numerical values.
+
+\begin{center}
+\begin{tabular}{@{} L{3.2cm} L{5.5cm} L{4cm} @{}}
+  \toprule
+  \textbf{Type} & \textbf{Description} & \textbf{Example} \\
+  \midrule
+  \code{wire}         & Electrical net (topological only) & \code{wire in, out;} \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Floating-Point Types}
+Floating-point numbers represent the continuous domains of time, voltage, and current.
+
+\begin{center}
+\begin{tabular}{@{} L{3.2cm} L{5.5cm} L{4cm} @{}}
+  \toprule
+  \textbf{Type} & \textbf{Description} & \textbf{Example} \\
+  \midrule
+  \code{double}       & 64-bit floating point             & \code{double x = 3.14;} \\
+  \code{float}        & 32-bit floating point             & \code{float y = 1.0;} \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+\textbf{Backend Execution Note:} 
+While \code{float} variables are executed as true 32-bit C++ floats locally inside \code{digital} module logic, the underlying MNA solver and global state maps operate exclusively on 64-bit precision. Therefore, \code{float} values are implicitly promoted to \code{double} when crossing into analog modules, driving physical sources, or being logged via \code{.save}. For all physics and solver-related calculations, \code{double} is highly recommended to prevent numerical instability during Newton-Raphson iterations.
+
+\subsection{Integer Types}
+Integer types are primarily used for discrete digital logic, state machines, loop counters, and bitwise operations.
+
+\begin{center}
+\begin{tabular}{@{} L{3.2cm} L{5.5cm} L{4cm} @{}}
+  \toprule
+  \textbf{Type} & \textbf{Description} & \textbf{Example} \\
+  \midrule
+  \code{int}          & Signed 32-bit integer             & \code{int n = -4;} \\
+  \code{unsigned int} & Unsigned 32-bit integer           & \code{unsigned int k = 42;} \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+Assigning a floating-point value to an integer variable implicitly truncates the fractional portion. Furthermore, the \code{unsigned} keyword is strictly reserved for integer types; an \code{unsigned double} is invalid.
+
+\subsection{Arrays}
+
+Append \code{[size]} to any type declaration to create fixed-size arrays:
+
+\begin{lstlisting}
+wire[8]   databus;
+double[3] coeffs = {1.0, 2.5, 0.5};
+int[4]    counts = 0;   // all elements initialised to 0
+float[4]  gains  = 31u; // all elements initialised to 31e-6
+\end{lstlisting}
+
+\textit{Note:} \code{wire} arrays cannot be initialised with a value literal, as they do not hold data.
+
+\subsubsection{Multidimensional Arrays}
+
+Append additional \code{[size]} suffixes to declare arrays of two or more dimensions. Dimensions are read outer-to-inner, matching C:
+
+\begin{lstlisting}
+double[2][3] m      = {{1.0, 2.0, 3.0}, {4.0, 5.0, 6.0}};
+int[2][2]    grid   = 0;    // every element initialised to 0
+float[3][3]  kernel = 5u;   // every element initialised to 5e-6
+\end{lstlisting}
+
+Initialisation follows the same two forms as a single-dimension array, applied recursively at every nesting level:
+
+\begin{itemize}
+  \item \textbf{Nested brace literals} — \code{\{\{...\}, \{...\}\}} — assign each inner list to the corresponding row. The nesting depth must match the number of declared dimensions.
+  \item \textbf{Scalar-fill} — a single value broadcasts to \emph{every} element across all dimensions, not just the outermost one. \code{int[2][2] grid = 0;} zero-fills all four elements, exactly like the one-dimensional case.
+\end{itemize}
+
+Indexing a multidimensional array peels off one dimension per subscript, left to right:
+
+\begin{lstlisting}
+double[2][3] m    = {{1.0, 2.0, 3.0}, {4.0, 5.0, 6.0}};
+double[3]    row0 = m[0];    // one subscript -- the first row
+double       x    = m[1][2]; // two subscripts -- single element, value 6.0
+\end{lstlisting}
+
+When a multidimensional array is passed as a function argument, only its outermost dimension is allowed to decay; every inner dimension must remain a fixed, known size:
+
+\begin{lstlisting}
+func double sumRow(double[3] row) {
+  return row[0] + row[1] + row[2];
+}
+\end{lstlisting}
+
+\textit{Note:} as with one-dimensional arrays, \code{wire} arrays of any dimensionality cannot be initialised with a value literal.
+
+\subsection{Pointers}
+
+Append \code{*} to any numeric type declaration to create a pointer. Pointer stars stack the same way C's do — one \code{*} per level of indirection — and follow the same declaration grammar as arrays, so the two can be combined:
+
+\begin{lstlisting}
+double*  p;       // pointer to a double
+int**    pp;      // pointer to a pointer to an int
+double*[4] parr;  // fixed-size array of 4 double pointers
+\end{lstlisting}
+
+A pointer declared without an initializer defaults to \code{null}, exactly like a scalar defaults to \code{0}.
+
+\subsubsection{Address-of and Dereference}
+
+\code{\&} takes the address of a variable, producing a pointer to its type; \code{*} in prefix position dereferences a pointer, producing its pointee's type. These are the same two symbols used elsewhere as bitwise AND and multiplication — Hover disambiguates purely by position, exactly as C does: in front of an operand with nothing to its left, they are unary; between two operands, they are binary.
+
+\begin{lstlisting}
+double x = 3.14;
+double* p = &x;   // p now holds the address of x
+double  y = *p;   // y == 3.14, read through the pointer
+
+*p = 2.5;         // write through the pointer -- x is now 2.5
+\end{lstlisting}
+
+\subsubsection{Indexing}
+
+A pointer can be subscripted with \code{[]} exactly like an array — \code{p[i]} is equivalent to \code{*(p + i)} in the underlying generated code, following normal C pointer/array duality:
+
+\begin{lstlisting}
+double* p = &coeffs[0]; // coeffs from the Arrays example above
+double  first = p[0];   // same as coeffs[0]
+\end{lstlisting}
+
+\subsubsection{Pointers as Function Parameters}
+
+Unlike scalar parameters (which are copied), a pointer parameter is aliased: the function receives the same address the caller passed, so writes made through it inside the function are visible to the caller after it returns. This mirrors how array parameters behave (\S4.4).
+
+\begin{lstlisting}
+func void increment(double* p) {
+  *p = *p + 1;  // modifies the caller's variable directly
+}
+
+double x = 5.0;
+increment(&x); // x is now 6.0
+\end{lstlisting}
+
+\subsubsection{Pointers as State}
+
+Because a pointer is just an address-sized value, it can be declared \code{state} to persist across simulation steps -- the standard way to hold onto a handle returned by external C/C++ code for the lifetime of the simulation:
+
+\begin{lstlisting}
+state int* handle = create_motor(); // see Section 10.5, The Opaque Pointer Pattern
+\end{lstlisting}
+
+\textit{Note:} arithmetic on pointers (e.g. \code{p + 1}) is not currently supported -- use indexing (\code{p[i]}) to walk through memory instead.
+
+
+%% ── 4. Number Literals & Suffixes ───────────────────────────────────────────
+\section{Number Literals \& Suffixes}
+
+Engineering suffixes are part of the number token — no space between digits
+and suffix. Also scientific e notation is supported (1e-6, 1e3).
+
+\begin{center}
+\begin{tabular}{@{} C{2cm} C{2.5cm} C{2.5cm} L{5cm} @{}}
+  \toprule
+  \textbf{Suffix} & \textbf{Multiplier} & \textbf{Example} & \textbf{Value} \\
+  \midrule
+  \code{p}   & \(10^{-12}\) & \code{10p}   & 10 pF / ps \\
+  \code{n}   & \(10^{-9}\)  & \code{100n}  & 100 nH / ns \\
+  \code{u}   & \(10^{-6}\)  & \code{2u}    & 2 \(\mu\)F / \(\mu\)s \\
+  \code{m}   & \(10^{-3}\)  & \code{2m}    & 2 mH / ms \\
+  (none)     & \(1\)        & \code{400}   & 400 \\
+  \code{k}   & \(10^{3}\)   & \code{20k}   & 20\,000 \\
+  \code{Meg} & \(10^{6}\)   & \code{1Meg}  & 1\,000\,000 \\
+  \code{G}   & \(10^{9}\)   & \code{2G}    & 2\,000\,000\,000 \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+\begin{lstlisting}
+R<1k>()[a, b];    // 1 000 Ohm
+C<2u>()[node, gnd]; // 2e-6 F
+L<2m>()[in, out]; // 2e-3 H
+\end{lstlisting}
+
+%% ── 5. Operators ────────────────────────────────────────────────────────────
+\section{Operators}
+
+\subsection{Arithmetic}
+
+\begin{center}
+\begin{tabular}{@{} C{3cm} L{8cm} @{}}
+  \toprule
+  \textbf{Operator} & \textbf{Description} \\
+  \midrule
+  \code{+}  & Addition \\
+  \code{-}  & Subtraction \\
+  \code{*}  & Multiplication \\
+  \code{/}  & Division \\
+  \code{**} & Power \\
+  \code{\%}  & Modulo \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Bitwise \& Integer Operators}
+
+Bitwise operators manipulate the underlying binary representations of data.
+\begin{center}
+\begin{tabular}{@{} C{3cm} L{8cm} @{}}
+  \toprule
+  \textbf{Operator} & \textbf{Description} \\
+  \midrule
+  \code{\&}  & Bitwise AND \\
+  \code{|}   & Bitwise OR \\
+  \code{\textasciicircum}  & Bitwise XOR \\
+  \code{<<}  & Left shift \\
+  \code{>>}  & Right shift \\
+  \code{\textasciitilde}   & Bitwise NOT (unary) \\
+  \bottomrule
+\end{tabular}
+\end{center}
+\textbf{Important:} Bitwise operators are strictly restricted to \code{int} and \code{unsigned int} types. Applying them to \code{double} or \code{float} variables will trigger a semantic error at compile time.
+
+\textit{Note:} \code{\&} and \code{*} are overloaded by position. Between two operands they mean bitwise AND and multiplication respectively; in front of a single operand with nothing to their left, they instead mean address-of and dereference -- see \S4.5, Pointers.
+
+\subsection{Comparison (return 1.0 or 0.0)}
+
+\begin{center}
+\begin{tabular}{@{} C{3cm} L{8cm} @{}}
+  \toprule
+  \textbf{Operator} & \textbf{Description} \\
+  \midrule
+  \code{==} & Equal \\
+  \code{!=} & Not equal \\
+  \code{>}  & Greater than \\
+  \code{<}  & Less than \\
+  \code{>=} & Greater than or equal \\
+  \code{<=} & Less than or equal \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Logical}
+
+\begin{center}
+\begin{tabular}{@{} C{3cm} L{8cm} @{}}
+  \toprule
+  \textbf{Operator} & \textbf{Description} \\
+  \midrule
+  \code{\&\&} & Logical AND \\
+  \code{||}   & Logical OR \\
+  \code{!}    & Logical NOT \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Precedence (highest to lowest)}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{@{} L{5cm} L{6cm} @{}}
+  \toprule
+  \textbf{Operators} & \textbf{Description} \\
+  \midrule
+  \code{f()}, \code{a[]} & Function call, array subscript \\
+  \code{-x}, \code{!x}, \code{\textasciitilde x} & Unary minus, logical NOT, bitwise NOT \\
+  \code{\&x}, \code{*x} & Address-of, dereference (unary) \\
+  \code{**} & Power \\
+  \code{*}, \code{/}, \code{\%} & Multiplicative \\
+  \code{+}, \code{-} & Additive \\
+  \code{<<}, \code{>>} & Bitwise shift \\
+  \code{>}, \code{<}, \code{>=}, \code{<=} & Relational \\
+  \code{==}, \code{!=} & Equality \\
+  \code{\&} & Bitwise AND \\
+  \code{\textasciicircum} & Bitwise XOR \\
+  \code{|} & Bitwise OR \\
+  \code{\&\&} & Logical AND \\
+  \code{||} & Logical OR \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+%% ── 6. Variables & State ────────────────────────────────────────────────────
+\section{Variables \& State}
+
+\subsection{Local Variable}
+
+Re-initialised to the given value every simulation step.
+
+\begin{lstlisting}
+double x = 0;
+double a = 1.5, b = 2.5; // multiple declarations
+\end{lstlisting}
+
+\subsection{State Variable}
+
+Initialised once at \(t = 0\), then retains its value across timesteps.
+Equivalent to a register or flip-flop in hardware.
+
+\begin{lstlisting}
+state double integrator = 0;  // starts at 0, keeps value each step
+state double prev_error  = 0;
+\end{lstlisting}
+
+%% ── 7. Control Flow ─────────────────────────────────────────────────────────
+\section{Control Flow}
+
+\subsection{If / Else If / Else}
+
+\begin{lstlisting}
+if (condition) {
+    // ...
+} else if (other_condition) {
+    // ...
+} else {
+    // ...
+}
+
+if (ref > carrier) {
+    output = vdc;
+} else {
+    output = -vdc;
+}
+\end{lstlisting}
+
+\subsection{While Loop}
+
+\begin{lstlisting}
+while (condition) {
+    // ...
+}
+
+// Modulo via repeated subtraction
+double T = 1.0 / freq;
+double t = time;
+while (t > T) {
+    t = t - T;
+}
+\end{lstlisting}
+
+%% ── 8. Functions ────────────────────────────────────────────────────────────
+\section{Functions}
+
+Functions are called at runtime (not flattened). They can only accept and
+return logic types (\code{double}, \code{int}, \code{float}). Wires and
+physical primitives are not allowed as parameters.
+
+\subsection{Declaration}
+
+\begin{lstlisting}
+func <return_type> <name>(<type> <param>, ...) {
+    // body
+    return expression;
+}
+
+func double sineWave(double freq) {
+    double pi = 3.14159265;
+    double w  = 2.0 * pi * freq;
+    return sin(w * time);
+}
+
+func double triangleWave(double freq) {
+    double T = 1.0 / freq;
+    double t = time;
+    while (t > T) {
+        t = t - T;
+    }
+    double result = 0;
+    if (t < T / 2.0) {
+        result = (4.0 * t / T) - 1.0;
+    } else {
+        result = 3.0 - (4.0 * t / T);
+    }
+    return result;
+}
+\end{lstlisting}
+
+\subsection{Call}
+
+\begin{lstlisting}
+double ref     = sineWave(50);
+double carrier = triangleWave(20k);
+\end{lstlisting}
+
+%% ── 9. Modules ──────────────────────────────────────────────────────────────
+\section{Modules}
+
+Modules are the primary building block of a Hover program. They are
+\textit{flattened} at compile time — there is no runtime module overhead,
+only the resulting nets and logic objects. Every module belongs to exactly
+one domain, declared by a prefix keyword. The domain controls what the
+module may contain and when it executes each timestep.
+
+\subsection{Domains}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.5}
+\begin{tabular}{@{} L{3cm} L{4.5cm} L{4.5cm} @{}}
+\toprule
+\textbf{Domain} & \textbf{Allowed} & \textbf{Forbidden} \\
+\midrule
+\code{analog module}
+    & Physical primitives, \code{V()}/\code{I()}, math, \code{if},
+      function calls
+    & \code{state}, \code{while} \\
+\code{digital module}
+    & \code{state}, \code{if}, \code{while}, math, function calls
+    & Physical primitives \\
+\code{module}
+    & Wire declarations, \code{V()}/\code{I()} reads, \code{state}, function calls,
+      sub-module instantiation
+    & Computation, \code{if}, \code{while} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\textbf{Analog modules} model continuous-time device physics. State lives in
+physical elements (capacitors, inductors) managed by the MNA engine — not in
+software variables. \code{if} is permitted for clamping and saturation
+detection; \code{while} is forbidden because it risks infinite loops inside
+the Newton-Raphson convergence loop. This makes \code{analog module} the mechanism for defining custom
+device models --- transistors, diodes, transformers --- that stamp
+directly into the MNA matrix alongside built-in primitives.
+
+\textbf{Digital modules} model discrete-time and event-driven behaviour.
+\code{state} variables persist across timesteps, equivalent to registers.
+They may not instantiate hardware — the bridge between a digital output and
+a physical primitive is always through a logic port of an analog module or a
+driven source in a structural module.
+
+\textbf{Structural modules} (plain \code{module}) are wiring harnesses. They
+declare signal wires, read MNA node voltages, and instantiate sub-modules.
+They contain no computation.
+
+\subsection{Domain Restrictions}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.5}
+\begin{tabular}{@{} L{4.5cm} C{2.2cm} C{2.2cm} C{2.2cm} @{}}
+\toprule
+\textbf{Feature} & \textbf{analog} & \textbf{digital} & \textbf{module} \\
+\midrule
+Physical primitives          & $\surd$   & --         & $\surd$   \\
+\code{V()} / \code{I()}      & $\surd$   & $\surd$   & $\surd$   \\
+Function calls               & $\surd$   & $\surd$   & $\surd$   \\
+Math / binary expressions    & $\surd$   & $\surd$   & -- \\
+\code{if} statement          & $\surd$   & $\surd$   & -- \\
+\code{while} loop            & --         & $\surd$   & -- \\
+\code{state} variables       & --         & $\surd$   & -- \\
+Standalone assignment        & $\surd$   & $\surd$   & -- \\
+Wire declarations            & $\surd$   & $\surd$   & $\surd$   \\
+Signal declarations          & $\surd$   & $\surd$   & $\surd$  * \\
+Sub-module instantiation     & $\surd$   & $\surd$   & $\surd$   \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent\small{* Structural module signal initializers are restricted — see below.}
+
+\normalsize
+
+\subsubsection*{Structural Module Initializer Rules}
+
+Signal declarations inside a plain \code{module} are permitted but their
+initializer expression is restricted. Only literals, identifiers, and function
+calls are accepted. Binary arithmetic is not allowed — move computation into
+a \code{digital} or \code{analog} sub-module.
+
+\begin{lstlisting}
+// Inside module (structural)
+double x = 0;          // allowed -- literal
+double x = other_sig;  // allowed -- identifier
+double x = V(node);    // allowed -- function call
+double x = signal();   // allowed -- function call
+
+double x = -5;         // allowed -- negated literal
+double x = a + b;      // ERROR -- binary expression
+double x = 2.0 * freq; // ERROR -- binary expression
+x = something;         // ERROR -- standalone assignment
+\end{lstlisting}
+
+\subsection{Why Two Computational Domains}
+
+The separation between \code{analog} and \code{digital} reflects a
+fundamental difference in how each domain interacts with the circuit solver.
+
+\textbf{Analog modules} are solved by the MNA engine. Their outputs ---
+device currents, conductances --- are stamped into the matrix and become
+part of the system $G \cdot x = b$. The solver iterates over analog logic
+inside its Newton-Raphson loop, recomputing device currents at each
+iteration until the circuit converges. Analog logic must therefore be
+purely combinational: given the same node voltages, it must produce the
+same currents. A \code{state} variable inside an analog module would
+accumulate on every Newton-Raphson iteration rather than once per
+timestep, corrupting the solution. 
+
+\textbf{Digital modules} run outside the solver. They execute once per
+accepted timestep in Phase~A, before the matrix is assembled. Their
+outputs are treated as fixed inputs to the MNA for that timestep ---
+the solver never re-enters digital logic during Newton-Raphson
+iteration. This makes \code{state} variables safe: they update exactly
+once per timestep regardless of how many inner iterations the solver
+takes.
+
+In short: analog logic is \textit{inside} the solver loop, digital logic
+is \textit{outside} it. Mixing the two --- a \code{state} variable in an
+analog module, or a physical primitive in a digital module --- would
+produce incorrect results, which is why the semantic analyser forbids it.
+
+\subsection{Bracket Convention}
+
+\begin{center}
+\begin{tabular}{@{} C{2cm} L{10cm} @{}}
+  \toprule
+  \textbf{Brackets} & \textbf{Purpose} \\
+  \midrule
+  \code{< >} & Static parameters — compile-time constants \\
+  \code{( )} & Logic ports — runtime signals \\
+  \code{[ ]} & Physical ports — electrical wire connections \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Declaration}
+
+\begin{lstlisting}
+[analog|digital] module Name<type param, ...>(direction type port, ...)
+    [wire port, ...]
+{
+    // body
+}
+\end{lstlisting}
+
+\code{direction} is \code{input} or \code{output}. Static parameters are
+evaluated at elaboration time and are available as constants inside the body.
+
+\begin{lstlisting}
+// Analog module: device physics, no state
+analog module NPN<double Is, double Bf, double Vt>()
+    [wire base, wire collector, wire emitter]
+{
+    double vbe = V(base) - V(emitter);
+    if (vbe > 0.75) { vbe = 0.75; }
+    if (vbe < -5.0) { vbe = -5.0; }
+    double i_be = (Is / Bf) * (2.71828 ** (vbe / Vt) - 1.0);
+    current_source<>(i_be)[base, emitter];
+}
+
+// Digital module: discrete state, no hardware
+digital module PI<>(input double meas, output double ctrl)[]
+{
+    state double integral = 0;
+    double error = 3.0 - meas;
+    if (dt > 0) {
+        integral = integral + error * dt;
+    }
+    ctrl = 0.5 * error + 100.0 * integral;
+}
+
+// Structural module: wiring only
+module main<>()[]
+{
+    wire motor_p;
+    double ctrl_sig = 0;
+    double measurement = V(motor_p);
+
+    module pi_controller = PI<>(measurement, ctrl_sig)[];
+    voltage_source<>(ctrl_sig)[motor_p, gnd];
+    R<1k>()[motor_p, gnd];
+}
+\end{lstlisting}
+
+\subsection{Instantiation}
+
+\begin{lstlisting}
+module instance_name = ModuleName<static_args>(logic_args)[wire_args];
+\end{lstlisting}
+
+\begin{lstlisting}
+module filter = LC_filter<2m, 2u>()[in, lc_out, gnd];
+module ctrl   = PI<>(measurement, ctrl_sig)[];
+\end{lstlisting}
+
+\code{module instance\_name =} is mandatory, except for physical primitives.
+
+\subsection{Execution Order}
+
+Each timestep, Phase~A executes logic domains in a fixed causal order:
+
+\[
+\texttt{module} \;\longrightarrow\; \texttt{digital} \;\longrightarrow\; \texttt{analog}
+\]
+
+Structural modules read MNA state first, making voltages and currents
+available as signals. Digital modules then compute control outputs from those
+signals. Analog modules run last, computing device currents from the updated
+node voltages and control signals. Phase~B then stamps all driven sources into
+the MNA matrix before the linear solve.
+\newpage
+%% ── 11. C/C++ Integration (FFI) ─────────────────────────────────────────────
+\section{C/C++ Integration (FFI)}
+
+Because Hover transpiles circuit descriptions and logic into a high-performance C++ simulation environment, it provides native mechanisms for calling external C or C++ functions directly from your Hover source code. This is achieved using a combination of the \code{importc} directive and the \code{extern func} declaration.
+
+\subsection{The \code{importc} Directive}
+
+Unlike the standard \code{import} directive (which evaluates other Hover files), \code{importc} is a direct pass-through to the C++ code generator. It does not parse the target file. Instead, it instructs the compiler to inject a C++ \code{\#include} statement at the top of the generated simulation code.
+
+\begin{lstlisting}
+importc "my_custom_controller.hpp"; // Includes a local header file
+importc "<cmath>";                  // Includes a standard C++ library
+\end{lstlisting}
+
+This ensures that when the final C++ code is compiled, the external function definitions are available to the linker.
+
+\subsection{\code{extern func} Declarations}
+
+To call an external C/C++ function, Hover's semantic analyzer must first know its signature (parameters and return type) to enforce type safety during compilation. You declare this using the \code{extern func} keyword. 
+
+An \code{extern func} declaration acts as a forward declaration. It defines the interface without providing a body:
+
+\begin{lstlisting}
+extern func double calculate_gain(double error, double dt, int mode);
+extern func int check_status(unsigned int code);
+\end{lstlisting}
+
+\subsection{Putting it Together}
+
+Once a C++ header is included via \code{importc} and the function signature is registered via \code{extern func}, the external function can be called anywhere standard functions are allowed (e.g., inside \code{digital} or \code{analog} modules).
+
+\begin{lstlisting}
+// 1. Inject the C++ header into the generated output
+importc "native_math.h"
+
+// 2. Tell Hover's semantic analyzer about the function signature
+extern func double fast_rsqrt(double value);
+
+// 3. Use the external function inside a logic block
+digital module RMS_Calculator<>(input double val, output double result)[] 
+{
+    state double sum_squares = 0;
+    
+    // ... filtering logic ...
+
+    // Call the native C++ function
+    result = val * fast_rsqrt(sum_squares); 
+}
+\end{lstlisting}
+
+\subsection{Handling Structs and Complex Types}
+
+Because Hover's type system is strictly limited to primitive numeric types (\code{double}, \code{float}, \code{int}, \code{unsigned}), it does not natively understand C/C++ \code{struct}s, \code{class}es, or pointers. You cannot directly map a C++ struct as a parameter or return type in an \code{extern func} signature.
+
+To interface with external C++ code that requires complex types, you must write a \textbf{primitive wrapper} on the C++ side. 
+
+For example, if you have a native C++ function taking a struct:
+\begin{lstlisting}[language=C++]
+// C++ struct you want to use
+struct MotorParams { double Ld, Lq, Flux; };
+double compute_torque(MotorParams p, double id, double iq);
+\end{lstlisting}
+
+You create a "flattened" C++ wrapper function and import that wrapper into Hover:
+\begin{lstlisting}
+// 1. C++ Wrapper (defined in motor_wrappers.hpp):
+// double wrap_compute_torque(double Ld, double Lq, double Flux, double id, double iq) { 
+//     MotorParams p = {Ld, Lq, Flux};
+//     return compute_torque(p, id, iq); 
+// }
+
+// 2. Hover declaration:
+importc "motor_wrappers.hpp"
+extern func double wrap_compute_torque(double Ld, double Lq, double Flux, double id, double iq);
+\end{lstlisting}
+
+\subsection{The Opaque Pointer Pattern}
+
+With Hover's support for pointers, the most robust way to manage persistent C/C++ structs is by using \textbf{opaque pointers}. You can instantiate a struct on the C++ side, cast its memory address to a primitive pointer type (such as \code{int*}), and pass that pointer back to Hover. Hover simply holds onto the pointer and passes it back to C++ when needed, without needing to know the struct's internal layout.
+
+\begin{lstlisting}[language=C++]
+// 1. C++ Wrapper (motor_wrappers.hpp)
+struct MotorParams { double Ld, Lq, Flux; };
+
+// Create the struct and return its address as an int*
+int* create_motor() {
+    MotorParams* p = new MotorParams{0.002, 0.002, 0.15};
+    return reinterpret_cast<int*>(p);
+}
+
+// Accept the int* from Hover, cast it back, and use it
+double compute_torque(int* handle, double id, double iq) {
+    MotorParams* p = reinterpret_cast<MotorParams*>(handle);
+    return p->Flux * iq; // (simplified for example)
+}
+\end{lstlisting}
+
+\begin{lstlisting}
+// 2. Hover Script
+importc "motor_wrappers.hpp"
+
+extern func int* create_motor();
+extern func double compute_torque(int* handle, double id, double iq);
+
+digital module MotorControl<>(input double id, input double iq, output double torque)[] 
+{
+    // Store the opaque pointer as state so it persists across timesteps
+    state int* motor_handle = create_motor();
+    
+    // Pass the pointer back to C++ for computation
+    torque = compute_torque(motor_handle, id, iq);
+}
+\end{lstlisting}
+
+\textbf{Warning on Pointer Sizes:} Always use true pointer types (like \code{int*}) to hold memory addresses. Do not attempt to cast or store a pointer inside a regular 32-bit \code{int} or \code{unsigned int} variable. Modern operating systems use 64-bit memory addresses; truncating a 64-bit pointer into a 32-bit integer will cause a segmentation fault when passed back to C++.
+
+\textbf{Note on Compilation:} When building a simulation that relies on external FFI files, ensure that the corresponding \code{.c} or \code{.cpp} source files are included in your build system (e.g., added to the \code{Makefile}) so they are correctly compiled and linked with the generated Hover output.
+
+%% ── 10. Physical Primitives ─────────────────────────────────────────────────
+\section{Physical Primitives}
+
+Physical primitives are stamped directly into the MNA matrix. They use the same
+bracket convention as modules but do not need a name or \code{module} keyword.
+
+\begin{lstlisting}
+<Primitive> < static_value > ( logic_signal ) [ wire1, wire2 ];
+\end{lstlisting}
+
+\begin{center}
+\begin{tabular}{@{} L{3.2cm} L{2.8cm} L{3.2cm} L{4cm} @{}}
+  \toprule
+  \textbf{Primitive} & \textbf{Parameters} & \textbf{Ports} & \textbf{Description} \\
+  \midrule
+  \code{R}              & \code{<resistance>}  & \code{[n+, n-]}              & Resistor \\
+  \code{L}              & \code{<inductance>}  & \code{[n+, n-]}              & Inductor \\
+  \code{C}              & \code{<capacitance>} & \code{[n+, n-]}              & Capacitor \\
+  \code{voltage\_source} & \code{<dc\_value>}   & \code{[n+, n-]}              & Ideal voltage source \\
+  \code{current\_source} & \code{<dc\_value>}   & \code{[n+, n-]}              & Ideal current source \\
+  \code{VCCS}           & \code{<gm>}          & \code{[n+, n-, nc+, nc-]}    & Voltage-controlled current \\
+  \code{VCVS}           & \code{<k>}           & \code{[n+, n-, nc+, nc-]}    & Voltage-controlled voltage \\
+  \code{CCCS}            & \code{<beta>}        & \code{[n+, n-, sense]}       & Current-controlled current, sense is a voltage source at 0V \\
+  \code{CCVS}            & \code{<r>}           & \code{[n+, n-, sense]}       & Current-controlled voltage, sense is a voltage source at 0V \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Driven Sources (Logic-controlled)}
+
+Pass the controlling signal through the logic port \code{()}:
+
+\begin{lstlisting}
+voltage_source<>(generator_output)[in, gnd]; // driven by generator_output each step
+current_source<>(ctrl_signal)[n+, n-];
+\end{lstlisting}
+
+\subsection{Fixed Sources (Compile-time value)}
+
+\begin{lstlisting}
+voltage_source<12>()[vdd, gnd]; // constant 12 V
+R<1k>()[out, gnd];              // 1 kOhm to ground
+C<100n>()[node, gnd];           // 100 nF
+L<10u>()[a, b];                 // 10 uH
+\end{lstlisting}
+
+%% ── 11. Built-in Intrinsics ─────────────────────────────────────────────────
+\section{Built-in Intrinsics}
+
+These are available everywhere without import.
+
+\begin{center}
+\begin{tabular}{@{} L{4cm} L{9cm} @{}}
+  \toprule
+  \textbf{Function} & \textbf{Description} \\
+  \midrule
+  \code{V(wire\_name)}   & Voltage at MNA node from the previous timestep \\
+  \code{I(element\_name)}& not implemented\\
+  \code{idt(x(t))}& integrates the value over time $\int_{0}^{t}x(\tau) d\tau $, only works in analog modules \\
+  \code{ddt(x(t))}& derives the value relative to time $dx(t)/dt $, only works in analog modules \\
+
+  \bottomrule
+\end{tabular}
+\end{center}
+
+\begin{lstlisting}
+double vOut  = V(lc_out);   // voltage on net lc_out
+double iCoil = I(Vsense);   // current through Vsense branch
+double wave  = sin(2.0 * 3.14159265 * 50 * time);
+\end{lstlisting}
+
+\textbf{Note:} \code{V()} and \code{I()} always return values from the
+\textit{previous} MNA solve — they cannot read the result of the current
+timestep.
+
+\subsection{nr\_prev()}
+\code{nr\_prev(expr)} evaluates \code{expr} using the node voltages and branch
+currents from the \textit{previous Newton--Raphson iteration} of the current
+timestep's solve. It is the iteration-level counterpart to \code{state}: where
+\code{state} remembers a value across \textit{timesteps}, \code{nr\_prev()}
+remembers it across \textit{iterations} within a single timestep's nonlinear
+solve.
+
+Mechanically, \code{nr\_prev()} does not introduce any storage of its own. It
+re-emits its argument with every nested \code{V()} and \code{I()} call routed to
+its previous-iteration source (\code{api\_V\_prev} / \code{api\_I\_prev}) instead
+of the working-iterate source (\code{api\_V} / \code{api\_I}). Everything else in
+the expression --- parameters, arithmetic, \code{time}, \code{dt} --- is emitted
+unchanged. Only \code{V()} and \code{I()} carry iteration history, so only they
+are redirected. Nesting is well defined: \code{nr\_prev()} inside an otherwise
+ordinary expression, or even \code{nr\_prev()} inside \code{nr\_prev()}, behaves
+correctly and does not leak the redirection to sibling expressions.
+
+\begin{center}
+\begin{tabular}{@{} L{4.5cm} L{8.5cm} @{}}
+\toprule
+\textbf{Construct} & \textbf{Value returned} \\
+\midrule
+\code{V(a)}, \code{I(e)}        & most recently solved value (the iterate the solver is currently refining) \\
+\code{nr\_prev(V(a))}           & value of \code{V(a)} one NR iteration earlier, same timestep \\
+\code{state double x}           & value of \code{x} carried over from the previous timestep \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The intended use is writing iteration-aware numerical aids --- junction limiting,
+damping, source ramping --- directly in the language rather than hard-coding them
+into the solver. Because the solver is general (it makes no assumption that a node
+is a semiconductor junction), the per-device limiting that keeps a stiff
+exponential from overflowing belongs in the model. \code{nr\_prev()} supplies the
+``last guess'' that such a limiter needs to bound how far the next guess may move.
+
+\begin{lstlisting}
+// Junction limiting expressed in-language: bound the per-iteration
+// change in junction voltage using last iteration's value.
+double vNew = V(p) - V(n);          // current working iterate
+double vOld = nr_prev(V(p) - V(n)); // same junction, previous NR iterate
+
+double dv = vNew - vOld;
+if (dv >  vt) { dv =  vt; }         // clamp the step, not the voltage
+if (dv < -vt) { dv = -vt; }
+double vLim = vOld + dv;            // limited voltage feeds the device model
+\end{lstlisting}
+
+\textbf{Note:} \code{nr\_prev()} only redirects \code{V()} and \code{I()}; it is
+not a general time-domain memory. To remember a value from a previous
+\textit{timestep}, use \code{state}. On the first iteration of a timestep's solve
+there is no earlier iterate, so \code{nr\_prev()} returns that step's starting
+guess --- meaning the very first iteration applies no limiting, which is the
+intended cold-start behavior.
+
+\subsubsection{nr\_prev() --- Supported Forms}
+\code{nr\_prev(expr)} accepts \textit{any} expression. There is no special
+argument grammar: the compiler emits the full translation of \code{expr} and
+redirects every nested \code{V()} and \code{I()} leaf to its previous-iteration
+source (\code{api\_V\_prev} / \code{api\_I\_prev}). Everything else in the
+expression --- parameters, constants, \code{time}, \code{dt}, arithmetic,
+\code{sin}/\code{cos} --- is emitted unchanged. The redirection is purely
+lexical over the \code{V()}/\code{I()} leaves, so it composes with arbitrary
+surrounding math.
+
+\begin{center}
+\begin{tabular}{@{} L{4.3cm} L{4.6cm} L{4.4cm} @{}}
+\toprule
+\textbf{Form} & \textbf{Emitted (conceptually)} & \textbf{Meaning} \\
+\midrule
+\code{nr\_prev(V(a))}            & \code{api\_V\_prev(a)}                       & node voltage, previous NR iterate \\
+\code{nr\_prev(I(e))}            & \code{api\_I\_prev(e)}                       & branch current, previous NR iterate \\
+\code{nr\_prev(V(a) - V(b))}     & \code{api\_V\_prev(a) - api\_V\_prev(b)}     & differential voltage, previous iterate \\
+\code{nr\_prev(V(a)) - nr\_prev(V(b))} & \code{api\_V\_prev(a) - api\_V\_prev(b)} & identical to the row above \\
+\code{nr\_prev(V(a) / vt)}       & \code{api\_V\_prev(a) / vt}                  & \code{vt} (param) passes through unchanged \\
+\code{nr\_prev(sin(V(a)))}       & \code{sin(api\_V\_prev(a))}                  & redirection reaches into call arguments \\
+\code{nr\_prev(nr\_prev(V(a)))}  & \code{api\_V\_prev(a)}                       & nesting is idempotent (already redirected) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{lstlisting}
+double vbe   = nr_prev(V(b) - V(e));        // previous-iterate junction voltage
+double vbe2  = nr_prev(V(b)) - nr_prev(V(e)); // exactly the same code
+double iPrev = nr_prev(I(Vsense));          // previous-iterate branch current
+double scaled= nr_prev(V(a) * 2.0 - V(b));  // params/constants pass through
+\end{lstlisting}
+
+\textbf{Note:} The redirection applies \textit{only} to \code{V()} and
+\code{I()}. It does \textbf{not} give the previous-iteration value of a computed
+local or \code{state} signal --- \code{nr\_prev(x)}, where \code{x} is an
+ordinary variable, emits \code{x} unchanged and is therefore a no-op. Likewise
+\code{nr\_prev(time)}, \code{nr\_prev(dt)}, or any expression containing no
+\code{V()}/\code{I()} leaves reduces to the plain expression. To remember a
+computed value across iterations, recompute it from \code{nr\_prev}-wrapped
+\code{V()}/\code{I()} reads rather than wrapping the variable.
+
+\textbf{Note:} \code{nr\_prev} reaches into \textit{call arguments}
+(e.g. \code{sin(V(a))}), but not into a user function's \textit{body}. If a
+function internally read \code{V()} it would not be redirected --- though in
+practice functions cannot take \code{wire} arguments, so this case does not
+arise for node reads.
+
+%% ── 12. Special Keywords ────────────────────────────────────────────────────
+\section{Special Keywords}
+
+\begin{center}
+\begin{tabular}{@{} L{3cm} L{10cm} @{}}
+  \toprule
+  \textbf{Keyword} & \textbf{Description} \\
+  \midrule
+  \code{time}            & Current simulation time in seconds. Read-only, available everywhere. \\
+  \code{gnd}             & Ground node (0 V reference). Available everywhere as a wire. \\
+  \code{state}           & Variable modifier — retains value across timesteps. \\
+  \code{dt}              & Timestep in seconds. Read-only, available everywhere.  \\
+  \code{input}/\code{output} & Logic port direction in module declarations. \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+%% ── 14. Simulation Run Order ────────────────────────────────────────────────
+\section{Simulation Run Order}
+
+Each timestep executes in three phases, repeated until
+\code{time} $>$ \code{stop}.
+
+\begin{description}[leftmargin=2.5cm, labelwidth=2cm]
+
+  \item[\textbf{Phase A}] \textbf{Execute logic — three domain passes in
+  fixed order}
+
+  \begin{description}[leftmargin=2.5cm, labelwidth=2.2cm]
+    \item[\textit{1. module}] Structural logic runs first. Wire signals are
+    read from the previous MNA solution via \code{V()} and \code{I()} and
+    made available to downstream domains.
+
+    \item[\textit{2. digital}] Digital logic runs second. \code{state}
+    variables are updated, \code{if}/\code{while} blocks are evaluated, and
+    control outputs are written to their signal names.
+
+    \item[\textit{3. analog}] Analog device models run last. Node voltages
+    from the previous solve and control signals from the digital pass are
+    read to compute device currents and physics outputs.
+  \end{description}
+
+  \item[\textbf{Phase B}] \textbf{Stamp logic outputs into MNA}
+
+  Every driven \code{voltage\_source} and \code{current\_source} reads its
+  controlling signal from the values written in Phase~A and updates the
+  MNA right-hand side vector \(b\).
+
+  \item[\textbf{Phase C}] \textbf{Solve and advance}
+
+  The linear system \(G \cdot x = b\) is solved (or iterated to convergence
+  for implicit solvers). Node voltages and branch currents are committed.
+  Signals listed in \code{.save} are recorded, and \code{time} advances by
+  \code{dt}.
+
+\end{description}
+
+\noindent\textit{Repeat until} \code{time > stop}.
+
+\bigskip
+
+The causal ordering within Phase~A is fixed regardless of declaration order
+in the source file. A digital controller will always see the structural
+\code{V()} reads from the current step, and an analog device model will
+always see the digital control output from the current step.
+%% ── 15. Full Example ────────────────────────────────────────────────────────
+\section{Full Example}
+
+Sinusoidal PWM inverter with LC output filter, demonstrating all three
+module domains working together.
+
+\begin{lstlisting}
+.save(main.lc_out, main.generator_output);
+.tran(0, 40m, 1u, 10u);
+.solver(tr_bdf2);
+
+//-- Helper functions ------------------------------------------
+
+func double sineWave(double freq) {
+    double pi = 3.14159265;
+    return sin(2.0 * pi * freq * time);
+}
+
+func double triangleWave(double freq) {
+    double T = 1.0 / freq;
+    double t = time;
+    while (t > T) {
+        t = t - T;
+    }
+    if (t < T / 2.0) {
+        return (4.0 * t / T) - 1.0;
+    } else {
+        return 3.0 - (4.0 * t / T);
+    }
+}
+
+//-- Analog module: purely physical, state lives in L and C ----
+
+analog module LC_filter<double inductance, double capacitance>()
+    [wire in, wire out, wire ground]
+{
+    L<inductance>()[in, out];
+    C<capacitance>()[out, ground];
+}
+
+//-- Digital module: discrete logic, no hardware ---------------
+
+digital module PWM_generator<double freq, double carrier, double vdc>
+    (output double target_voltage)[]
+{
+    double ref = sineWave(freq);
+    double tri = triangleWave(carrier);
+    if (ref > tri) {
+        target_voltage = vdc;
+    } else {
+        target_voltage = -vdc;
+    }
+}
+
+//-- Structural module: wiring only ----------------------------
+
+module main<>()[]
+{
+    wire in, lc_out;
+
+    // Signal wire: receives PWM output from digital module
+    double generator_output = 0;
+
+    // LC filter: L=2mH, C=2uF -> f0 ~2.5 kHz
+    module filter = LC_filter<2m, 2u>()[in, lc_out, gnd];
+
+    // PWM generator: 50 Hz output, 20 kHz switching, 400 V DC bus
+    module generator = PWM_generator<50, 20k, 400>(generator_output)[];
+
+    // Voltage source driven by digital module output each timestep
+    voltage_source<>(generator_output)[in, gnd];
+
+    // 1 kOhm load
+    R<1k>()[lc_out, gnd];
+}
+\end{lstlisting}
+
+\subsection*{Domain Responsibilities}
+
+\begin{center}
+\begin{tabular}{@{} L{3.5cm} L{9cm} @{}}
+  \toprule
+  \textbf{Domain} & \textbf{Role in this circuit} \\
+  \midrule
+  \code{analog module}  & Stamps L and C into the MNA matrix. The
+                          inductor current and capacitor voltage are
+                          tracked by the solver automatically. \\
+  \code{digital module} & Compares sine reference against triangle
+                          carrier each step and writes $\pm$400\,V to
+                          \code{generator\_output}. \\
+  \code{module}         & Wires the filter and generator together.
+                          Routes \code{generator\_output} to the driven
+                          voltage source. \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+\subsection*{Expected Output}
+
+\begin{center}
+\begin{tabular}{@{} L{4.5cm} L{8cm} @{}}
+  \toprule
+  \textbf{Signal} & \textbf{Description} \\
+  \midrule
+  \code{main.lc\_out}           & $\approx$\,400\,V peak sine at 50\,Hz \\
+  \code{main.generator\_output} & Square wave $\pm$400\,V at 20\,kHz \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+The LC filter passes 50\,Hz (below the 2.5\,kHz cutoff) and rejects the
+20\,kHz switching frequency ($8\times$ above cutoff,
+${\approx}64\times$ attenuation).
+
+\end{document}

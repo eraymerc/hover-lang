@@ -63,6 +63,27 @@ void HVR_clear_log_before(double t);
 
 void HVR_free_log_result(HVRLogResult *r);
 
+// ── PER-SIGNAL READBACK (no allocation, no log buffer) ─────────────────────
+
+// Reads one .save()d quantity's CURRENT value — the live node voltage,
+// branch current, or logic-signal value, not a logged row. Intended for a
+// host polling a single signal per step, where an HVR_get_log* call would
+// allocate and free a whole HVRLogResult just to look at one number.
+//
+// 'name' must match a log column exactly (the same strings HVRLogResult
+// hands back in 'names'). Returns HVR_OK and writes *out, or
+// HVR_ERR_UNKNOWN for an unknown name / NULL argument, leaving *out
+// untouched — so "no such signal" is distinguishable from a signal whose
+// value really is 0.
+//
+// The generated library ALSO exposes a zero-overhead getter per column,
+// double HVR_get_output_<name>(void), with '.' and other non-identifier
+// characters replaced by '_' (main.vout -> HVR_get_output_main_vout,
+// I(main.vsense) -> HVR_get_output_I_main_vsense). Those names depend on
+// the .hvr source, so like the HVR_set_* setters they are declared by the
+// generated sim.cpp rather than here.
+int HVR_get_output(const char *name, double *out);
+
 #ifdef __cplusplus
 }
 #endif

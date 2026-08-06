@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	ast "hover/compiler/ast"
-	"hover/compiler/elaborator"
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -21,6 +20,30 @@ import (
 // public fields; vm_boot/vm_run_until (the incremental split of the
 // previously-monolithic vm_run) live in runtime/vm/vm.cpp itself.
 // ─────────────────────────────────────────────────────────────────────────────
+
+// emitHvrParamGlobals declares the backing globals for main's `<>` static
+// args — double HVR_param_<name> = <initial literal>; — ahead of every
+// other function in the file. It must run before emitFunctions/the phase
+// emitters (see emit() in generator.go): resolveIdent (names.go) now emits
+// a reference to this exact global wherever a library-mode equation reads
+// one of main's own <> args, so the global has to already be declared at
+// that point in the translation unit. emitParamSetters (below) later emits
+// the HVR_set_param_<name> setter against the same global — it does not
+// redeclare it.
+func (g *generator) emitHvrParamGlobals() {
+	params := g.prog.MainParams
+	if len(params) == 0 {
+		return
+	}
+	g.raw(`// ── HOVERCRAFT <> PARAM GLOBALS ─────────────────────────────────────────────`)
+	g.raw("// Backing storage for main's <> args, settable at runtime via")
+	g.raw("// HVR_set_param_<name>() (emitParamSetters, below) and read by every")
+	g.raw("// equation that used to have the literal inlined at elaboration time.")
+	for _, name := range sortedKeys(params) {
+		g.raw(fmt.Sprintf("double HVR_param_%s = %s;", sanitizeIdent(name), formatTypedLiteral(params[name], CDouble)))
+	}
+	g.raw("")
+}
 
 // emitLibraryMain is emitMain's --hovercraft branch.
 func (g *generator) emitLibraryMain(cfg simConfig, strategyStruct string) error {
@@ -284,51 +307,148 @@ func (g *generator) emitLibraryAPI(cfg simConfig) {
 
 	g.emitInputSetters()
 	g.emitParamSetters()
+	g.emitOutputGetters(cfg)
 
 	g.pop()
 	g.raw("}")
 	g.raw("")
 }
 
-// mainBlock returns the main module's LogicObject — the one whose `()`
-// logic args and `<>` static args become HVR_set_input_*/HVR_set_param_*.
-// Falls back to the first logic block if none is prefixed "main" (should
-// not happen for a well-formed entry file, but this keeps codegen from
-// panicking on an unusual elaboration shape rather than silently emitting
-// no setters).
-func (g *generator) mainBlock() *elaborator.LogicObject {
-	for i := range g.prog.Logic {
-		if g.prog.Logic[i].Prefix == "main" {
-			return &g.prog.Logic[i]
-		}
-	}
-	if len(g.prog.Logic) > 0 {
-		return &g.prog.Logic[0]
-	}
-	return nil
+// hvrOutput is one readable quantity: the column name it carries in the
+// log (so HVR_get_output's string lookup and an HVRLogResult column agree
+// exactly) plus the C++ expression that reads its CURRENT value.
+type hvrOutput struct {
+	column string
+	expr   string
 }
 
-// emitInputSetters emits HVR_set_input_<name>(value) for every `()` logic
-// arg of the main module that resolved to a real scalar C++ global (i.e.
-// is present in collectAllVars() — this filters out physical/wire ports,
-// which are topological and have no runtime storage of their own).
-func (g *generator) emitInputSetters() {
-	mb := g.mainBlock()
-	if mb == nil {
-		return
+// hvrOutputs enumerates every .save()d quantity as a directly-readable
+// expression, in the same order logger_init lays the columns out (MNA
+// nodes, then VM signals, then branch currents). The three kinds are read
+// three different ways — node voltages come out of the solved system,
+// branch currents out of the element's branch row, and logic signals
+// straight off their C++ global — which is exactly the mapping phase_log
+// performs each timestep; reading them here rather than out of
+// vm->values means a getter is current even between logged steps.
+func (g *generator) hvrOutputs(cfg simConfig) []hvrOutput {
+	known := map[string]bool{}
+	for _, v := range g.collectAllVars() {
+		known[v] = true
 	}
+
+	var outs []hvrOutput
+	for _, node := range cfg.saveMNANodes {
+		outs = append(outs, hvrOutput{node, fmt.Sprintf("api_V(&api, %s)", cStr(node))})
+	}
+	for _, sig := range cfg.saveVMSignals {
+		mangled := mangle(sig)
+		ht := g.typeOf(mangled)
+		// Same two exclusions phase_log applies: a name that isn't a real
+		// logic variable has no global to read, and an array/pointer has no
+		// single scalar value to return.
+		if !known[mangled] || ht.isArray() || ht.isPointer() {
+			continue
+		}
+		outs = append(outs, hvrOutput{sig, emitCast(mangled, ht.elem, CDouble)})
+	}
+	for _, elem := range cfg.saveBranchCurrents {
+		outs = append(outs, hvrOutput{branchCurrentColumn(elem), fmt.Sprintf("api_I(&api, %s)", cStr(elem))})
+	}
+	return outs
+}
+
+// emitOutputGetters emits the per-signal readback API: a zero-overhead
+// HVR_get_output_<name>() per .save()d column, plus the name-keyed
+// HVR_get_output() declared in runtime/hovercraft.h.
+//
+// This complements the HVR_get_log* family rather than replacing it. A log
+// query allocates an HVRLogResult, copies out every row, and has to be
+// freed; a host polling one signal per step (a control loop reading a
+// single node voltage, say) pays all of that to look at one number. These
+// getters read the live value directly with no allocation.
+//
+// Both forms are generated: the per-signal functions are the fast path but
+// their names depend on the .hvr source, so they can only be declared in
+// the generated file. HVR_get_output(name, out) is name-keyed and so can
+// live in the fixed public header — the only option for a host that
+// discovers its columns at runtime (e.g. from HVRLogResult::names).
+func (g *generator) emitOutputGetters(cfg simConfig) {
+	outs := g.hvrOutputs(cfg)
+
+	emitted := map[string]bool{}
+	for _, o := range outs {
+		fn := "HVR_get_output_" + sanitizeIdent(o.column)
+		// Two distinct columns can only collide here if sanitizeIdent maps
+		// them onto one identifier. Skipping the later one keeps the file
+		// compiling (a duplicate definition is a hard C++ error) and the
+		// name-keyed HVR_get_output below still reaches both.
+		if emitted[fn] {
+			g.raw(fmt.Sprintf("// skipped: %s collides with an already-emitted getter name —", fn))
+			g.raw(fmt.Sprintf("// use HVR_get_output(%s, &out) to read this column.", cStr(o.column)))
+			g.raw("")
+			continue
+		}
+		emitted[fn] = true
+		g.raw(fmt.Sprintf("double %s(void) {", fn))
+		g.push()
+		g.line("hvr_ensure_started();")
+		g.line("return %s;", o.expr)
+		g.pop()
+		g.raw("}")
+		g.raw("")
+	}
+
+	g.raw("// Name-keyed readback — see runtime/hovercraft.h. Returns")
+	g.raw("// HVR_ERR_UNKNOWN (leaving *out untouched) for a name that isn't a")
+	g.raw("// .save()d column, so a caller can distinguish 'no such signal' from")
+	g.raw("// a signal that is legitimately 0.")
+	g.raw("int HVR_get_output(const char *name, double *out) {")
+	g.push()
+	g.line("if (name == nullptr || out == nullptr) return HVR_ERR_UNKNOWN;")
+	g.line("hvr_ensure_started();")
+	for _, o := range outs {
+		g.line("if (strcmp(name, %s) == 0) { *out = %s; return HVR_OK; }", cStr(o.column), o.expr)
+	}
+	g.line("return HVR_ERR_UNKNOWN;")
+	g.pop()
+	g.raw("}")
+	g.raw("")
+}
+
+// emitInputSetters emits HVR_set_input_<name>(...) for every `()` logic
+// arg of the main module that resolved to a real scalar or array C++
+// global (i.e. is present in collectAllVars() — this filters out
+// physical/wire ports, which are topological and have no runtime storage
+// of their own).
+//
+// Scalar inputs get a plain value setter. Array inputs get an
+// explicit-length setter — HVR_set_input_<name>(const T *values, long n)
+// — since C++ has no array-assignment operator and the host program's
+// buffer length isn't otherwise knowable at the ABI boundary: n is
+// clamped to the array's declared capacity, and a caller passing fewer
+// than the full capacity only overwrites that many leading elements.
+func (g *generator) emitInputSetters() {
 	allVars := map[string]bool{}
 	for _, v := range g.collectAllVars() {
 		allVars[v] = true
 	}
-	for _, name := range sortedKeys(mb.Ports) {
-		mangled := mangle(mb.Ports[name])
+	for _, name := range sortedKeys(g.prog.MainPorts) {
+		mangled := mangle(g.prog.MainPorts[name])
 		if !allVars[mangled] {
 			continue
 		}
 		ht := g.typeOf(mangled)
 		if ht.isArray() {
-			continue // array inputs need an explicit-length setter — not yet supported
+			g.raw(fmt.Sprintf("void HVR_set_input_%s(const %s *values, long n) {", sanitizeIdent(name), ht.elem.String()))
+			g.push()
+			g.line("if (n <= 0) return;")
+			g.line("long cap = %d;", ht.elemCount())
+			g.line("long count = n < cap ? n : cap;")
+			g.line("memcpy(%s, values, (size_t)count * sizeof(%s));", mangled, ht.elem.String())
+			g.pop()
+			g.raw("}")
+			g.raw("")
+			continue
 		}
 		g.raw(fmt.Sprintf("void HVR_set_input_%s(%s v) {", sanitizeIdent(name), ht.elem.String()))
 		g.push()
@@ -339,28 +459,18 @@ func (g *generator) emitInputSetters() {
 	}
 }
 
-// emitParamSetters emits HVR_set_param_<name>(value) plus a backing global
-// for every `<>` static arg of the main module.
-//
-// CAVEAT: `<>` static args are substituted as compile-time literals during
-// elaboration today (see elaborator.evalStatic) — the whole point of `<>`
-// vs `()` in Hover's module syntax. So while HVR_set_param_* writes this
-// global correctly (and enforces the t==0 rule), nothing in the generated
-// equations reads it yet: the literal is already baked in elsewhere in
-// this file. Wiring that up needs the elaborator to emit a global
-// reference for the main module's `<>` args instead of inlining the
-// literal — that change is out of scope here and is the one deliberate
-// stub in this feature.
+// emitParamSetters emits HVR_set_param_<name>(value) for every `<>` static
+// arg of the main module, writing the backing global emitHvrParamGlobals
+// declared up-front — the same global every library-mode equation reads
+// via resolveIdent (names.go), so calling this actually reaches the
+// simulation. Only allowed before the sim has advanced (t==0): main's <>
+// args are still baked in as of-t=0 constants for every OTHER module's
+// static args (submodule instantiations resolve those to plain floats at
+// elaboration time, same as ever), so changing one mid-run would leave
+// stamped element values inconsistent with the new setting.
 func (g *generator) emitParamSetters() {
-	mb := g.mainBlock()
-	if mb == nil {
-		return
-	}
-	for _, name := range sortedKeys(mb.Params) {
+	for _, name := range sortedKeys(g.prog.MainParams) {
 		global := "HVR_param_" + sanitizeIdent(name)
-		g.raw(fmt.Sprintf("// CAVEAT: %s is not yet wired into the equations — see the", global))
-		g.raw("// emitParamSetters comment in hovercraft_emit.go.")
-		g.raw(fmt.Sprintf("double %s = %s;", global, formatTypedLiteral(mb.Params[name], CDouble)))
 		g.raw(fmt.Sprintf("int HVR_set_param_%s(double v) {", sanitizeIdent(name)))
 		g.push()
 		g.line("if (vm.time > 0.0) return HVR_ERR_TIME;")
@@ -387,7 +497,22 @@ func sortedKeys[V any](m map[string]V) []string {
 
 // sanitizeIdent turns a dotted or otherwise non-identifier-safe Hover name
 // into a valid trailing C identifier segment for HVR_set_input_<name> /
-// HVR_set_param_<name>.
+// HVR_set_param_<name> / HVR_get_output_<name>.
+//
+// Every character outside [A-Za-z0-9_] becomes '_', not just '.': a
+// branch-current column is spelled "I(main.vsense)", whose parentheses
+// would produce a syntactically invalid function name if only dots were
+// replaced. Trailing underscores are trimmed so that column reads
+// HVR_get_output_I_main_vsense rather than ..._vsense_.
 func sanitizeIdent(s string) string {
-	return strings.ReplaceAll(s, ".", "_")
+	var b strings.Builder
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '_':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('_')
+		}
+	}
+	return strings.TrimRight(b.String(), "_")
 }

@@ -93,6 +93,23 @@ type ElaboratedProgram struct {
 	EntryFile string
 
 	CIncludes []string // importc headers, in discovery order (deduped at codegen)
+
+	// MainParams / MainPorts are the entry module's own `<>` static args
+	// (name → its resolved initial value) and `()` logic args (name → the
+	// mangled dotted signal it was bootstrapped to, always "main.<name>").
+	// Recorded here by Elaborate() because they are the authoritative
+	// answer to "what is main's interface" — the --hovercraft C ABI
+	// (HVR_set_param_* / HVR_set_input_*) is generated directly from them.
+	//
+	// Codegen used to recover this by scanning Logic for a block whose
+	// Prefix == "main", which silently produced the WRONG interface for a
+	// structural main (one whose body only wires submodules together and
+	// so contributes no LogicObject of its own): the scan fell through to
+	// an arbitrary submodule's block and exported that submodule's ports
+	// and params as if they were main's. Both maps are always non-nil,
+	// and empty is a meaningful answer — main has no such args.
+	MainParams map[string]float64
+	MainPorts  map[string]string
 }
 
 // ImportedFile is one file's parsed program plus its own (non-transitive)
@@ -220,6 +237,8 @@ func newElaborator() *Elaborator {
 			Logic:      []LogicObject{},
 			Symbols:    make(map[string]ast.Type),
 			FuncScopes: make(map[string]map[string]*FunctionInfo),
+			MainParams: make(map[string]float64),
+			MainPorts:  make(map[string]string),
 		},
 	}
 }

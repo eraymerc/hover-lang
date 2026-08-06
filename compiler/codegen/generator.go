@@ -113,6 +113,13 @@ type generator struct {
 // earlier sections defined.
 func (g *generator) emit() error {
 	g.emitHeader()
+	if g.LibraryMode {
+		// Must land before emitFunctions/the phase emitters: those bodies
+		// reference HVR_param_<name> globals (via resolveIdent, names.go)
+		// for main's <> args, so the globals need to exist in the
+		// translation unit before any function that reads them.
+		g.emitHvrParamGlobals()
+	}
 	g.emitStateVars()
 	g.emitFunctions()
 	g.emitPhaseStructural()

@@ -17,28 +17,139 @@ import (
 	"strings"
 )
 
+const usage = `Usage: ./hover <filename.hvr> [options]
+
+Options:
+  -o <path>       Write the built artifact to <path> instead of the default
+                  name (sim / sim.exe, or libhovercraft.so / hovercraft.dll
+                  with --hovercraft). -o=<path> is also accepted.
+                  The generated sim.cpp is always written to the current
+                  directory regardless of -o.
+  --hovercraft    Emit a reusable HVR_* C-ABI shared library instead of a
+                  one-shot simulation binary (see examples/hovercraft/).
+  --dump-ast      Print the entry file's AST and exit without compiling.`
+
+// cliOptions is the parsed command line. Parsing lives in parseArgs rather
+// than inline in main so that flag order never matters and an unrecognized
+// flag is an error instead of being silently ignored — a typo'd
+// "--hovercaft" used to quietly produce a standalone binary, and with -o in
+// the mix a swallowed flag could just as quietly write the wrong file.
+type cliOptions struct {
+	entryFile string
+
+	// outputPath is -o's argument, or "" for the platform default name.
+	// Names the final artifact only (the binary or the shared library),
+	// the way clang's -o does; sim.cpp is an inspectable intermediate and
+	// stays in the working directory.
+	outputPath string
+
+	dumpAST bool
+
+	// libraryMode is --hovercraft: codegen + build switch to library
+	// output — a reusable HVR_* C-ABI shared library rather than a
+	// one-shot binary that runs to completion and exits. See
+	// codegen.GenerateLibrary and compiler/codegen/hovercraft_emit.go.
+	libraryMode bool
+}
+
+// parseArgs parses os.Args[1:]. -o accepts clang's canonical separated form
+// (-o sim) and the =-joined form (-o=sim). The attached form (-osim) is
+// deliberately NOT accepted: matching it by prefix would silently swallow
+// any future flag beginning with "-o", turning a typo into a wrong output
+// filename instead of the error every other unknown flag produces.
+func parseArgs(args []string) (cliOptions, error) {
+	var opts cliOptions
+
+	setOutput := func(v string) error {
+		if v == "" {
+			return fmt.Errorf("-o requires an output filename")
+		}
+		if strings.HasPrefix(v, "-") {
+			return fmt.Errorf("-o expects a filename, got flag %q "+
+				"(use ./%s if you really meant a file by that name)", v, v)
+		}
+		opts.outputPath = v // last -o wins, as clang does
+		return nil
+	}
+
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "-o":
+			if i+1 >= len(args) {
+				return opts, fmt.Errorf("-o requires an output filename")
+			}
+			i++
+			if err := setOutput(args[i]); err != nil {
+				return opts, err
+			}
+		case strings.HasPrefix(arg, "-o="):
+			if err := setOutput(strings.TrimPrefix(arg, "-o=")); err != nil {
+				return opts, err
+			}
+		case arg == "--hovercraft":
+			opts.libraryMode = true
+		case arg == "--dump-ast":
+			opts.dumpAST = true
+		case strings.HasPrefix(arg, "-"):
+			return opts, fmt.Errorf("unknown flag %q", arg)
+		default:
+			if opts.entryFile != "" {
+				return opts, fmt.Errorf(
+					"unexpected argument %q — only one input file is accepted (already have %q)",
+					arg, opts.entryFile)
+			}
+			opts.entryFile = arg
+		}
+	}
+
+	if opts.entryFile == "" {
+		return opts, fmt.Errorf("no input file")
+	}
+	return opts, nil
+}
+
+// checkOutputPath rejects an -o target that cannot possibly be written,
+// before the compiler spends a full lex/parse/elaborate/codegen pass only
+// for the linker to fail at the very end. Like clang, a missing directory
+// is an error rather than something to create.
+func checkOutputPath(path string) error {
+	if info, err := os.Stat(path); err == nil && info.IsDir() {
+		return fmt.Errorf("output path %q is a directory", path)
+	}
+	dir := filepath.Dir(path)
+	if dir == "." {
+		return nil
+	}
+	info, err := os.Stat(dir)
+	if err != nil {
+		return fmt.Errorf("output directory %q does not exist", dir)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("output directory %q is not a directory", dir)
+	}
+	return nil
+}
+
 func main() {
 	fmt.Println("Hover v0.7.0")
 
-	if len(os.Args) < 2 {
-		fmt.Println("Usage: ./hover <filename.hvr> [--dump-ast]")
+	opts, err := parseArgs(os.Args[1:])
+	if err != nil {
+		fmt.Printf("Error: %v\n\n", err)
+		fmt.Println(usage)
 		os.Exit(1)
 	}
-
-	dumpAST := len(os.Args) >= 3 && os.Args[2] == "--dump-ast"
-	entryFile := os.Args[1]
-
-	// --hovercraft switches codegen + build to library-output mode: instead
-	// of a one-shot binary that runs to completion and exits, the compiler
-	// emits a reusable HVR_* C-ABI shared library (see codegen.GenerateLibrary
-	// and compiler/codegen/hovercraft_emit.go). Scanned across all args (not
-	// just os.Args[2] like --dump-ast) so it composes regardless of order.
-	libraryMode := false
-	for _, a := range os.Args[2:] {
-		if a == "--hovercraft" {
-			libraryMode = true
+	if opts.outputPath != "" {
+		if err := checkOutputPath(opts.outputPath); err != nil {
+			fmt.Printf("Error: %v\n", err)
+			os.Exit(1)
 		}
 	}
+
+	entryFile := opts.entryFile
+	dumpAST := opts.dumpAST
+	libraryMode := opts.libraryMode
 
 	// ── 0. Load — discover entry file + every (non-transitive) import ────────
 	loadResult, err := loader.Load(entryFile)
@@ -247,6 +358,12 @@ func main() {
 			exeName = "hovercraft.dll"
 		}
 	}
+	// -o overrides the platform default verbatim — no extension is added or
+	// corrected, exactly like clang. A path is fine; checkOutputPath has
+	// already confirmed its directory exists.
+	if opts.outputPath != "" {
+		exeName = opts.outputPath
+	}
 
 	zigPath := "zig"
 	if runtime.GOOS == "windows" {
@@ -358,9 +475,12 @@ func main() {
 
 	fmt.Println("[Run] Starting simulation...")
 
-	runPath := "./" + exeName
-	if runtime.GOOS == "windows" {
-		runPath = ".\\" + exeName
+	// A bare name has to be spelled ./sim so exec doesn't search $PATH for
+	// it, but an -o path may already be absolute or directory-qualified —
+	// blindly prefixing "./" would turn /tmp/sim into .//tmp/sim.
+	runPath := exeName
+	if !filepath.IsAbs(runPath) {
+		runPath = "." + string(filepath.Separator) + runPath
 	}
 
 	runCmd := exec.Command(runPath)

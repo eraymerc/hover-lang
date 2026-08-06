@@ -114,9 +114,19 @@ func (g *generator) lookupFunctionDecl(fnName string, logic elaborator.LogicObje
 
 // resolveIdent resolves an identifier in the context of a LogicObject.
 // Mirrors Go VM: resolveIdent — checks params, ports, then prefix.
-func resolveIdent(name string, logic elaborator.LogicObject) string {
-	// Static param → emit as literal
+func (g *generator) resolveIdent(name string, logic elaborator.LogicObject) string {
+	// Static param → emit as literal, EXCEPT in library mode for main's own
+	// <> args (logic.Prefix == "main" is only true for statements written
+	// directly in main's body — a submodule instance gets its own dotted
+	// prefix and its own fully-resolved-to-float Params map, so this can't
+	// accidentally match a nested module's same-named static arg). Those
+	// reference the HVR_param_<name> global emitted by emitHvrParamGlobals
+	// instead, so HVR_set_param_<name>() actually reaches the equations —
+	// see hovercraft_emit.go.
 	if val, ok := logic.Params[name]; ok {
+		if g.LibraryMode && logic.Prefix == "main" {
+			return "HVR_param_" + sanitizeIdent(name)
+		}
 		return fmt.Sprintf("%.17g", val)
 	}
 	// Port mapping → mangled signal name

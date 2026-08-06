@@ -72,6 +72,13 @@ func (e *Elaborator) Elaborate() (*ElaboratedProgram, error) {
 		main.Body.Body = append(injectedDecls, main.Body.Body...)
 	}
 
+	// Record main's interface for codegen. This is the ONLY authoritative
+	// description of it: a structural main (a body that just wires
+	// submodules together) contributes no LogicObject of its own, so
+	// codegen cannot recover these by scanning the flattened Logic list.
+	e.output.MainParams = copyMapSF(mainParams)
+	e.output.MainPorts = copyMapSS(mainPorts)
+
 	e.flattenModule(main, "main", mainParams, mainPorts, main.Token.Type)
 
 	// 3. Post-flatten validation (elements.go). Both passes need the COMPLETE

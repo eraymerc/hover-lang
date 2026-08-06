@@ -58,7 +58,7 @@ func (g *generator) emitExpr(expr ast.Expression, logic elaborator.LogicObject) 
 		return formatDoubleLiteral(val), CDouble
 
 	case *ast.IdentifierExpression:
-		code := resolveIdent(n.Value, logic)
+		code := g.resolveIdent(n.Value, logic)
 		return code, g.identifierType(n.Value, logic)
 
 	case *ast.UnaryExpression:
