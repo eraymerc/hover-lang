@@ -35,10 +35,18 @@ func (e *Elaborator) processAnalogIdt(module *ast.ModuleDeclStatement) {
 				hiddenNode := fmt.Sprintf("__hidden_idt_%d_%s", idtCounter, module.Name)
 				idtCounter++
 
-				assignStmt := &ast.AssignmentStatement{
+				hiddenRef := &ast.IdentifierExpression{
+					Token: token.Token{Type: token.IDENT, Literal: hiddenNode},
+					Value: hiddenNode,
+				}
+
+				// A declaration, not a bare assignment: the injected current
+				// source is controlled by this name, and checkSourceControls
+				// rejects a control that nothing declares.
+				declStmt := &ast.LocalDeclStatement{
 					Token: module.Token,
-					Left:  &ast.IdentifierExpression{Token: token.Token{Type: token.IDENT, Literal: hiddenNode}, Value: hiddenNode},
-					Right: node.Arguments[0],
+					Type:  ast.TDouble,
+					Decls: []*ast.VarDecl{{Name: hiddenNode, Value: node.Arguments[0]}},
 				}
 
 				capStmt := &ast.PhysicalPrimitiveStatement{
@@ -65,7 +73,7 @@ func (e *Elaborator) processAnalogIdt(module *ast.ModuleDeclStatement) {
 				csStmt := &ast.PhysicalPrimitiveStatement{
 					Token:     module.Token,
 					PrimType:  "current_source",
-					LogicArgs: []ast.Expression{assignStmt.Left},
+					LogicArgs: []ast.Expression{hiddenRef},
 					PhysArgs: []ast.Expression{
 						&ast.IdentifierExpression{
 							Token: token.Token{Type: token.IDENT, Literal: "gnd"},
@@ -78,7 +86,7 @@ func (e *Elaborator) processAnalogIdt(module *ast.ModuleDeclStatement) {
 					},
 				}
 
-				injectedStmts = append(injectedStmts, assignStmt, capStmt, csStmt)
+				injectedStmts = append(injectedStmts, declStmt, capStmt, csStmt)
 
 				return &ast.CallExpression{
 					Token: module.Token,
@@ -167,10 +175,17 @@ func (e *Elaborator) processAnalogDdt(module *ast.ModuleDeclStatement) {
 				hiddenNode := fmt.Sprintf("__hidden_ddt_%d_%s", ddtCounter, module.Name)
 				ddtCounter++
 
-				assignStmt := &ast.AssignmentStatement{
+				hiddenRef := &ast.IdentifierExpression{
+					Token: token.Token{Type: token.IDENT, Literal: hiddenNode},
+					Value: hiddenNode,
+				}
+
+				// Declared, not assigned — see the matching comment in
+				// processAnalogIdt.
+				declStmt := &ast.LocalDeclStatement{
 					Token: module.Token,
-					Left:  &ast.IdentifierExpression{Token: token.Token{Type: token.IDENT, Literal: hiddenNode}, Value: hiddenNode},
-					Right: node.Arguments[0],
+					Type:  ast.TDouble,
+					Decls: []*ast.VarDecl{{Name: hiddenNode, Value: node.Arguments[0]}},
 				}
 
 				indStmt := &ast.PhysicalPrimitiveStatement{
@@ -197,7 +212,7 @@ func (e *Elaborator) processAnalogDdt(module *ast.ModuleDeclStatement) {
 				csStmt := &ast.PhysicalPrimitiveStatement{
 					Token:     module.Token,
 					PrimType:  "current_source",
-					LogicArgs: []ast.Expression{assignStmt.Left},
+					LogicArgs: []ast.Expression{hiddenRef},
 					PhysArgs: []ast.Expression{
 						&ast.IdentifierExpression{
 							Token: token.Token{Type: token.IDENT, Literal: "gnd"},
@@ -210,7 +225,7 @@ func (e *Elaborator) processAnalogDdt(module *ast.ModuleDeclStatement) {
 					},
 				}
 
-				injectedStmts = append(injectedStmts, assignStmt, indStmt, csStmt)
+				injectedStmts = append(injectedStmts, declStmt, indStmt, csStmt)
 
 				return &ast.CallExpression{
 					Token: module.Token,

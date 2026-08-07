@@ -16,6 +16,7 @@
 \usepackage{microtype}
 \usepackage{lmodern}
 \usepackage{amsmath}
+\usepackage{graphicx}
 
 \geometry{margin=2.5cm}
 
@@ -102,7 +103,9 @@
 % ── Title page ───────────────────────────────────────────────────────────────
 \begin{titlepage}
   \centering
-  \vspace*{3cm}
+  \vspace*{1.5cm}
+  \includegraphics[width=12cm]{figures/hover_logo_4b.png}\par
+  \vspace{1cm}
   {\Huge\bfseries Hover v0.7.0 Language Manual\par}
   \vspace{0.6cm}
   \rule{0.5\linewidth}{1pt}\par
@@ -112,7 +115,7 @@
   \vspace{2cm}
   \tableofcontents
 \end{titlepage}
-
+\newpage
 %% ── 1. Overview ─────────────────────────────────────────────────────────────
 \section{Overview}
 
@@ -189,10 +192,35 @@ Signals are referenced by their fully-qualified mangled name using dot notation.
 \begin{itemize}
   \item If the name matches an MNA node it is read from the circuit solution
         vector.
+  \item If it matches a \textit{named circuit element} that owns a branch row,
+        its \textbf{current} is logged --- see below.
   \item Otherwise it is read from the logic values map (VM signal).
 \end{itemize}
 
 Results are exported to \code{simulation\_output.csv}.
+
+\subsubsection{Logging Branch Currents}
+
+A \code{.save()} argument may also name a circuit element, in which case the
+\textit{current through it} is logged rather than a voltage. Two spellings are
+accepted and mean exactly the same thing:
+
+\begin{lstlisting}
+.save(main.vsense);      // bare element name
+.save(I(main.vsense));   // explicit, and clearer at a glance
+\end{lstlisting}
+
+Either way the CSV column is headed \code{I(main.vsense)}, so a current column
+is never confusable with a voltage column. Element names and net names are
+guaranteed disjoint by the compiler, so the bare form is unambiguous.
+
+Only elements that own an MNA branch row can be logged this way ---
+\code{voltage\_source}, \code{L}, \code{VCVS} and \code{CCVS} (see
+Section~\ref{sec:currents}). Naming a resistor is a compile error that points
+you at the ammeter idiom rather than silently logging zeros.
+
+\textbf{Column order:} node voltages and logic signals come first, in the
+order written; every branch-current column is appended after them.
 
 \subsection{.zcd — Zero-Crossing Detection}
 
@@ -507,6 +535,7 @@ state int* handle = create_motor(); // see Section 10.5, The Opaque Pointer Patt
 
 %% ── 4. Number Literals & Suffixes ───────────────────────────────────────────
 \section{Number Literals \& Suffixes}
+\label{sec:suffixes}
 
 Engineering suffixes are part of the number token — no space between digits
 and suffix. Also scientific e notation is supported (1e-6, 1e3).
@@ -744,6 +773,7 @@ one domain, declared by a prefix keyword. The domain controls what the
 module may contain and when it executes each timestep.
 
 \subsection{Domains}
+\label{sec:domains}
 
 \begin{center}
 \renewcommand{\arraystretch}{1.5}
@@ -1074,8 +1104,12 @@ Physical primitives are stamped directly into the MNA matrix. They use the same
 bracket convention as modules but do not need a name or \code{module} keyword.
 
 \begin{lstlisting}
-<Primitive> < static_value > ( logic_signal ) [ wire1, wire2 ];
+<Primitive> [instance_name] < static_value > ( logic_signal ) [ wire1, wire2 ];
 \end{lstlisting}
+
+The instance name is optional. It is what lets the rest of the design
+\textit{refer} to this particular element --- see
+Section~\ref{sec:namedelements}.
 
 \begin{center}
 \begin{tabular}{@{} L{3.2cm} L{2.8cm} L{3.2cm} L{4cm} @{}}
@@ -1087,13 +1121,157 @@ bracket convention as modules but do not need a name or \code{module} keyword.
   \code{C}              & \code{<capacitance>} & \code{[n+, n-]}              & Capacitor \\
   \code{voltage\_source} & \code{<dc\_value>}   & \code{[n+, n-]}              & Ideal voltage source \\
   \code{current\_source} & \code{<dc\_value>}   & \code{[n+, n-]}              & Ideal current source \\
-  \code{VCCS}           & \code{<gm>}          & \code{[n+, n-, nc+, nc-]}    & Voltage-controlled current \\
-  \code{VCVS}           & \code{<k>}           & \code{[n+, n-, nc+, nc-]}    & Voltage-controlled voltage \\
-  \code{CCCS}            & \code{<beta>}        & \code{[n+, n-, sense]}       & Current-controlled current, sense is a voltage source at 0V \\
-  \code{CCVS}            & \code{<r>}           & \code{[n+, n-, sense]}       & Current-controlled voltage, sense is a voltage source at 0V \\
+  \code{VCCS}           & \code{<gm>}          & \code{[n+, n-, nc+, nc-]}    & Voltage-controlled current source, \(I = g_m \cdot V(nc\!+\!,nc\!-\!)\) \\
+  \code{VCVS}           & \code{<k>}           & \code{[n+, n-, nc+, nc-]}    & Voltage-controlled voltage source, \(V = k \cdot V(nc\!+\!,nc\!-\!)\) \\
+  \code{CCCS}           & \code{<beta>}        & \code{[n+, n-, sense]}       & Current-controlled current source, \(I = \beta \cdot I(sense)\) \\
+  \code{CCVS}           & \code{<r>}           & \code{[n+, n-, sense]}       & Current-controlled voltage source, \(V = r \cdot I(sense)\) \\
   \bottomrule
 \end{tabular}
 \end{center}
+
+\noindent Note the asymmetry in the last four rows: the \textit{voltage}-controlled
+pair takes \textbf{four wires} --- two output terminals and two control
+terminals --- because a control voltage is a property of a node pair. The
+\textit{current}-controlled pair takes \textbf{three}: two output terminals and
+the \textbf{name of an element}, because a current in the MNA formulation is not
+a property of a node pair but a variable belonging to one specific branch.
+
+%% ── Named elements ──────────────────────────────────────────────────────────
+\subsection{Named Elements}
+\label{sec:namedelements}
+
+Any primitive may be given an instance name, written between the primitive type
+and the \code{<>} list:
+
+\begin{lstlisting}
+R      rsense<1m>()   [b, s];   // named
+voltage_source vsense<0>() [mid, gnd];
+R      <1k>()         [in, out];   // unnamed - still perfectly valid
+\end{lstlisting}
+
+A name is not decoration. It is the only way to \textit{address} an element,
+and three features depend on it:
+
+\begin{itemize}
+  \item \code{I(rsense)} --- reading the element's current from logic
+        (Section~\ref{sec:currents}).
+  \item \code{.save(rsense)} --- logging that current to the CSV.
+  \item the trailing \code{sense} entry of \code{CCCS}/\code{CCVS}.
+\end{itemize}
+
+Names scope to the module instance, exactly the way wires do. A module
+containing \code{voltage\_source vsense<0>()[a, b];} instantiated twice as
+\code{a} and \code{b} yields two distinct elements, \code{main.a.vsense} and
+\code{main.b.vsense}. Within the module body you write the bare name
+(\code{I(vsense)}) and it resolves to the enclosing instance; from a top-level
+directive you write the full flattened path (\code{.save(main.a.vsense)}).
+
+An unnamed primitive still gets an internal name of the form
+\code{main.R\_3}, but you should never write one: the index shifts whenever a
+component is added above it. The compiler deliberately omits synthesized names
+from its ``did you mean'' suggestions for this reason.
+
+\textbf{Restrictions.} An element name may not collide with another element in
+the same module, with a wire, or with a logic signal --- all three are compile
+errors. It also may not be of the form \code{<Type>\_<number>}, which is
+reserved for synthesized names.
+
+%% ── Current-controlled sources ──────────────────────────────────────────────
+\subsection{Current-Controlled Sources (CCCS / CCVS)}
+\label{sec:ccsrc}
+
+\code{CCCS} and \code{CCVS} are controlled by the current through another
+element, named as the \textbf{third} \code{[]} entry:
+
+\begin{lstlisting}
+CCCS<beta>() [out_p, out_n, sense_element];  // I_out = beta * I(sense)
+CCVS<r>()    [out_p, out_n, sense_element];  // V_out = r    * I(sense)
+\end{lstlisting}
+
+The first two entries are ordinary wire terminals. The third is \textit{not} a
+wire --- it is the name of an element declared elsewhere in the design, and it
+must name an element that owns a branch row (Section~\ref{sec:currents}).
+Supplying only two entries is a compile error rather than a silently dead
+stamp.
+
+The reference may point \textbf{forward}. The sensed source is very often
+declared below the controlled source in the same body, and the compiler
+resolves all sense references in a post-pass once the whole design is
+flattened, so declaration order never matters.
+
+\subsubsection{The 0\,V Ammeter Idiom}
+
+Because only branch-bearing elements have a current to sense, the standard
+technique --- the same one SPICE uses --- is to insert a \textbf{0\,V voltage
+source} in series with the branch you care about. It is electrically invisible
+(zero volts across it) but it creates the branch row that makes the current a
+solved unknown:
+
+\begin{lstlisting}
+// Measure the current through the 1k resistor, then mirror it 3:1.
+R<1k>()                   [in, mid];
+voltage_source vsense<0>() [mid, gnd];   // ammeter: I(vsense) == I through R
+CCCS<3>()                 [gnd, out, vsense];
+\end{lstlisting}
+
+Pointing a \code{CCCS}/\code{CCVS} at a resistor, capacitor, \code{VCCS} or
+\code{current\_source} instead is a compile error, and the diagnostic prints the
+ammeter declaration you need.
+
+\subsubsection{Terminal Conventions}
+
+\begin{center}
+\begin{tabular}{@{} L{2.2cm} L{11cm} @{}}
+  \toprule
+  \textbf{Element} & \textbf{Meaning of \code{[n+, n-]}} \\
+  \midrule
+  \code{CCCS} & The generated current \(\beta \cdot I(sense)\) flows
+                \textit{from} \code{n+}, through the source, \textit{to}
+                \code{n-}. It is therefore drawn out of the \code{n+} node and
+                injected into the \code{n-} node. \\
+  \code{CCVS} & Sets \(V(n\!+\!) - V(n\!-\!) = r \cdot I(sense)\).
+                \(r\) has units of ohms (transresistance). \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+\textbf{Self-reference is rejected.} A \code{CCVS} that senses its own branch
+would produce a structurally singular matrix, so the compiler rejects it
+outright.
+
+\subsubsection{Worked Example}
+
+\begin{lstlisting}
+.tran(0, 100u, 1u);
+.save(main.out, I(main.vsense), main.hn);
+
+analog module main<>()[] {
+    wire in, mid, out, hn;
+
+    voltage_source vsupply<2>()  [in, gnd];  // 2 V supply
+    R<1k>()                      [in, mid];  // -> 2 mA
+    voltage_source vsense<0>()   [mid, gnd]; // ammeter, I(vsense) = 2 mA
+
+    // Current mirror: 3 x 2 mA = 6 mA injected into `out`
+    CCCS<3>()   [gnd, out, vsense];
+    R<500>()    [out, gnd];                  // -> V(out) = 3.0 V
+
+    // Transresistance stage: 100 ohm * 2 mA = 0.2 V
+    CCVS hout<100>() [hn, gnd, vsense];
+    R<1Meg>()        [hn, gnd];
+
+    double i_measured = I(vsense);   // 2e-3
+    double i_hout     = I(hout);     // CCVS has a branch too
+}
+\end{lstlisting}
+
+\noindent This produces \code{main.out} \(= 3.0\,\text{V}\), \code{main.hn}
+\(= 0.2\,\text{V}\) and \code{I(main.vsense)} \(= 2\,\text{mA}\), constant for
+the whole run.
+
+\textit{Note:} engineering suffixes are \textbf{case-sensitive} --- the
+megohm suffix is \code{Meg}, and \code{1meg} is a syntax error. See
+Section~\ref{sec:suffixes}.
 
 \subsection{Driven Sources (Logic-controlled)}
 
@@ -1124,7 +1302,7 @@ These are available everywhere without import.
   \textbf{Function} & \textbf{Description} \\
   \midrule
   \code{V(wire\_name)}   & Voltage at MNA node from the previous timestep \\
-  \code{I(element\_name)}& not implemented\\
+  \code{I(element\_name)}& Current through a named branch-bearing element, from the previous timestep (Section~\ref{sec:currents}) \\
   \code{idt(x(t))}& integrates the value over time $\int_{0}^{t}x(\tau) d\tau $, only works in analog modules \\
   \code{ddt(x(t))}& derives the value relative to time $dx(t)/dt $, only works in analog modules \\
 
@@ -1141,6 +1319,81 @@ double wave  = sin(2.0 * 3.14159265 * 50 * time);
 \textbf{Note:} \code{V()} and \code{I()} always return values from the
 \textit{previous} MNA solve — they cannot read the result of the current
 timestep.
+
+%% ── Reading branch currents ─────────────────────────────────────────────────
+\subsection{Reading Currents --- \code{I()}}
+\label{sec:currents}
+
+\code{I(element)} reads the current through a \textbf{named} circuit element
+(Section~\ref{sec:namedelements}). Unlike \code{V()}, which takes a wire, its
+argument is an element instance name:
+
+\begin{lstlisting}
+double iCoil = I(vsense);        // module-local name
+\end{lstlisting}
+
+Element references are module-local, exactly like \code{V()}'s nets: a bare
+name resolves to the element of that name in the same module instance. In
+top-level directives, where there is no enclosing instance, use the full
+flattened path: \code{.save(I(main.probe.vsense))}.
+
+\subsubsection{Which Elements Have a Current}
+
+Only elements that own their own row in the MNA matrix --- an extra unknown for
+their current --- can be read. For everything else the current is
+\textit{derived} from node voltages rather than solved for, so there is no
+variable to point at.
+
+\begin{center}
+\begin{tabular}{@{} L{6cm} L{7cm} @{}}
+  \toprule
+  \textbf{Readable with \code{I()}} & \textbf{Not readable} \\
+  \midrule
+  \code{voltage\_source} & \code{R} \\
+  \code{L} & \code{C} \\
+  \code{VCVS} & \code{VCCS} \\
+  \code{CCVS} & \code{CCCS}, \code{current\_source} \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+This is the same set that may appear as a \code{CCCS}/\code{CCVS} sense
+reference, and the same set \code{.save()} accepts as a current column --- the
+three features share one definition.
+
+To measure a current through anything in the right-hand column, put a
+\textbf{0\,V voltage source} in series with it as an ammeter and read that
+instead (Section~\ref{sec:ccsrc}):
+
+\begin{lstlisting}
+R<1k>()                    [in, mid];
+voltage_source rload_amp<0>() [mid, gnd];
+double i = I(rload_amp);
+\end{lstlisting}
+
+A bad \code{I()} argument is a \textbf{hard compile error}, not a runtime
+warning --- and the compiler distinguishes ``no such element'' from ``that
+element has no branch current'', because the fixes are different. The latter
+prints the ammeter declaration for you.
+
+\subsubsection{Sign Convention}
+
+\code{I()} is positive when current flows from the element's \code{n+}
+terminal, through the element, to its \code{n-} terminal --- the passive sign
+convention, as in SPICE. A consequence worth internalising: \textbf{a source
+that is delivering power reads negative}, because its current flows internally
+from \code{n-} to \code{n+}.
+
+\begin{lstlisting}
+voltage_source vsupply<2>() [in, gnd];   // 2 V supply feeding a 1k load
+voltage_source vsense<0>()  [mid, gnd];  // ammeter in that same loop
+
+// I(vsense)  = +2 mA   (current enters its n+ terminal)
+// I(vsupply) = -2 mA   (same 2 mA, but the supply is sourcing it)
+\end{lstlisting}
+
+\textbf{Note:} \code{I()} reads the previous solve, and is redirected to the
+previous Newton iterate inside \code{nr\_prev()} --- see below.
 
 \subsection{nr\_prev()}
 \code{nr\_prev(expr)} evaluates \code{expr} using the node voltages and branch
@@ -1311,7 +1564,295 @@ The causal ordering within Phase~A is fixed regardless of declaration order
 in the source file. A digital controller will always see the structural
 \code{V()} reads from the current step, and an analog device model will
 always see the digital control output from the current step.
-%% ── 15. Full Example ────────────────────────────────────────────────────────
+%% ── 15. Hovercraft ──────────────────────────────────────────────────────────
+\section{Hovercraft --- Library Mode}
+\label{sec:hovercraft}
+
+By default the compiler produces a \textbf{one-shot binary}: it runs the whole
+transient from \code{start} to \code{stop}, writes
+\code{simulation\_output.csv}, and exits. Everything about the run is fixed at
+compile time.
+
+\textbf{Hovercraft} mode compiles the same \code{.hvr} source into a
+\textbf{reusable shared library} instead --- \code{libhovercraft.so} on Linux,
+\code{hovercraft.dll} on Windows --- exporting a plain C ABI. A host program
+loads it and drives the simulation interactively: advance it a little, read a
+result, change an input based on what it read, advance again. That closed loop
+is the thing a one-shot binary structurally cannot do, and it is what the mode
+exists for --- hardware-in-the-loop style controllers, parameter sweeps without
+recompiling, optimisation, and co-simulation with a host-side model.
+
+\begin{lstlisting}
+./hover circuit.hvr --hovercraft
+./hover circuit.hvr --hovercraft -o motor    // custom artifact name
+\end{lstlisting}
+
+Every exported symbol is prefixed \code{HVR\_} and declared \code{extern "C"};
+no C++ type crosses the boundary. The full ABI is declared in
+\code{runtime/hovercraft.h}, which is the authoritative reference --- this
+section describes the model.
+
+\subsection{Compiler Options}
+
+\begin{center}
+\begin{tabular}{@{} L{3.4cm} L{9.6cm} @{}}
+  \toprule
+  \textbf{Option} & \textbf{Effect} \\
+  \midrule
+  \code{--hovercraft} & Emit the shared library instead of a simulation binary.
+    Nothing is executed after the build. \\
+  \code{-o <path>}    & Write the artifact to \code{<path>} instead of the
+    default name. \code{-o=<path>} is also accepted. Names the final artifact
+    only --- the generated \code{sim.cpp} always lands in the working
+    directory, where it stays inspectable. \\
+  \code{--dump-ast}   & Print the entry file's AST and exit. \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+No platform extension is appended to \code{-o}'s argument; the path is used
+verbatim. Flag order does not matter, and an unrecognised flag is an error
+rather than being silently ignored.
+
+\subsection{What Becomes Part of the ABI}
+
+The library's interface is derived from \code{main}'s own signature and the
+\code{.save()} directives. Three groups of symbols are generated, named after
+the things they expose:
+
+\begin{center}
+\begin{tabular}{@{} L{2.6cm} L{4.2cm} L{6.2cm} @{}}
+  \toprule
+  \textbf{Group} & \textbf{Comes from} & \textbf{Generated symbol} \\
+  \midrule
+  Params  & \code{main}'s \code{<>} static args &
+    \code{int HVR\_set\_param\_<name>(double)} \\
+  Inputs  & \code{main}'s \code{()} logic args &
+    \code{void HVR\_set\_input\_<name>(...)} \\
+  Outputs & every \code{.save()}d column &
+    \code{double HVR\_get\_output\_<name>(void)} \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+\noindent For a module declared
+
+\begin{lstlisting}
+.save(main.vout, main.drive, main.vsense);
+analog module main<double gain>(double vin, double[3] taps) [] { ... }
+\end{lstlisting}
+
+\noindent the library exports \code{HVR\_set\_param\_gain},
+\code{HVR\_set\_input\_vin}, \code{HVR\_set\_input\_taps},
+\code{HVR\_get\_output\_main\_vout}, \code{HVR\_get\_output\_main\_drive} and
+\code{HVR\_get\_output\_I\_main\_vsense}.
+
+Non-identifier characters in a column name become underscores, which is why
+the branch-current column \code{I(main.vsense)} yields
+\code{HVR\_get\_output\_I\_main\_vsense}. Should two columns ever mangle to the
+same symbol, the collision is resolved by omitting the per-signal getter; read
+those columns through \code{HVR\_get\_output()} by exact name instead.
+
+\subsubsection{Params vs.\ Inputs --- an Important Distinction}
+
+\begin{center}
+\begin{tabular}{@{} L{2.2cm} L{5.4cm} L{5.4cm} @{}}
+  \toprule
+   & \code{<>} \textbf{params} & \code{()} \textbf{inputs} \\
+  \midrule
+  Settable & only while \code{time == 0} & at any time, mid-simulation \\
+  Otherwise & returns \code{HVR\_ERR\_TIME} & --- \\
+  To change & call \code{HVR\_reset\_sim()} first & just call the setter \\
+  Types & scalar \code{double} & scalar or array \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+A \code{<>} param is a \textit{structural} quantity: it is folded into the
+design during elaboration, so it can only be re-read by starting the run over.
+A \code{()} input is a \textit{signal}, read fresh by the logic on every
+timestep --- that is the one you drive in a control loop.
+
+Array inputs take an explicit length, since a C pointer carries none:
+
+\begin{lstlisting}
+void HVR_set_input_vin(double v);                        // scalar
+void HVR_set_input_taps(const double *values, long n);   // double[3]
+\end{lstlisting}
+
+Passing fewer elements than the array holds writes only the leading ones and
+leaves the rest untouched; the setter never reads past the array's declared
+size.
+
+\subsection{Driving the Simulation}
+
+\begin{center}
+\begin{tabular}{@{} L{5.6cm} L{7.4cm} @{}}
+  \toprule
+  \textbf{Function} & \textbf{Effect} \\
+  \midrule
+  \code{int HVR\_step(long n)}       & Advance \code{n} minimum timesteps (\(n \cdot dt\) seconds) \\
+  \code{int HVR\_run(double secs)}   & Advance an arbitrary duration in simulation seconds \\
+  \code{double HVR\_get\_time(void)} & Current simulation time. Reading it never starts the run \\
+  \code{int HVR\_reset\_sim(void)}   & State \(\to\) initial values, \code{time} \(\to 0\), OP re-solved if enabled. The log is \textbf{not} cleared \\
+  \code{void HVR\_reset\_log(void)}  & Clear the log. Simulation state untouched \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+The simulation is initialised lazily, on the first call that actually needs
+state to exist. That is deliberate: it means a host may call every
+\code{HVR\_set\_input\_*} and \code{HVR\_set\_param\_*} it likes \textit{before}
+the first solve ever happens, so the very first timestep already sees the
+host's values rather than the compiled-in defaults.
+
+The \code{stop} time given to \code{.tran} does not bound a hovercraft run ---
+the host decides when to stop by simply not calling \code{HVR\_run} again. It
+survives in the manifest as \code{end\_time}, a suggested default.
+
+\subsection{Reading Results}
+
+Two channels, for two different access patterns.
+
+\textbf{Per-signal reads} --- no allocation, intended for a host polling one or
+two signals every step:
+
+\begin{lstlisting}
+double HVR_get_output_main_vout(void);        // zero-overhead, name fixed at compile time
+int    HVR_get_output(const char *name, double *out);  // by exact column name
+\end{lstlisting}
+
+These return the signal's \textbf{current} value --- the live node voltage,
+branch current, or logic value --- not a logged row.
+\code{HVR\_get\_output()} returns \code{HVR\_ERR\_UNKNOWN} and leaves
+\code{*out} untouched for an unknown name, so ``no such signal'' stays
+distinguishable from a signal whose value genuinely is 0.
+
+\textbf{Bulk log queries} --- for waveforms:
+
+\begin{lstlisting}
+HVRLogResult HVR_get_log(void);                            // everything
+HVRLogResult HVR_get_log_range(double t_start, double t_end);
+HVRLogResult HVR_get_log_latest(void);                     // since the last run/step
+HVRLogResult HVR_get_last_step(void);                      // one row
+void         HVR_clear_log_before(double t);               // bound memory
+int          HVR_save_log(const char *filename);           // opt-in CSV dump
+\end{lstlisting}
+
+\begin{lstlisting}
+typedef struct {
+    double  *time;     /* n_rows entries                        */
+    double **columns;  /* n_cols arrays, each n_rows entries     */
+    char   **names;    /* n_cols column names                    */
+    long     n_rows;
+    long     n_cols;
+} HVRLogResult;
+\end{lstlisting}
+
+\textbf{Every \code{HVRLogResult} must be released with
+\code{HVR\_free\_log\_result()}.} The arrays are allocated on the C++ side and a
+caller in another language has no way to free them correctly itself.
+
+Note that CSV export is \textbf{opt-in} here. A hovercraft build writes no file
+unless the host asks for one --- unlike the standalone binary, which always
+produces \code{simulation\_output.csv}.
+
+\subsection{Return Codes}
+
+\begin{center}
+\begin{tabular}{@{} L{3.6cm} L{1.2cm} L{8.2cm} @{}}
+  \toprule
+  \textbf{Constant} & \textbf{Value} & \textbf{Meaning} \\
+  \midrule
+  \code{HVR\_OK}          & \code{0}  & Success \\
+  \code{HVR\_ERR\_TIME}   & \code{-1} & \code{HVR\_set\_param\_*} called with \code{time != 0} \\
+  \code{HVR\_ERR\_IO}     & \code{-2} & \code{HVR\_save\_log} could not open the file \\
+  \code{HVR\_ERR\_UNKNOWN}& \code{-3} & Invalid argument --- negative duration, unknown signal name \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Self-Description --- \code{HVR\_manifest()}}
+
+The per-project symbols above depend on the \code{.hvr} source, so their names
+cannot be declared in a shared header. Rather than requiring the host to keep
+the original source alongside the library, every hovercraft build embeds a JSON
+description of its own ABI:
+
+\begin{lstlisting}
+const char *HVR_manifest(void);   // static storage, do not free
+\end{lstlisting}
+
+\begin{lstlisting}
+{
+  "hovercraft_abi": 1,
+  "time_step": 1e-05, "end_time": 0.01,
+  "params":  [{"name": "gain", "symbol": "HVR_set_param_gain", "default": 0}],
+  "inputs":  [{"name": "taps", "symbol": "HVR_set_input_taps",
+               "kind": "array",  "ctype": "double", "length": 3},
+              {"name": "vin",  "symbol": "HVR_set_input_vin",
+               "kind": "scalar", "ctype": "double", "length": 1}],
+  "outputs": [{"column": "main.vout", "symbol": "HVR_get_output_main_vout",
+               "kind": "node"},
+              {"column": "I(main.vsense)",
+               "symbol": "HVR_get_output_I_main_vsense", "kind": "current"}]
+}
+\end{lstlisting}
+
+This makes a \code{.so} genuinely self-contained. It matters most for inputs: an
+exported symbol name carries no signature, and \code{HVR\_set\_input\_<name>}
+is a one-argument scalar setter for a scalar input but a two-argument
+\code{(const T *values, long n)} setter for an array one. Guessing wrong does
+not fail cleanly --- it segfaults --- so a host should always dispatch on the
+manifest's \code{kind} field rather than on the symbol's existence.
+
+\subsection{Instance Model}
+
+A hovercraft library holds its entire simulation --- state variables, the MNA
+system, the log --- in \textbf{file-scope statics}. One loaded library is
+therefore exactly \textbf{one} simulation, and the \code{HVR\_*} functions are
+not reentrant.
+
+This has a consequence worth stating plainly, because the failure is silent:
+loading the same library file twice in one process does \textbf{not} give two
+independent simulations. \code{dlopen} returns the same handle for a path
+already loaded, so both references share one set of statics and writes through
+one show up in the other. To run several instances concurrently, give each one
+a \textbf{distinct copy of the library file}; a distinct path gets its own
+mapping with its own statics.
+
+\subsection{Caveat --- What a \code{<>} Param Can Reach}
+\label{sec:hovercraftcaveat}
+
+A \code{<>} param is runtime-settable only where it is read by
+\textbf{equations in \code{main}'s own body}. If \code{main} instead passes it
+to a submodule (\code{Src<amp, freq>()}) or uses it as an element value
+(\code{R<rload>()}), elaboration folds it to a constant and stamps it into the
+netlist once --- the setter will return \code{HVR\_OK} and change nothing.
+
+Practically, a design with tunable params wants \code{main} to be an
+\code{analog} module, since a structural \code{module main} cannot contain
+equations at all (Section~\ref{sec:domains}) and therefore cannot read a
+\code{<>} param anywhere:
+
+\begin{lstlisting}
+.save(main.vout, main.drive, main.vsense);
+.tran(0, 10m, 10u, 10u);
+
+// analog, not structural: it holds both the equation reading `gain`
+// and the circuit elements that equation drives.
+analog module main<double gain>(double vin, double[3] taps) []
+{
+    double drive = gain * vin + taps[0] + taps[1] + taps[2];
+
+    wire vin_node, vout;
+    voltage_source vsense<>(drive) [vin_node, gnd];
+    R<1k>()   [vin_node, vout];
+    C<100n>() [vout, gnd];
+}
+\end{lstlisting}
+
+%% ── 16. Full Example ────────────────────────────────────────────────────────
 \section{Full Example}
 
 Sinusoidal PWM inverter with LC output filter, demonstrating all three

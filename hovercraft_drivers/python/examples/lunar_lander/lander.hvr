@@ -1,0 +1,92 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  LUNAR LANDER — flight dynamics as a Hover circuit.
+//
+//  The whole physics model lives here; the Python host only draws pixels and
+//  forwards the keyboard. Two ideas do the work:
+//
+//    idt(x)      integrates in the analog domain. Acceleration -> velocity
+//                -> position falls straight out of two nested integrals,
+//                and the solver (not the game loop) picks the timestep.
+//
+//    a capacitor is a fuel tank. Charge a 1 F cap with the mass flow rate
+//                and its node voltage is, literally, kilograms burned. The
+//                tank is a real branch in the MNA matrix, so I() can read
+//                the flow back out.
+//
+//  Everything the pilot touches is a () logic arg: settable at any time from
+//  the host, which is what makes this a game rather than a batch run.
+// ─────────────────────────────────────────────────────────────────────────────
+
+import <math/math.hvr>;
+
+.tran(0, 3600, 10m, 10m);
+.solver(bdf2);
+.save(main.alt, main.downrange, main.vy, main.vx,
+      main.fuel, main.mass, main.thrust, main.flow, main.tilt);
+
+analog module main<>(double throttle, double gimbal) []
+{
+    // ── Vehicle constants ────────────────────────────────────────────────
+    double G_MOON     = 1.62;      // m/s^2
+    double DRY_MASS   = 760.0;     // kg, structure + payload
+    double FUEL_0     = 240.0;     // kg of propellant aboard
+    double THRUST_MAX = 3600.0;    // N at full throttle
+    double FLOW_MAX   = 1.6;       // kg/s at full throttle
+
+    // ── Initial state ────────────────────────────────────────────────────
+    // idt() integrates from zero, so initial conditions are simply the
+    // constant of integration — added on rather than stamped into the cap.
+    double ALT_0 = 1000.0;         // m above the surface
+    double VY_0  = -18.0;          // m/s, descending
+    double VX_0  = 12.0;           // m/s, drifting downrange
+
+    wire tank, burned;
+
+    // ── Fuel tank ────────────────────────────────────────────────────────
+    // V(burned) is kilograms consumed: a 1 F cap fed by the flow rate.
+    double burned_kg = V(burned);
+    double fuel      = FUEL_0 - burned_kg;
+
+    // Clamp here rather than trusting the host: a throttle above 1.0 would
+    // otherwise buy thrust the tank never paid for.
+    double cmd = throttle;
+    if (cmd < 0.0) {
+        cmd = 0.0;
+    }
+    if (cmd > 1.0) {
+        cmd = 1.0;
+    }
+    // Dry tank, dead engine. The engine cannot run on fuel that is gone,
+    // and without this the cap would happily charge past FUEL_0 and hand
+    // back negative mass.
+    if (fuel <= 0.0) {
+        cmd = 0.0;
+    }
+
+    double flow_cmd = FLOW_MAX * cmd;
+
+    current_source<>(flow_cmd) [gnd, tank];
+    voltage_source vflow<0>()  [tank, burned];   // 0 V ammeter
+    C<1>()                     [burned, gnd];    // the tank itself
+
+    double flow = I(vflow);                      // kg/s leaving the tank
+
+    // ── Rigid body ───────────────────────────────────────────────────────
+    // Thrust acts along the vehicle's axis; `tilt` is that axis measured
+    // from vertical, so cos() lifts and sin() translates.
+    double tilt   = gimbal;
+    double mass   = DRY_MASS + fuel;             // burns off as we descend
+    double thrust = THRUST_MAX * cmd;
+
+    double ax = (thrust / mass) * sin(tilt);
+    double ay = (thrust / mass) * cos(tilt) - G_MOON;
+
+    // Two integration stages. They must stay top-level statements: idt() is
+    // rewritten into real circuit elements at elaboration time, and the
+    // rewrite does not descend into if-blocks or into another idt().
+    double vx = VX_0 + idt(ax);
+    double vy = VY_0 + idt(ay);
+
+    double downrange = idt(vx);
+    double alt       = ALT_0 + idt(vy);
+}

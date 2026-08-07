@@ -19,10 +19,14 @@ print(hc.log().to_dict())          # full logged history
 No dependencies — `ctypes` only. numpy and pandas are used if present
 (`Log.to_numpy()` / `Log.to_pandas()`) but never required.
 
-Run the demo:
+Run the demos:
 
 ```
-python3 hovercraft_drivers/python/examples/drive_rc.py
+# closed loop: read the output each step, feed it back into the input
+python3 hovercraft_drivers/python/examples/closed_loop_rc/drive_rc.py
+
+# a playable lunar lander whose flight dynamics are a Hover circuit
+python3 hovercraft_drivers/python/examples/lunar_lander/lunar_lander.py
 ```
 
 ## Source or library

@@ -4,56 +4,75 @@
 \contentsline {section}{\numberline {3}Simulation Directives}{1}{section.3}%
 \contentsline {subsection}{\numberline {3.1}.tran — Transient Analysis}{1}{subsection.3.1}%
 \contentsline {subsection}{\numberline {3.2}.save — Signal Logging}{2}{subsection.3.2}%
+\contentsline {subsubsection}{\numberline {3.2.1}Logging Branch Currents}{2}{subsubsection.3.2.1}%
 \contentsline {subsection}{\numberline {3.3}.zcd — Zero-Crossing Detection}{2}{subsection.3.3}%
-\contentsline {subsection}{\numberline {3.4}.op — DC Operating Point}{2}{subsection.3.4}%
-\contentsline {subsection}{\numberline {3.5}.solver --- Solver Type}{3}{subsection.3.5}%
-\contentsline {section}{\numberline {4}Data Types}{6}{section.4}%
-\contentsline {subsection}{\numberline {4.1}Structural Types}{6}{subsection.4.1}%
-\contentsline {subsection}{\numberline {4.2}Floating-Point Types}{6}{subsection.4.2}%
-\contentsline {subsection}{\numberline {4.3}Integer Types}{6}{subsection.4.3}%
-\contentsline {subsection}{\numberline {4.4}Arrays}{6}{subsection.4.4}%
-\contentsline {subsubsection}{\numberline {4.4.1}Multidimensional Arrays}{7}{subsubsection.4.4.1}%
-\contentsline {subsection}{\numberline {4.5}Pointers}{7}{subsection.4.5}%
-\contentsline {subsubsection}{\numberline {4.5.1}Address-of and Dereference}{7}{subsubsection.4.5.1}%
-\contentsline {subsubsection}{\numberline {4.5.2}Indexing}{8}{subsubsection.4.5.2}%
-\contentsline {subsubsection}{\numberline {4.5.3}Pointers as Function Parameters}{8}{subsubsection.4.5.3}%
-\contentsline {subsubsection}{\numberline {4.5.4}Pointers as State}{8}{subsubsection.4.5.4}%
-\contentsline {section}{\numberline {5}Number Literals \& Suffixes}{8}{section.5}%
-\contentsline {section}{\numberline {6}Operators}{9}{section.6}%
-\contentsline {subsection}{\numberline {6.1}Arithmetic}{9}{subsection.6.1}%
-\contentsline {subsection}{\numberline {6.2}Bitwise \& Integer Operators}{9}{subsection.6.2}%
-\contentsline {subsection}{\numberline {6.3}Comparison (return 1.0 or 0.0)}{9}{subsection.6.3}%
-\contentsline {subsection}{\numberline {6.4}Logical}{10}{subsection.6.4}%
-\contentsline {subsection}{\numberline {6.5}Precedence (highest to lowest)}{10}{subsection.6.5}%
-\contentsline {section}{\numberline {7}Variables \& State}{10}{section.7}%
-\contentsline {subsection}{\numberline {7.1}Local Variable}{10}{subsection.7.1}%
-\contentsline {subsection}{\numberline {7.2}State Variable}{10}{subsection.7.2}%
-\contentsline {section}{\numberline {8}Control Flow}{10}{section.8}%
-\contentsline {subsection}{\numberline {8.1}If / Else If / Else}{10}{subsection.8.1}%
-\contentsline {subsection}{\numberline {8.2}While Loop}{11}{subsection.8.2}%
-\contentsline {section}{\numberline {9}Functions}{11}{section.9}%
-\contentsline {subsection}{\numberline {9.1}Declaration}{11}{subsection.9.1}%
-\contentsline {subsection}{\numberline {9.2}Call}{12}{subsection.9.2}%
-\contentsline {section}{\numberline {10}Modules}{12}{section.10}%
-\contentsline {subsection}{\numberline {10.1}Domains}{12}{subsection.10.1}%
-\contentsline {subsection}{\numberline {10.2}Domain Restrictions}{13}{subsection.10.2}%
-\contentsline {subsection}{\numberline {10.3}Why Two Computational Domains}{13}{subsection.10.3}%
-\contentsline {subsection}{\numberline {10.4}Bracket Convention}{14}{subsection.10.4}%
-\contentsline {subsection}{\numberline {10.5}Declaration}{14}{subsection.10.5}%
-\contentsline {subsection}{\numberline {10.6}Instantiation}{15}{subsection.10.6}%
-\contentsline {subsection}{\numberline {10.7}Execution Order}{15}{subsection.10.7}%
-\contentsline {section}{\numberline {11}C/C++ Integration (FFI)}{16}{section.11}%
-\contentsline {subsection}{\numberline {11.1}The \texttt {\small importc} Directive}{16}{subsection.11.1}%
-\contentsline {subsection}{\numberline {11.2}\texttt {\small extern func} Declarations}{16}{subsection.11.2}%
-\contentsline {subsection}{\numberline {11.3}Putting it Together}{16}{subsection.11.3}%
-\contentsline {subsection}{\numberline {11.4}Handling Structs and Complex Types}{17}{subsection.11.4}%
-\contentsline {subsection}{\numberline {11.5}The Opaque Pointer Pattern}{17}{subsection.11.5}%
-\contentsline {section}{\numberline {12}Physical Primitives}{18}{section.12}%
-\contentsline {subsection}{\numberline {12.1}Driven Sources (Logic-controlled)}{18}{subsection.12.1}%
-\contentsline {subsection}{\numberline {12.2}Fixed Sources (Compile-time value)}{19}{subsection.12.2}%
-\contentsline {section}{\numberline {13}Built-in Intrinsics}{19}{section.13}%
-\contentsline {subsection}{\numberline {13.1}nr\_prev()}{19}{subsection.13.1}%
-\contentsline {subsubsection}{\numberline {13.1.1}nr\_prev() --- Supported Forms}{20}{subsubsection.13.1.1}%
-\contentsline {section}{\numberline {14}Special Keywords}{21}{section.14}%
-\contentsline {section}{\numberline {15}Simulation Run Order}{21}{section.15}%
-\contentsline {section}{\numberline {16}Full Example}{22}{section.16}%
+\contentsline {subsection}{\numberline {3.4}.op — DC Operating Point}{3}{subsection.3.4}%
+\contentsline {subsection}{\numberline {3.5}.solver --- Solver Type}{4}{subsection.3.5}%
+\contentsline {section}{\numberline {4}Data Types}{7}{section.4}%
+\contentsline {subsection}{\numberline {4.1}Structural Types}{7}{subsection.4.1}%
+\contentsline {subsection}{\numberline {4.2}Floating-Point Types}{7}{subsection.4.2}%
+\contentsline {subsection}{\numberline {4.3}Integer Types}{7}{subsection.4.3}%
+\contentsline {subsection}{\numberline {4.4}Arrays}{7}{subsection.4.4}%
+\contentsline {subsubsection}{\numberline {4.4.1}Multidimensional Arrays}{8}{subsubsection.4.4.1}%
+\contentsline {subsection}{\numberline {4.5}Pointers}{8}{subsection.4.5}%
+\contentsline {subsubsection}{\numberline {4.5.1}Address-of and Dereference}{8}{subsubsection.4.5.1}%
+\contentsline {subsubsection}{\numberline {4.5.2}Indexing}{9}{subsubsection.4.5.2}%
+\contentsline {subsubsection}{\numberline {4.5.3}Pointers as Function Parameters}{9}{subsubsection.4.5.3}%
+\contentsline {subsubsection}{\numberline {4.5.4}Pointers as State}{9}{subsubsection.4.5.4}%
+\contentsline {section}{\numberline {5}Number Literals \& Suffixes}{9}{section.5}%
+\contentsline {section}{\numberline {6}Operators}{10}{section.6}%
+\contentsline {subsection}{\numberline {6.1}Arithmetic}{10}{subsection.6.1}%
+\contentsline {subsection}{\numberline {6.2}Bitwise \& Integer Operators}{10}{subsection.6.2}%
+\contentsline {subsection}{\numberline {6.3}Comparison (return 1.0 or 0.0)}{10}{subsection.6.3}%
+\contentsline {subsection}{\numberline {6.4}Logical}{11}{subsection.6.4}%
+\contentsline {subsection}{\numberline {6.5}Precedence (highest to lowest)}{11}{subsection.6.5}%
+\contentsline {section}{\numberline {7}Variables \& State}{11}{section.7}%
+\contentsline {subsection}{\numberline {7.1}Local Variable}{11}{subsection.7.1}%
+\contentsline {subsection}{\numberline {7.2}State Variable}{11}{subsection.7.2}%
+\contentsline {section}{\numberline {8}Control Flow}{11}{section.8}%
+\contentsline {subsection}{\numberline {8.1}If / Else If / Else}{11}{subsection.8.1}%
+\contentsline {subsection}{\numberline {8.2}While Loop}{12}{subsection.8.2}%
+\contentsline {section}{\numberline {9}Functions}{12}{section.9}%
+\contentsline {subsection}{\numberline {9.1}Declaration}{12}{subsection.9.1}%
+\contentsline {subsection}{\numberline {9.2}Call}{13}{subsection.9.2}%
+\contentsline {section}{\numberline {10}Modules}{13}{section.10}%
+\contentsline {subsection}{\numberline {10.1}Domains}{13}{subsection.10.1}%
+\contentsline {subsection}{\numberline {10.2}Domain Restrictions}{14}{subsection.10.2}%
+\contentsline {subsection}{\numberline {10.3}Why Two Computational Domains}{14}{subsection.10.3}%
+\contentsline {subsection}{\numberline {10.4}Bracket Convention}{15}{subsection.10.4}%
+\contentsline {subsection}{\numberline {10.5}Declaration}{15}{subsection.10.5}%
+\contentsline {subsection}{\numberline {10.6}Instantiation}{16}{subsection.10.6}%
+\contentsline {subsection}{\numberline {10.7}Execution Order}{16}{subsection.10.7}%
+\contentsline {section}{\numberline {11}C/C++ Integration (FFI)}{17}{section.11}%
+\contentsline {subsection}{\numberline {11.1}The \texttt {\small importc} Directive}{17}{subsection.11.1}%
+\contentsline {subsection}{\numberline {11.2}\texttt {\small extern func} Declarations}{17}{subsection.11.2}%
+\contentsline {subsection}{\numberline {11.3}Putting it Together}{17}{subsection.11.3}%
+\contentsline {subsection}{\numberline {11.4}Handling Structs and Complex Types}{18}{subsection.11.4}%
+\contentsline {subsection}{\numberline {11.5}The Opaque Pointer Pattern}{18}{subsection.11.5}%
+\contentsline {section}{\numberline {12}Physical Primitives}{19}{section.12}%
+\contentsline {subsection}{\numberline {12.1}Named Elements}{20}{subsection.12.1}%
+\contentsline {subsection}{\numberline {12.2}Current-Controlled Sources (CCCS / CCVS)}{20}{subsection.12.2}%
+\contentsline {subsubsection}{\numberline {12.2.1}The 0\,V Ammeter Idiom}{20}{subsubsection.12.2.1}%
+\contentsline {subsubsection}{\numberline {12.2.2}Terminal Conventions}{21}{subsubsection.12.2.2}%
+\contentsline {subsubsection}{\numberline {12.2.3}Worked Example}{21}{subsubsection.12.2.3}%
+\contentsline {subsection}{\numberline {12.3}Driven Sources (Logic-controlled)}{22}{subsection.12.3}%
+\contentsline {subsection}{\numberline {12.4}Fixed Sources (Compile-time value)}{22}{subsection.12.4}%
+\contentsline {section}{\numberline {13}Built-in Intrinsics}{22}{section.13}%
+\contentsline {subsection}{\numberline {13.1}Reading Currents --- \texttt {\small I()}}{22}{subsection.13.1}%
+\contentsline {subsubsection}{\numberline {13.1.1}Which Elements Have a Current}{22}{subsubsection.13.1.1}%
+\contentsline {subsubsection}{\numberline {13.1.2}Sign Convention}{23}{subsubsection.13.1.2}%
+\contentsline {subsection}{\numberline {13.2}nr\_prev()}{23}{subsection.13.2}%
+\contentsline {subsubsection}{\numberline {13.2.1}nr\_prev() --- Supported Forms}{24}{subsubsection.13.2.1}%
+\contentsline {section}{\numberline {14}Special Keywords}{25}{section.14}%
+\contentsline {section}{\numberline {15}Simulation Run Order}{26}{section.15}%
+\contentsline {section}{\numberline {16}Hovercraft --- Library Mode}{26}{section.16}%
+\contentsline {subsection}{\numberline {16.1}Compiler Options}{27}{subsection.16.1}%
+\contentsline {subsection}{\numberline {16.2}What Becomes Part of the ABI}{27}{subsection.16.2}%
+\contentsline {subsubsection}{\numberline {16.2.1}Params vs.\ Inputs --- an Important Distinction}{27}{subsubsection.16.2.1}%
+\contentsline {subsection}{\numberline {16.3}Driving the Simulation}{28}{subsection.16.3}%
+\contentsline {subsection}{\numberline {16.4}Reading Results}{28}{subsection.16.4}%
+\contentsline {subsection}{\numberline {16.5}Return Codes}{29}{subsection.16.5}%
+\contentsline {subsection}{\numberline {16.6}Self-Description --- \texttt {\small HVR\_manifest()}}{29}{subsection.16.6}%
+\contentsline {subsection}{\numberline {16.7}Instance Model}{30}{subsection.16.7}%
+\contentsline {subsection}{\numberline {16.8}Caveat --- What a \texttt {\small <>} Param Can Reach}{30}{subsection.16.8}%
+\contentsline {section}{\numberline {17}Full Example}{30}{section.17}%

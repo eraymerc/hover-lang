@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.29 (TeX Live 2026/Arch Linux) (preloaded format=pdflatex 2026.7.19)  6 AUG 2026 19:46
+This is pdfTeX, Version 3.141592653-2.6-1.40.29 (TeX Live 2026/Arch Linux) (preloaded format=pdflatex 2026.7.19)  7 AUG 2026 05:46
 entering extended mode
  restricted \write18 enabled.
  file:line:error style messages enabled.
@@ -405,9 +405,22 @@ LaTeX Info: Redefining \Relbar on input line 970.
 \mathdisplay@stack=\toks33
 LaTeX Info: Redefining \[ on input line 2950.
 LaTeX Info: Redefining \] on input line 2951.
+) (/usr/share/texmf-dist/tex/latex/graphics/graphicx.sty
+Package: graphicx 2024/12/31 v1.2e Enhanced LaTeX Graphics (DPC,SPQR)
+ (/usr/share/texmf-dist/tex/latex/graphics/graphics.sty
+Package: graphics 2024/08/06 v1.4g Standard LaTeX Graphics (DPC,SPQR)
+ (/usr/share/texmf-dist/tex/latex/graphics/trig.sty
+Package: trig 2023/12/02 v1.11 sin cos tan (DPC)
+) (/usr/share/texmf-dist/tex/latex/graphics-cfg/graphics.cfg
+File: graphics.cfg 2016/06/04 v1.11 sample graphics configuration
 )
-Package hyperref Info: Option `colorlinks' set `true' on input line 77.
-LaTeX Font Info:    Trying to load font information for T1+lmr on input line 100.
+Package graphics Info: Driver file: pdftex.def on input line 106.
+)
+\Gin@req@height=\dimen197
+\Gin@req@width=\dimen198
+)
+Package hyperref Info: Option `colorlinks' set `true' on input line 78.
+LaTeX Font Info:    Trying to load font information for T1+lmr on input line 101.
  (/usr/share/texmf-dist/tex/latex/lm/t1lmr.fd
 File: t1lmr.fd 2015/05/01 v1.6.1 Font defs for Latin Modern
 ) (/usr/share/texmf-dist/tex/latex/l3backend/l3backend-pdftex.def
@@ -416,24 +429,24 @@ File: l3backend-pdftex.def 2025-10-09 L3 backend support: PDF output (pdfTeX)
 ) (./hover_user_manual.aux)
 \openout1 = `hover_user_manual.aux'.
 
-LaTeX Font Info:    Checking defaults for OML/cmm/m/it on input line 100.
-LaTeX Font Info:    ... okay on input line 100.
-LaTeX Font Info:    Checking defaults for OMS/cmsy/m/n on input line 100.
-LaTeX Font Info:    ... okay on input line 100.
-LaTeX Font Info:    Checking defaults for OT1/cmr/m/n on input line 100.
-LaTeX Font Info:    ... okay on input line 100.
-LaTeX Font Info:    Checking defaults for T1/cmr/m/n on input line 100.
-LaTeX Font Info:    ... okay on input line 100.
-LaTeX Font Info:    Checking defaults for TS1/cmr/m/n on input line 100.
-LaTeX Font Info:    ... okay on input line 100.
-LaTeX Font Info:    Checking defaults for OMX/cmex/m/n on input line 100.
-LaTeX Font Info:    ... okay on input line 100.
-LaTeX Font Info:    Checking defaults for U/cmr/m/n on input line 100.
-LaTeX Font Info:    ... okay on input line 100.
-LaTeX Font Info:    Checking defaults for PD1/pdf/m/n on input line 100.
-LaTeX Font Info:    ... okay on input line 100.
-LaTeX Font Info:    Checking defaults for PU/pdf/m/n on input line 100.
-LaTeX Font Info:    ... okay on input line 100.
+LaTeX Font Info:    Checking defaults for OML/cmm/m/it on input line 101.
+LaTeX Font Info:    ... okay on input line 101.
+LaTeX Font Info:    Checking defaults for OMS/cmsy/m/n on input line 101.
+LaTeX Font Info:    ... okay on input line 101.
+LaTeX Font Info:    Checking defaults for OT1/cmr/m/n on input line 101.
+LaTeX Font Info:    ... okay on input line 101.
+LaTeX Font Info:    Checking defaults for T1/cmr/m/n on input line 101.
+LaTeX Font Info:    ... okay on input line 101.
+LaTeX Font Info:    Checking defaults for TS1/cmr/m/n on input line 101.
+LaTeX Font Info:    ... okay on input line 101.
+LaTeX Font Info:    Checking defaults for OMX/cmex/m/n on input line 101.
+LaTeX Font Info:    ... okay on input line 101.
+LaTeX Font Info:    Checking defaults for U/cmr/m/n on input line 101.
+LaTeX Font Info:    ... okay on input line 101.
+LaTeX Font Info:    Checking defaults for PD1/pdf/m/n on input line 101.
+LaTeX Font Info:    ... okay on input line 101.
+LaTeX Font Info:    Checking defaults for PU/pdf/m/n on input line 101.
+LaTeX Font Info:    ... okay on input line 101.
 
 *geometry* driver: auto-detecting
 *geometry* detected driver: pdftex
@@ -473,29 +486,34 @@ LaTeX Font Info:    ... okay on input line 100.
 (/usr/share/texmf-dist/tex/context/base/mkii/supp-pdf.mkii
 [Loading MPS to PDF converter (version 2006.09.02).]
 \scratchcounter=\count333
-\scratchdimen=\dimen197
+\scratchdimen=\dimen199
 \scratchbox=\box67
 \nofMPsegments=\count334
 \nofMParguments=\count335
 \everyMPshowfont=\toks34
 \MPscratchCnt=\count336
-\MPscratchDim=\dimen198
+\MPscratchDim=\dimen256
 \MPnumerator=\count337
 \makeMPintoPDFobject=\count338
 \everyMPtoPDFconversion=\toks35
-)
-Package hyperref Info: Link coloring ON on input line 100.
+) (/usr/share/texmf-dist/tex/latex/epstopdf-pkg/epstopdf-base.sty
+Package: epstopdf-base 2020-01-24 v2.11 Base part for package epstopdf
+Package epstopdf-base Info: Redefining graphics rule for `.eps' on input line 485.
+ (/usr/share/texmf-dist/tex/latex/latexconfig/epstopdf-sys.cfg
+File: epstopdf-sys.cfg 2010/07/13 v1.3 Configuration of (r)epstopdf for TeX Live
+))
+Package hyperref Info: Link coloring ON on input line 101.
  (./hover_user_manual.out) (./hover_user_manual.out)
 \@outlinefile=\write3
 \openout3 = `hover_user_manual.out'.
 
-LaTeX Info: Redefining \microtypecontext on input line 100.
-Package microtype Info: Applying patch `item' on input line 100.
-Package microtype Info: Applying patch `toc' on input line 100.
-Package microtype Info: Applying patch `eqnum' on input line 100.
-Package microtype Info: Applying patch `footnote' on input line 100.
-Package microtype Info: Applying patch `verbatim' on input line 100.
-LaTeX Info: Redefining \microtypesetup on input line 100.
+LaTeX Info: Redefining \microtypecontext on input line 101.
+Package microtype Info: Applying patch `item' on input line 101.
+Package microtype Info: Applying patch `toc' on input line 101.
+Package microtype Info: Applying patch `eqnum' on input line 101.
+Package microtype Info: Applying patch `footnote' on input line 101.
+Package microtype Info: Applying patch `verbatim' on input line 101.
+LaTeX Info: Redefining \microtypesetup on input line 101.
 Package microtype Info: Generating PDF output.
 Package microtype Info: Character protrusion enabled (level 2).
 Package microtype Info: Using default protrusion set `alltext'.
@@ -509,7 +527,13 @@ Package microtype Info: No adjustment of character kerning.
  (/usr/share/texmf-dist/tex/latex/microtype/mt-cmr.cfg
 File: mt-cmr.cfg 2013/05/19 v2.2 microtype config. file: Computer Modern Roman (RS)
 )
-Underfull \hbox (badness 10000) in paragraph at lines 113--113
+<figures/hover_logo_4b.png, id=317, 1003.75pt x 917.4275pt>
+File: figures/hover_logo_4b.png Graphic file (type png)
+<use figures/hover_logo_4b.png>
+Package pdftex.def Info: figures/hover_logo_4b.png  used on input line 107.
+(pdftex.def)             Requested size: 341.43306pt x 312.07521pt.
+
+Underfull \hbox (badness 10000) in paragraph at lines 116--116
 |\T1/lmr/bx/n/12 (+20) Contents|
  []
 
@@ -546,56 +570,80 @@ LaTeX Font Info:    External font `lmex10' loaded for size
 (Font)              <6> on input line 3.
  [1
 
-{/var/lib/texmf/fonts/map/pdftex/updmap/pdftex.map}{/usr/share/texmf-dist/fonts/enc/dvips/lm/lm-ec.enc}])
+{/var/lib/texmf/fonts/map/pdftex/updmap/pdftex.map}{/usr/share/texmf-dist/fonts/enc/dvips/lm/lm-ec.enc} <./figures/hover_logo_4b.png>] [2])
 \tf@toc=\write4
 \openout4 = `hover_user_manual.toc'.
 
- [2]
+ [3]
 LaTeX Font Info:    Font shape `T1/lmtt/bx/n' in size <10.95> not available
-(Font)              Font shape `T1/lmtt/b/n' tried instead on input line 131.
+(Font)              Font shape `T1/lmtt/b/n' tried instead on input line 134.
 LaTeX Font Info:    Font shape `T1/lmtt/bx/n' in size <10> not available
-(Font)              Font shape `T1/lmtt/b/n' tried instead on input line 131.
+(Font)              Font shape `T1/lmtt/b/n' tried instead on input line 134.
 
 pdfTeX warning (ext4): destination with the same identifier (name{page.1}) has been already used, duplicate ignored
 <to be read again> 
                    \relax 
-l.179 \begin{lstlisting}
+l.182 \begin{lstlisting}
                          [1{/usr/share/texmf-dist/fonts/enc/dvips/lm/lm-mathit.enc}]
-LaTeX Font Info:    Trying to load font information for TS1+lmr on input line 190.
+LaTeX Font Info:    Trying to load font information for TS1+lmr on input line 193.
  (/usr/share/texmf-dist/tex/latex/lm/ts1lmr.fd
 File: ts1lmr.fd 2015/05/01 v1.6.1 Font defs for Latin Modern
 )
 pdfTeX warning (ext4): destination with the same identifier (name{page.2}) has been already used, duplicate ignored
 <to be read again> 
                    \relax 
-l.243 \newpage
-               [2{/usr/share/texmf-dist/fonts/enc/dvips/lm/lm-ts1.enc}{/usr/share/texmf-dist/fonts/enc/dvips/lm/lm-rm.enc}{/usr/share/texmf-dist/fonts/enc/dvips/lm/lm-mathsy.enc}] [3] [4] [5] [6] [7] [8] [9] [10] [11] [12] [13] [14] [15] [16] (/usr/share/texmf-dist/tex/latex/listings/lstlang1.sty
+l.255 I
+       nstructs the VM to solve for the DC operating point before the transient [2{/usr/share/texmf-dist/fonts/enc/dvips/lm/lm-ts1.enc}{/usr/share/texmf-dist/fonts/enc/dvips/lm/lm-rm.enc}{/usr/share/texmf-dist/fonts/enc/dvips/lm/lm-mathsy.enc}]
+pdfTeX warning (ext4): destination with the same identifier (name{page.3}) has been already used, duplicate ignored
+<to be read again> 
+                   \relax 
+l.271 \newpage
+               [3] [4] [5] [6] [7] [8] [9] [10] [11] [12] [13] [14] [15] [16] [17] (/usr/share/texmf-dist/tex/latex/listings/lstlang1.sty
 File: lstlang1.sty 2025/11/14 1.11b listings language file
 ) (/usr/share/texmf-dist/tex/latex/listings/lstlang1.sty
 File: lstlang1.sty 2025/11/14 1.11b listings language file
 ) (/usr/share/texmf-dist/tex/latex/listings/lstmisc.sty
 File: lstmisc.sty 2025/11/14 1.11b (Carsten Heinz)
-) [17] [18] [19{/usr/share/texmf-dist/fonts/enc/dvips/lm/lm-mathex.enc}] [20] [21] [22] [23] (./hover_user_manual.aux)
+) [18] [19]
+Overfull \hbox (7.03627pt too wide) in paragraph at lines 1162--1168
+[]\T1/lmr/m/n/10.95 (-20) Names scope to the mod-ule in-stance, ex-actly the way wires do. A mod-ule con-tain-ing \T1/lmtt/m/n/10 voltage_source
+ []
+
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `\leavevmode@ifvmode' on input line 1202.
+
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                \kern 1.82538pt
+(hyperref)                removed on input line 1202.
+
+[20] [21] [22{/usr/share/texmf-dist/fonts/enc/dvips/lm/lm-mathex.enc}] [23] [24] [25] [26]
+Overfull \hbox (55.67216pt too wide) in paragraph at lines 1645--1649
+\T1/lmr/m/n/10.95 (-20) the li-brary ex-ports \T1/lmtt/m/n/10 HVR_set_param_gain\T1/lmr/m/n/10.95 (-20) , \T1/lmtt/m/n/10 HVR_set_input_vin\T1/lmr/m/n/10.95 (-20) , \T1/lmtt/m/n/10 HVR_set_input_taps\T1/lmr/m/n/10.95 (-20) , \T1/lmtt/m/n/10 HVR_get_output_main_vout\T1/lmr/m/n/10.95 (-20) ,
+ []
+
+[27] [28] [29] [30] [31] [32] (./hover_user_manual.aux)
  ***********
 LaTeX2e <2025-11-01>
 L3 programming layer <2026-01-19>
  ***********
 Package rerunfilecheck Info: File `hover_user_manual.out' has not changed.
-(rerunfilecheck)             Checksum: 7DDF8B74B4235AF88BC0C0C158A6AAF1;9035.
+(rerunfilecheck)             Checksum: 0BC5C59BE37CB5D9C725F379EF3BFCBE;12611.
  ) 
 Here is how much of TeX's memory you used:
- 16015 strings out of 468922
- 243940 string characters out of 5458965
- 1170112 words of memory out of 5000000
- 44044 multiletter control sequences out of 15000+600000
- 692831 words of font info for 157 fonts, out of 8000000 for 9000
+ 16696 strings out of 468922
+ 254430 string characters out of 5458965
+ 1216383 words of memory out of 5000000
+ 44539 multiletter control sequences out of 15000+600000
+ 694554 words of font info for 173 fonts, out of 8000000 for 9000
  309 hyphenation exceptions out of 8191
  75i,13n,79p,1289b,2015s stack positions out of 10000i,1000n,20000p,200000b,200000s
 </usr/share/texmf-dist/fonts/type1/public/lm/lmbx10.pfb></usr/share/texmf-dist/fonts/type1/public/lm/lmbx12.pfb></usr/share/texmf-dist/fonts/type1/public/lm/lmbxi10.pfb></usr/share/texmf-dist/fonts/type1/public/lm/lmex10.pfb></usr/share/texmf-dist/fonts/type1/public/lm/lmmi10.pfb></usr/share/texmf-dist/fonts/type1/public/lm/lmmi8.pfb></usr/share/texmf-dist/fonts/type1/public/lm/lmr10.pfb></usr/share/texmf-dist/fonts/type1/public/lm/lmr12.pfb></usr/share/texmf-dist/fonts/type1/public/lm/lmr6.pfb></usr/share/texmf-dist/fonts/type1/public/lm/lmr8.pfb></usr/share/texmf-dist/fonts/type1/public/lm/lmri10.pfb></usr/share/texmf-dist/fonts/type1/public/lm/lmsy10.pfb></usr/share/texmf-dist/fonts/type1/public/lm/lmsy8.pfb></usr/share/texmf-dist/fonts/type1/public/lm/lmtk10.pfb></usr/share/texmf-dist/fonts/type1/public/lm/lmtt10.pfb></usr/share/texmf-dist/fonts/type1/public/lm/lmtti10.pfb>
-Output written on hover_user_manual.pdf (25 pages, 424220 bytes).
+Output written on hover_user_manual.pdf (35 pages, 651707 bytes).
 PDF statistics:
- 943 PDF objects out of 1000 (max. 8388607)
- 873 compressed objects within 9 object streams
- 432 named destinations out of 1000 (max. 500000)
- 38873 words of extra memory for PDF output out of 42996 (max. 10000000)
+ 1227 PDF objects out of 1440 (max. 8388607)
+ 1142 compressed objects within 12 object streams
+ 567 named destinations out of 1000 (max. 500000)
+ 39030 words of extra memory for PDF output out of 42996 (max. 10000000)
 

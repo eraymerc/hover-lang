@@ -32,3 +32,14 @@ HVRLogResult hvr_rt_query_latest(VM *vm);
 HVRLogResult hvr_rt_query_last_step(VM *vm);
 void         hvr_rt_clear_before(VM *vm, double t);
 void         hvr_rt_free_result(HVRLogResult *r);
+
+// hvr_rt_reset_analog() zeroes the MNA solution vectors — the capacitor
+// voltages and inductor currents that ARE the analog state.
+//
+// The generated hvr_reset_state() restores Hover `state` variables only, so
+// without this a HVR_reset_sim() on any circuit with energy storage rewinds
+// the clock to zero while leaving every charged node exactly where it was.
+// The solver strategies re-seed their own multistep history (BDF2/NDF2's
+// x_prev1/x_prev2) from solver->last_solution at the top of each run(), so
+// zeroing here is sufficient to reach a genuine cold start.
+void         hvr_rt_reset_analog(VM *vm);

@@ -148,6 +148,21 @@ void hvr_rt_clear_before(VM *vm, double t) {
     }
 }
 
+void hvr_rt_reset_analog(VM *vm) {
+    if (vm->solver) {
+        vm->solver->last_solution.setZero();
+        // Force a refactorization: G_eff was built against the operating
+        // point we just discarded, and a stale LU factorization outliving
+        // the state it was formed for is exactly the kind of thing that
+        // shows up as a wrong first step rather than as a crash.
+        vm->solver->g_dirty = 1;
+    }
+    if (vm->api) {
+        vm->api->last_solution.setZero();
+        vm->api->prev_solution.setZero();
+    }
+}
+
 void hvr_rt_free_result(HVRLogResult *r) {
     if (!r) return;
     free(r->time);
