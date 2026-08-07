@@ -18,11 +18,11 @@ def find_compiler(explicit=None):
     vendored in, ./hover, then $PATH.
 
     The repository copy is tried before $PATH deliberately. The compiler
-    resolves `standard_library/` relative to its own location and passes
-    `-I./runtime` plus `./runtime/libhover_runtime.a` to the C++ compiler,
-    so a `hover` binary that isn't sitting in a checkout cannot build
-    anything -- preferring the in-repo one makes the common case (this
-    package used from its own checkout) work with no configuration.
+    resolves `standard_library/` and `runtime/` relative to its own
+    location, so a `hover` binary outside a checkout (or outside an
+    extracted release) has nothing to build against -- preferring the
+    in-repo one makes the common case (this package used from its own
+    checkout) work with no configuration.
     """
     candidates = []
     if explicit:
@@ -97,9 +97,10 @@ def compile_hvr(source, output=None, compiler=None, extra_args=()):
     cmd = [str(hover), str(source), "--hovercraft", "-o", str(output)]
     cmd.extend(str(a) for a in extra_args)
 
-    # cwd must be the compiler's own directory: the build step passes
-    # `-I./runtime` and `./runtime/libhover_runtime.a` to zig, both
-    # relative to the working directory, and drops sim.cpp there too.
+    # cwd is the compiler's own directory so the generated sim.cpp lands
+    # there rather than in the caller's. (The runtime include/library paths
+    # no longer depend on this -- hover resolves those from its own
+    # location -- but sim.cpp is still written relative to cwd.)
     proc = subprocess.run(
         cmd,
         cwd=str(hover.parent),

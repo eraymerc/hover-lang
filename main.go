@@ -18,6 +18,7 @@ import (
 )
 
 const usage = `Usage: ./hover <filename.hvr> [options]
+       ./hover --setup
 
 Options:
   -o <path>       Write the built artifact to <path> instead of the default
@@ -27,7 +28,12 @@ Options:
                   directory regardless of -o.
   --hovercraft    Emit a reusable HVR_* C-ABI shared library instead of a
                   one-shot simulation binary (see examples/hovercraft/).
-  --dump-ast      Print the entry file's AST and exit without compiling.`
+  --dump-ast      Print the entry file's AST and exit without compiling.
+  --setup         Check for a usable Zig toolchain and fix it up if not:
+                  on Windows, downloads one into ./toolchain/zig; on Linux,
+                  reports whether one is already on PATH. Run this once
+                  after extracting a release, or any time a compile fails
+                  with a "Zig not found" error. Takes no other arguments.`
 
 // cliOptions is the parsed command line. Parsing lives in parseArgs rather
 // than inline in main so that flag order never matters and an unrecognized
@@ -133,6 +139,15 @@ func checkOutputPath(path string) error {
 
 func main() {
 	fmt.Println("Hover v0.7.0")
+
+	if len(os.Args) > 1 && os.Args[1] == "--setup" {
+		if len(os.Args) > 2 {
+			fmt.Println("Error: --setup takes no other arguments")
+			os.Exit(1)
+		}
+		runSetup()
+		return
+	}
 
 	opts, err := parseArgs(os.Args[1:])
 	if err != nil {
@@ -365,30 +380,43 @@ func main() {
 		exeName = opts.outputPath
 	}
 
-	zigPath := "zig"
+	// Windows: a locally bundled zig, else one on PATH. Linux: PATH only.
+	// Neither downloads anything here — that is `hover --setup`'s job.
+	var zigPath string
 	if runtime.GOOS == "windows" {
-		if _, err := os.Stat("./toolchain/zig/zig.exe"); err == nil {
-			zigPath = "./toolchain/zig/zig.exe"
+		p, err := resolveWindowsZig()
+		if err != nil {
+			fmt.Println(err)
+			os.Exit(1)
 		}
+		zigPath = p
 	} else {
-		if _, err := os.Stat("./toolchain/zig/zig"); err == nil {
-			zigPath = "./toolchain/zig/zig"
+		p, err := exec.LookPath("zig")
+		if err != nil {
+			fmt.Println("[Compile] Zig not found on PATH. Install it via your package manager (e.g. `sudo pacman -S zig`, `sudo apt install zig`, `sudo dnf install zig`, `sudo pkg install zig`) and make sure it's on PATH, then run `hover --setup`.")
+			os.Exit(1)
 		}
+		zigPath = p
 	}
 
-	var runtimeLib string
-	if runtime.GOOS == "windows" {
-		if _, err := os.Stat("./runtime/hover_runtime.lib"); err == nil {
-			runtimeLib = "./runtime/hover_runtime.lib"
-		} else {
-			runtimeLib = "./runtime/build/windows/hover_runtime.lib"
-		}
-	} else {
-		if _, err := os.Stat("./runtime/libhover_runtime.a"); err == nil {
-			runtimeLib = "./runtime/libhover_runtime.a"
-		} else {
-			runtimeLib = "./runtime/build/linux/libhover_runtime.a"
-		}
+	// Every path below is anchored to the executable's own directory, not
+	// the caller's cwd — same reasoning as loader.ExeDir()'s stdlib
+	// resolution: `hover foo.hvr` has to work from any directory once
+	// hover is on PATH, not just from inside its install folder.
+	exeDir, err := loader.ExeDir()
+	if err != nil {
+		fmt.Printf("[Compile] Could not locate the hover executable's own directory: %v\n", err)
+		os.Exit(1)
+	}
+	runtimeDir := filepath.Join(exeDir, "runtime")
+
+	// The runtime archive is built by `hover --setup` using this same Zig
+	// (see runtimebuild.go); this also rejects an archive left over from a
+	// different Zig rather than letting it fail at link time.
+	runtimeLib, err := checkRuntimeLib(zigPath, runtimeDir)
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
 	}
 
 	// ── FFI: resolve `importc` headers ───────────────────────────────────────
@@ -443,15 +471,13 @@ func main() {
 		}
 	}
 
-	if runtime.GOOS == "windows" {
-		compileArgs = append(compileArgs, "-target", "x86_64-windows-gnu")
-	} else {
-		compileArgs = append(compileArgs, "-target", "x86_64-linux-gnu")
-	}
-
+	// No -target: this is a native build, which is Zig's default and
+	// detects the host libc properly rather than guessing a triple. It is
+	// also what the runtime archive was built as (see runtimebuild.go), so
+	// the two always agree.
 	compileArgs = append(compileArgs, "sim.cpp")
 	compileArgs = append(compileArgs, ffiSources...) // FFI definitions
-	compileArgs = append(compileArgs, "-I./runtime")
+	compileArgs = append(compileArgs, "-I"+runtimeDir)
 	for _, dir := range ffiIncludeDirs { // FFI header locations
 		compileArgs = append(compileArgs, "-I"+dir)
 	}

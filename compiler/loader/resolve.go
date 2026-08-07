@@ -6,11 +6,13 @@ import (
 	"strings"
 )
 
-// stdlibRoot is the standard library directory, always a "standard_library"
-// folder next to the hover executable — not the current working directory,
-// and not the source file's directory. This is what makes `import <...>`
-// location-independent.
-func stdlibRoot() (string, error) {
+// ExeDir returns the directory containing the running hover executable
+// (symlinks resolved) — the anchor for locating every resource shipped
+// alongside it (standard_library, runtime lib/headers, bundled toolchain),
+// independent of the caller's current working directory or the source
+// file's location. This is what makes hover usable as `hover foo.hvr` from
+// any directory once it's on PATH.
+func ExeDir() (string, error) {
 	exe, err := os.Executable()
 	if err != nil {
 		return "", err
@@ -18,7 +20,19 @@ func stdlibRoot() (string, error) {
 	if real, e := filepath.EvalSymlinks(exe); e == nil {
 		exe = real
 	}
-	return filepath.Join(filepath.Dir(exe), "standard_library"), nil
+	return filepath.Dir(exe), nil
+}
+
+// stdlibRoot is the standard library directory, always a "standard_library"
+// folder next to the hover executable — not the current working directory,
+// and not the source file's directory. This is what makes `import <...>`
+// location-independent.
+func stdlibRoot() (string, error) {
+	dir, err := ExeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "standard_library"), nil
 }
 
 // resolveImportPath turns an import into an absolute file path.

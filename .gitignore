@@ -1,6 +1,7 @@
 toolchain/
 hover_linux/
 hover_win/
+releases/
 # Generated build artifacts
 sim.cpp
 sim
@@ -9,16 +10,16 @@ sim.exe
 /hover
 /hover.exe
 
-# Build-output runtime libraries live in runtime/build/{linux,windows}/.
-# A stray lib at these root paths is PREFERRED by main.go and will hijack
-# the link with whatever toolchain built it (this happened: a g++/libstdc++
-# archive vs zig/libc++ sim.o -> undefined std::__cxx11 symbols).
+# Compiled runtime output — never committed. Releases ship the .cpp
+# sources and `hover --setup` builds this here with the user's own Zig
+# (see runtimebuild.go); `make check-runtime` writes its CI check here too.
+/runtime/build/
+
+# Stray prebuilt libs from the old ship-a-binary-lib scheme. Linking one of
+# these against a sim.o from a different toolchain is what produced the
+# undefined std::__cxx11 symbols that motivated building from source.
 /runtime/libhover_runtime.a
-<<<<<<< HEAD
 /runtime/hover_runtime.lib
-=======
-/runtime/hover_runtime.lib
->>>>>>> e1b252df (Recompiled)
 docs/hovercraft-issues.md
 
 # Python driver library
