@@ -9,6 +9,9 @@ import (
 func (a *Analyzer) checkStatement(stmt ast.Statement) {
 	switch node := stmt.(type) {
 
+	case *ast.StructDeclStatement:
+		a.registerStructDecl(node)
+
 	case *ast.LocalDeclStatement:
 		if a.currentDomain == token.MODULE {
 			for _, decl := range node.Decls {
@@ -110,9 +113,19 @@ func (a *Analyzer) checkStatement(stmt ast.Statement) {
 		parent := a.currentScope
 		a.currentScope = NewScope(parent)
 		for _, arg := range node.StaticArgs {
+			if _, isStruct := a.structs[arg.Type.Base]; isStruct {
+				a.addError(node, fmt.Sprintf(
+					"static parameter '%s' cannot be struct-typed ('%s') — module static parameters must stay physical/numeric",
+					arg.Name, arg.Type))
+			}
 			a.currentScope.Define(&Symbol{Name: arg.Name, Type: arg.Type})
 		}
 		for _, arg := range node.LogicArgs {
+			if _, isStruct := a.structs[arg.Type.Base]; isStruct {
+				a.addError(node, fmt.Sprintf(
+					"port '%s' cannot be struct-typed ('%s') — module ports must be wires",
+					arg.Name, arg.Type))
+			}
 			a.currentScope.Define(&Symbol{Name: arg.Name, Type: arg.Type})
 		}
 		for _, port := range node.PhysPorts {
@@ -148,6 +161,26 @@ func (a *Analyzer) checkStatement(stmt ast.Statement) {
 		a.currentScope = parent
 	case *ast.FuncDeclStatement:
 		a.currentScope.Define(&Symbol{Name: node.Name, Type: ast.TFunc})
+		if node.IsExtern {
+			// extern func crosses the C++ FFI boundary, where Hover structs
+			// don't exist as a real C++ type it can name — the sanctioned
+			// way to move aggregate data across that boundary is the
+			// wrapper-function/opaque-pointer pattern documented in the
+			// user manual ("Handling Structs and Complex Types"), not a
+			// native struct parameter/return.
+			if _, isStruct := a.structs[node.ReturnType.Base]; isStruct {
+				a.addError(node, fmt.Sprintf(
+					"extern func '%s' cannot return a struct ('%s') — use the opaque-pointer pattern to cross the FFI boundary",
+					node.Name, node.ReturnType))
+			}
+			for _, p := range node.Parameters {
+				if _, isStruct := a.structs[p.Type.Base]; isStruct {
+					a.addError(node, fmt.Sprintf(
+						"extern func '%s' parameter '%s' cannot be struct-typed ('%s') — use the opaque-pointer pattern to cross the FFI boundary",
+						node.Name, p.Name, p.Type))
+				}
+			}
+		}
 		if node.Body == nil { // extern: nothing to analyze
 			return
 		}

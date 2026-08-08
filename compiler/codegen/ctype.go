@@ -22,11 +22,20 @@ type CType int
 const (
 	CDouble CType = iota
 	CFloat
-	CInt  // maps to int64_t
-	CUInt // maps to uint64_t
+	CInt   // maps to int64_t
+	CUInt  // maps to uint64_t
+	CStruct // a Hover-declared struct type; the real name lives in hoverType.structName, not here
 )
 
-// String returns the C++ type keyword to emit for a declaration.
+// String returns the C++ type keyword to emit for a declaration. NOT valid
+// for CStruct — a bare CType carries no struct name, so callers that know
+// they may be holding a struct type must go through hoverType.typeKeyword()
+// instead, which does have the name. This fallback exists only so a
+// mis-derived cast involving CStruct fails loudly in the emitted C++ (a
+// compile error there) rather than silently emitting plausible-looking but
+// wrong code — see castToHover/emitCast, which are never expected to reach
+// this for a well-typed program (semantic analysis rejects any expression
+// that would mix a struct with something else before codegen runs).
 func (c CType) String() string {
 	switch c {
 	case CDouble:
@@ -37,6 +46,8 @@ func (c CType) String() string {
 		return "int64_t"
 	case CUInt:
 		return "uint64_t"
+	case CStruct:
+		return "/* INVALID: struct type used where a scalar cast was expected */"
 	}
 	return "double"
 }
@@ -51,7 +62,16 @@ func (c CType) String() string {
 // "number" (the type of a bare literal, from semantic's untyped-literal
 // convention) defaults to CDouble — matching the existing behavior where
 // every literal was emitted as a double before this type system existed.
-func hoverTypeToCType(t ast.Type) CType {
+//
+// A method (not a free function) so it can consult g.prog.Structs: an
+// unrecognized Base used to silently default to CDouble, which became a
+// real correctness hazard once struct names are valid Base values — this
+// checks the struct registry FIRST so a struct type maps to CStruct
+// instead of falling through to that default.
+func (g *generator) hoverTypeToCType(t ast.Type) CType {
+	if _, ok := g.prog.Structs[t.Base]; ok {
+		return CStruct
+	}
 	switch t.Base {
 	case "double", "number", "unknown", "":
 		return CDouble
@@ -115,6 +135,16 @@ func isIntegerType(c CType) bool {
 // inserts a cast at every type boundary, even ones C itself would convert
 // implicitly without complaint (e.g. int → double) — this keeps generated
 // code's intent visible and avoids any ambiguity about narrowing.
+//
+// Two struct-typed operands (from == to == CStruct) correctly report "no
+// cast needed" here — C++ assigns/copies an aggregate memberwise via its
+// implicit operator=, exactly the by-value semantics Hover structs need,
+// with no cast involved. Semantic analysis guarantees a struct is only ever
+// paired with an equal struct type by the time codegen sees it, so this
+// bare CType comparison (which can't see the two structs' actual names) is
+// safe in practice; a genuine mismatch would be a semantic-analysis bug,
+// and would surface as a real C++ compile error rather than silently
+// wrong code, per emitCast's defensive CType.String() fallback for CStruct.
 func needsCast(from, to CType) bool {
 	return from != to
 }

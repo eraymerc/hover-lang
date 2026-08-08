@@ -1,6 +1,8 @@
 package ast
 
 import (
+	"strings"
+
 	token "hover/compiler/token"
 )
 
@@ -29,6 +31,18 @@ type BinaryExpression struct {
 	Left     Expression
 	Operator string
 	Right    Expression
+
+	// IsFieldAccess is set by semantic analysis (never by the parser) when
+	// Operator == "." resolves to real struct member access — Left's type
+	// is a declared struct and Right names one of its fields — as opposed
+	// to an aliased-import-qualified call (M.sin) or the loose fallback
+	// behavior of "." on anything else. Codegen reads this flag to decide
+	// whether to emit real "left.field" C++ member access or fall back to
+	// its existing discard-the-left behavior. Kept as a tag on the existing
+	// node, rather than a separate FieldAccessExpression node, because the
+	// parser cannot tell the two cases apart at parse time (both are just
+	// IDENT DOT IDENT) — only name resolution in semantic analysis can.
+	IsFieldAccess bool
 }
 
 func (b *BinaryExpression) expressionNode()      {}
@@ -99,6 +113,39 @@ func (u *UnaryExpression) String() string {
 		right = u.Right.String()
 	}
 	return "(" + u.Operator + right + ")"
+}
+
+// StructLiteralExpression constructs a struct value with named fields:
+//
+//	Point{x: 1.0, y: 2.0}
+//
+// Fields may appear in any order — they're matched by name, not position,
+// both in semantic checking and in codegen (which emits a C++ designated
+// initializer).
+type StructLiteralExpression struct {
+	Token    token.Token // the type-name IDENT token
+	TypeName string
+	Fields   []StructFieldInit
+}
+
+type StructFieldInit struct {
+	Name  string
+	Value Expression
+}
+
+func (s *StructLiteralExpression) expressionNode()      {}
+func (s *StructLiteralExpression) TokenLiteral() string { return s.Token.Literal }
+func (s *StructLiteralExpression) Line() int            { return s.Token.Line }
+func (s *StructLiteralExpression) String() string {
+	parts := make([]string, len(s.Fields))
+	for i, f := range s.Fields {
+		val := "<nil>"
+		if f.Value != nil {
+			val = f.Value.String()
+		}
+		parts[i] = f.Name + ": " + val
+	}
+	return s.TypeName + "{" + strings.Join(parts, ", ") + "}"
 }
 
 type ArrayExpression struct {

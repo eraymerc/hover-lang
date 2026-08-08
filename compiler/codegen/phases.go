@@ -103,8 +103,8 @@ func (g *generator) emitPhaseLog(vmSignals, branchCurrents []string) {
 		// warning, per the explicit-cast-at-every-type-boundary philosophy
 		// applied consistently throughout this type system.
 		ht := g.typeOf(mangled)
-		if ht.isArray() || ht.isPointer() {
-			g.line(`// skipped: %s is an array/pointer (not scalar-loggable)`, sig)
+		if ht.isArray() || ht.isPointer() || ht.elem == CStruct {
+			g.line(`// skipped: %s is an array/pointer/struct (not scalar-loggable)`, sig)
 			continue
 		}
 		g.line(`vm->values[%s] = %s;`, cStr(sig), emitCast(mangled, ht.elem, CDouble))
@@ -162,7 +162,7 @@ func (g *generator) emitStateVarSnapshot() {
 	g.line("(void)(vm);")
 	for _, mangled := range mangledNames {
 		ht := g.typeOf(mangled)
-		if ht.isArray() || ht.isPointer() {
+		if ht.isArray() || ht.isPointer() || ht.elem == CStruct {
 			continue
 		}
 		g.line(`vm->values[%s] = %s;`, cStr(dottedNames[mangled]), emitCast(mangled, ht.elem, CDouble))
@@ -172,13 +172,20 @@ func (g *generator) emitStateVarSnapshot() {
 	g.raw(``)
 
 	// restore_state_vars: vm->values[dottedName] -> state global, cast back
+	//
+	// Struct-typed state (like array/pointer state) is excluded, same as
+	// above: vm->values is a map<string,double>, which has no way to hold
+	// an aggregate. A struct-typed `state` variable therefore won't be
+	// rolled back by a ZCD probe or a rejected solver step the way a
+	// scalar `state` variable is — a known limitation of this first
+	// version of struct support, not a silently-wrong cast.
 	g.raw(`// ── STATE SNAPSHOT — restore 'state' variables from vm->values ──────────────`)
 	g.raw(`static void restore_state_vars(VM *vm) {`)
 	g.push()
 	g.line("(void)(vm);")
 	for _, mangled := range mangledNames {
 		ht := g.typeOf(mangled)
-		if ht.isArray() || ht.isPointer() {
+		if ht.isArray() || ht.isPointer() || ht.elem == CStruct {
 			continue
 		}
 		g.line(`%s = %s;`, mangled, emitCast(fmt.Sprintf(`vm->values[%s]`, cStr(dottedNames[mangled])), CDouble, ht.elem))

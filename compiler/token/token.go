@@ -59,6 +59,7 @@ const (
 	RBRACE   // }
 	COMMA    // ,
 	SEMI     // ;
+	COLON    // :
 
 	// Keywords
 	MODULE
@@ -76,6 +77,7 @@ const (
 	IMPORTC
 	AS
 	EXTERN
+	STRUCT
 
 	// Types
 	WIRE
@@ -124,6 +126,7 @@ var tokens = [...]string{
 	RBRACE:   "}",
 	COMMA:    ",",
 	SEMI:     ";",
+	COLON:    ":",
 	MODULE:   "MODULE",
 	FUNC:     "FUNC",
 	STATE:    "STATE",
@@ -137,6 +140,7 @@ var tokens = [...]string{
 	IMPORTC:  "IMPORTC",
 	AS:       "AS",
 	EXTERN:   "EXTERN",
+	STRUCT:   "STRUCT",
 	WIRE:     "WIRE",
 	DOUBLE:   "DOUBLE",
 	INT:      "INT",
@@ -169,6 +173,7 @@ var keywords = map[string]Type{
 	"importc":  IMPORTC,
 	"as":       AS,
 	"extern":   EXTERN,
+	"struct":   STRUCT,
 	"wire":     WIRE,
 	"double":   DOUBLE,
 	"int":      INT,

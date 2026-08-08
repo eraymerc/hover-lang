@@ -22,6 +22,10 @@ TESTS=(
     "examples/DCMotor/h_bridge.hvr"
     "tests/circuits/types_exercise.hvr"
     "tests/circuits/cc_sources.hvr"
+    "tests/circuits/struct_basic.hvr"
+    "tests/circuits/struct_nested.hvr"
+    "tests/circuits/struct_array.hvr"
+    "tests/circuits/struct_func.hvr"
 )
 
 UPDATE=0

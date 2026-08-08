@@ -1,0 +1,34 @@
+// Golden test circuit: a function taking/returning struct values by value —
+// C semantics (memberwise copy, not aliasing).
+.tran(0, 1m, 1u);
+.save(main.box.mx, main.box.a_after_x);
+
+struct Point {
+    double x;
+    double y;
+}
+
+func Point midpoint(Point a, Point b) {
+    return Point{x: (a.x + b.x) / 2.0, y: (a.y + b.y) / 2.0};
+}
+
+digital module Box<>() [] {
+    state Point a = Point{x: 0.0, y: 0.0};
+    state Point b = Point{x: 4.0, y: 4.0};
+    state double mx = 0;
+    state double a_after_x = 0;
+
+    Point m = midpoint(a, b);
+    mx = m.x;
+    // Mutate the returned copy's inputs afterward — a real "by value"
+    // check: a must be unaffected by anything midpoint did internally.
+    a.x = a.x + 100.0;
+    a_after_x = a.x;
+}
+
+module main<>()[] {
+    wire node_a;
+    module box = Box<>()[];
+    R<1k>()[node_a, gnd];
+    voltage_source<5>()[node_a, gnd];
+}

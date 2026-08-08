@@ -66,12 +66,37 @@ func (a *Analyzer) checkExpression(exp ast.Expression) ast.Type {
 			}
 		}
 
-		l := a.checkExpression(node.Left)
-		r := a.checkExpression(node.Right)
-
 		if node.Operator == "." {
+			// Real struct member access: Left resolves to a declared
+			// struct type and Right names one of its fields. Checked after
+			// qualifiedImportName (above) so M.sin keeps taking priority —
+			// an import alias is never also a struct-typed variable, since
+			// they occupy different namespaces, but the alias check is
+			// cheap and was already there first. Right must be a bare
+			// field name, not a general sub-expression (nothing in Hover's
+			// grammar could put anything else there — parse_binary_expr
+			// always parses Right as a full expression, but a bare
+			// IdentifierExpression is the only shape that makes sense as a
+			// field name).
+			leftType := a.checkExpression(node.Left)
+			if info, isStruct := a.structs[leftType.Base]; isStruct && leftType.IsScalar() {
+				fieldName := rightIdentName(node)
+				field, ok := info.fieldByName(fieldName)
+				if !ok {
+					a.addError(node, fmt.Sprintf("struct '%s' has no field '%s'", leftType.Base, fieldName))
+					return ast.TUnknown
+				}
+				node.IsFieldAccess = true
+				return field.Type
+			}
+			// Fallback: existing loose behavior for any other dotted
+			// expression (e.g. a dotted physical net/element path).
+			r := a.checkExpression(node.Right)
 			return r
 		}
+
+		l := a.checkExpression(node.Left)
+		r := a.checkExpression(node.Right)
 
 		if l.IsWire() || r.IsWire() {
 			a.addError(node, "Cannot perform math on physical wires. Use V() or I() to read their values.")
@@ -127,6 +152,25 @@ func (a *Analyzer) checkExpression(exp ast.Expression) ast.Type {
 			a.checkExpression(arg)
 		}
 		return ast.TDouble
+	case *ast.StructLiteralExpression:
+		info, ok := a.structs[node.TypeName]
+		if !ok {
+			a.addError(node, fmt.Sprintf("undeclared struct type '%s'", node.TypeName))
+			return ast.TUnknown
+		}
+		seen := map[string]bool{}
+		for _, f := range node.Fields {
+			if seen[f.Name] {
+				a.addError(node, fmt.Sprintf("field '%s' set more than once in '%s' literal", f.Name, node.TypeName))
+			}
+			seen[f.Name] = true
+			if _, ok := info.fieldByName(f.Name); !ok {
+				a.addError(node, fmt.Sprintf("struct '%s' has no field '%s'", node.TypeName, f.Name))
+				continue
+			}
+			a.checkExpression(f.Value)
+		}
+		return ast.Type{Base: node.TypeName}
 	case *ast.IndexExpression:
 		lType := a.checkExpression(node.Left)
 		iType := a.checkExpression(node.Index)

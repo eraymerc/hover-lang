@@ -28,19 +28,38 @@ import (
 
 // hoverType is the fully-parsed form of a Hover declared-type string.
 type hoverType struct {
-	elem  CType // element type (double / float / int64_t / uint64_t)
-	stars int   // pointer levels: double** -> 2
-	dims  []int // array dimensions, outer→inner: double[2][3] -> {2, 3}
+	elem       CType  // element type (double / float / int64_t / uint64_t / struct)
+	structName string // set iff elem == CStruct: the emitted C++ struct's name
+	stars      int    // pointer levels: double** -> 2
+	dims       []int  // array dimensions, outer→inner: double[2][3] -> {2, 3}
 }
 
 // hoverTypeOf converts the parser's structured ast.Type into codegen's
 // hoverType (element CType + declarator shape). This is a field mapping,
 // not a parse — the string grammar this function used to re-parse
 // ("unsigned int*[4]") no longer exists anywhere in the pipeline.
-func hoverTypeOf(t ast.Type) hoverType {
+//
+// A method (not a free function) because hoverTypeToCType needs g.prog's
+// struct registry to recognize a struct-typed Base.
+func (g *generator) hoverTypeOf(t ast.Type) hoverType {
 	dims := make([]int, len(t.Dims))
 	copy(dims, t.Dims)
-	return hoverType{elem: hoverTypeToCType(t), stars: t.Stars, dims: dims}
+	elem := g.hoverTypeToCType(t)
+	structName := ""
+	if elem == CStruct {
+		structName = t.Base
+	}
+	return hoverType{elem: elem, structName: structName, stars: t.Stars, dims: dims}
+}
+
+// typeKeyword returns the C++ type keyword this hoverType's element emits
+// as — CType.String() for a scalar, or the real struct name for CStruct
+// (CType.String() alone can't answer this: a bare CType carries no name).
+func (h hoverType) typeKeyword() string {
+	if h.elem == CStruct {
+		return h.structName
+	}
+	return h.elem.String()
 }
 
 // isArray reports whether this type has at least one array dimension.
@@ -76,7 +95,7 @@ func (h hoverType) elemCount() int {
 //	double[2][3]      m       -> "double m[2][3]"
 //	double*[4]        pa      -> "double *pa[4]"   (array of pointers, C reading)
 func (h hoverType) cVarDecl(name string) string {
-	decl := h.elem.String() + " " + strings.Repeat("*", h.stars) + name
+	decl := h.typeKeyword() + " " + strings.Repeat("*", h.stars) + name
 	for _, d := range h.dims {
 		decl += "[" + strconv.Itoa(d) + "]"
 	}
@@ -96,7 +115,7 @@ func (h hoverType) cParamDecl(name string) string {
 // in C/C++, so an array return degrades to the element type (matching C);
 // pointer returns are emitted faithfully.
 func (h hoverType) cReturnType() string {
-	return h.elem.String() + strings.Repeat("*", h.stars)
+	return h.typeKeyword() + strings.Repeat("*", h.stars)
 }
 
 // cDecayedLocalDecl produces the declaration of the renamed function-local
@@ -119,7 +138,7 @@ func (h hoverType) cDecayedLocalDecl(name, init string) string {
 	if len(inner) == 0 {
 		// 1-D array decays to a plain pointer: double *f_arr = arr;
 		return fmt.Sprintf("%s %s%s = %s;",
-			h.elem.String(), strings.Repeat("*", stars), name, init)
+			h.typeKeyword(), strings.Repeat("*", stars), name, init)
 	}
 	// >=2-D decays to pointer-to-array; the name needs parentheses:
 	// double (*f_m)[3] = m;
@@ -128,13 +147,42 @@ func (h hoverType) cDecayedLocalDecl(name, init string) string {
 		suffix += "[" + strconv.Itoa(d) + "]"
 	}
 	return fmt.Sprintf("%s (%s%s)%s = %s;",
-		h.elem.String(), strings.Repeat("*", stars), name, suffix, init)
+		h.typeKeyword(), strings.Repeat("*", stars), name, suffix, init)
+}
+
+// zeroValue renders a value-initialized ("zero") literal of this type, for
+// contexts like a function's unreachable fallthrough return. Struct and
+// array types use C++'s own empty-brace value-initialization (`TypeName{}`
+// / `{}`), which zeroes every member/element without this needing to know
+// their layout; pointers are a null literal; scalars go through
+// formatTypedLiteral for the correct per-CType zero spelling (0 vs 0.0).
+func (h hoverType) zeroValue() string {
+	if h.elem == CStruct && !h.isArray() && h.stars == 0 {
+		return h.structName + "{}"
+	}
+	if h.isArray() {
+		return "{}"
+	}
+	if h.stars > 0 {
+		return "0"
+	}
+	return formatTypedLiteral(0.0, h.elem)
 }
 
 // cFFIType renders the type as a C header would (C-natural element name plus
 // pointer stars), for casting arguments passed to extern C functions. Arrays
 // are treated as a single pointer (extern array params decay like C).
+//
+// Never valid for a struct-typed hoverType — semantic analysis rejects any
+// struct type on an extern func's signature before codegen runs (structs
+// don't cross the FFI boundary directly; see the opaque-pointer pattern in
+// the user manual), so reaching this with elem == CStruct means that
+// invariant was somehow bypassed. Fail loudly rather than emit a bogus C
+// type name.
 func (h hoverType) cFFIType() string {
+	if h.elem == CStruct {
+		panic("cFFIType called on a struct-typed hoverType (" + h.structName + ") — semantic analysis should have rejected this extern func signature")
+	}
 	stars := h.stars
 	if h.isArray() {
 		stars++

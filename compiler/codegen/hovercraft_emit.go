@@ -454,10 +454,10 @@ func (g *generator) hvrOutputs(cfg simConfig) []hvrOutput {
 	for _, sig := range cfg.saveVMSignals {
 		mangled := mangle(sig)
 		ht := g.typeOf(mangled)
-		// Same two exclusions phase_log applies: a name that isn't a real
-		// logic variable has no global to read, and an array/pointer has no
-		// single scalar value to return.
-		if !known[mangled] || ht.isArray() || ht.isPointer() {
+		// Same exclusions phase_log applies: a name that isn't a real logic
+		// variable has no global to read, and an array/pointer/struct has
+		// no single scalar value to return.
+		if !known[mangled] || ht.isArray() || ht.isPointer() || ht.elem == CStruct {
 			continue
 		}
 		outs = append(outs, hvrOutput{sig, emitCast(mangled, ht.elem, CDouble), "signal"})

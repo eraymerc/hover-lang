@@ -1,0 +1,79 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  HVR Example — Discrete PID Controller, using a native `struct`
+//  Demonstrates: struct declaration, a struct-typed `state` variable, a
+//  named-field struct literal, and a struct passed by value into a
+//  function — regulating an RC plant's node voltage toward a setpoint.
+// ─────────────────────────────────────────────────────────────────────────────
+
+.save(main.plant_node, main.setpoint, main.out);
+.tran(0, 50m, 10u);
+
+// Bundles the controller's three gains together instead of three separate
+// double parameters. This is the native equivalent of the "flattened C++
+// wrapper" pattern the user manual describes for talking to a real C++
+// struct over FFI — but here no wrapper is needed at all: Hover passes
+// PIDGains by value, memberwise, like any other type.
+struct PIDGains {
+    double kp;
+    double ki;
+    double kd;
+}
+
+// pid_output is a pure function of the current error plus everything the
+// controller remembers about the past (the running integral and the
+// previous error) — all passed in by value. Passing `gains` here does NOT
+// let this function reach back and mutate the caller's copy: a struct
+// argument is a real copy, the same as an int or double argument, so the
+// PIDController module below is free to update its own `state` fields
+// after the call without this function ever seeing (or needing to see)
+// that state directly.
+func double pid_output(PIDGains gains, double error, double integral, double prev_error) {
+    double derivative = (error - prev_error) / dt;
+    return gains.kp * error + gains.ki * integral + gains.kd * derivative;
+}
+
+// `sense` is a physical wire port, read directly with V() every step —
+// unlike a logic-arg sampled once by a structural caller, a digital
+// module's own body re-runs every timestep, so this is a real closed
+// feedback loop, not a one-time initial read.
+digital module PIDController<double kp, double ki, double kd>
+(input double setpoint, output double out)
+[wire sense]
+{
+    // Recomputed each step from the module's static gains via a named-
+    // field struct literal — fields can be given in any order, matched by
+    // name. Plain (non-`state`), not because it changes, but because a
+    // `state` initializer is folded once at compile time and only ever
+    // sees literal constants — a static parameter like `kp` isn't one
+    // (its value comes from how PIDController was instantiated below), so
+    // it has to be evaluated fresh at simulation time instead.
+    PIDGains gains = PIDGains{ki: ki, kp: kp, kd: kd};
+    state double integral = 0;
+    state double prev_error = 0;
+
+    double measured = V(sense);
+    double error = setpoint - measured;
+    integral = integral + error * dt;
+
+    out = pid_output(gains, error, integral, prev_error);
+
+    prev_error = error;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  TESTBENCH — PID output drives a current into a simple RC plant;
+//  the controller reads the plant's node voltage back through `sense`.
+// ═══════════════════════════════════════════════════════════════
+
+module main<>() []
+{
+    wire plant_node;
+    state double setpoint = 3.3;
+    state double out = 0;
+
+    module ctrl = PIDController<2.0, 40.0, 0.0>(setpoint, out) [plant_node];
+
+    current_source<>(out) [gnd, plant_node];
+    R<1k>() [plant_node, gnd];
+    C<10u>() [plant_node, gnd];
+}

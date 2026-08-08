@@ -93,3 +93,36 @@ func parse_index_expr(p *parser, left ast.Expression, bp binding_power) ast.Expr
 	p.expect(token.RBRACKET)
 	return expr
 }
+
+// parse_struct_literal parses TypeName{field: expr, ...} — a struct literal.
+// Registered as the LBRACE infix handler (lookups.go), so it only fires
+// when '{' immediately follows another expression; today that shape is
+// always a syntax error (no prior infix handler exists for LBRACE), so this
+// is purely additive and cannot change the parse of any program that
+// compiled before. `left` must be a bare type-name identifier — struct
+// literals are always written TypeName{...}, never as a chained postfix on
+// an arbitrary expression.
+func parse_struct_literal(p *parser, left ast.Expression, bp binding_power) ast.Expression {
+	id, ok := left.(*ast.IdentifierExpression)
+	if !ok {
+		p.addError("struct literal must be prefixed by a type name")
+		return left
+	}
+	expr := &ast.StructLiteralExpression{Token: p.nextToken(), TypeName: id.Value} // consume '{'
+	if p.currentTokenType() != token.RBRACE {
+		for {
+			fname := p.currentToken().Literal
+			p.expect(token.IDENT)
+			p.expect(token.COLON)
+			val := p.parse_expression(default_bp)
+			expr.Fields = append(expr.Fields, ast.StructFieldInit{Name: fname, Value: val})
+			if p.currentTokenType() == token.COMMA {
+				p.nextToken()
+				continue
+			}
+			break
+		}
+	}
+	p.expect(token.RBRACE)
+	return expr
+}

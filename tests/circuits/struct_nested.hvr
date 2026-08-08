@@ -1,0 +1,31 @@
+// Golden test circuit: a struct containing another struct field, nested
+// struct-literal init, and a two-level dotted read/write.
+.tran(0, 1m, 1u);
+.save(main.box.ax, main.box.bx);
+
+struct Point {
+    double x;
+    double y;
+}
+
+struct Line {
+    Point a;
+    Point b;
+}
+
+digital module Box<>() [] {
+    state Line line = Line{a: Point{x: 0.0, y: 0.0}, b: Point{x: 1.0, y: 1.0}};
+    state double ax = 0;
+    state double bx = 0;
+
+    line.a.x = line.a.x + 1.0;
+    ax = line.a.x;
+    bx = line.b.x;
+}
+
+module main<>()[] {
+    wire node_a;
+    module box = Box<>()[];
+    R<1k>()[node_a, gnd];
+    voltage_source<5>()[node_a, gnd];
+}

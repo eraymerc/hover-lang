@@ -37,7 +37,7 @@ func (g *generator) emitStmt(stmt ast.Statement, logic elaborator.LogicObject, i
 		if s.Type.IsWire() {
 			return
 		}
-		ht := hoverTypeOf(s.Type)
+		ht := g.hoverTypeOf(s.Type)
 		for _, d := range s.Decls {
 			target := resolveWrite(d.Name, logic)
 			if s.IsState {
@@ -142,7 +142,7 @@ func (g *generator) emitStmt(stmt ast.Statement, logic elaborator.LogicObject, i
 func (g *generator) currentFunctionReturnType(logic elaborator.LogicObject) CType {
 	for _, fn := range g.prog.Functions {
 		if fn.CName == logic.Prefix {
-			return hoverTypeToCType(fn.Decl.ReturnType)
+			return g.hoverTypeToCType(fn.Decl.ReturnType)
 		}
 	}
 	return CDouble

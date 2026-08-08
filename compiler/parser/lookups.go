@@ -54,6 +54,7 @@ var bpLookup = binding_power_lookup{
 	token.LPAREN:   call_bp,
 	token.LBRACKET: call_bp,
 	token.DOT:      call_bp,
+	token.LBRACE:   call_bp,
 }
 
 var exprLookup = expression_lookup{}
@@ -94,6 +95,7 @@ func init() {
 	leftDenotedLookup[token.LPAREN] = parse_call_expr
 	leftDenotedLookup[token.LBRACKET] = parse_index_expr
 	leftDenotedLookup[token.DOT] = parse_binary_expr // Using binary for simple path access a.b
+	leftDenotedLookup[token.LBRACE] = parse_struct_literal // TypeName{field: expr, ...}
 }
 
 func getBindingPower(t token.Type) binding_power {

@@ -26,6 +26,7 @@ func (g *generator) emitHeader() {
 		g.raw(formatInclude(inc))
 	}
 	g.raw(``)
+	g.emitStructDefs()
 }
 
 // formatInclude renders an importc target: angle form passes through
@@ -60,8 +61,8 @@ func (g *generator) emitStateVars() {
 		if si, isState := stateInits[name]; isState {
 			g.raw(fmt.Sprintf("static %s = %s; // state",
 				ht.cVarDecl(name), g.formatStateInitializer(ht, si)))
-		} else if ht.isArray() {
-			g.raw(fmt.Sprintf("static %s = {}; // zero-init", ht.cVarDecl(name)))
+		} else if ht.isArray() || ht.elem == CStruct {
+			g.raw(fmt.Sprintf("static %s = %s; // zero-init", ht.cVarDecl(name), ht.zeroValue()))
 		} else {
 			g.raw(fmt.Sprintf("static %s = %s;", ht.cVarDecl(name), formatTypedLiteral(0.0, ht.elem)))
 		}
@@ -72,21 +73,29 @@ func (g *generator) emitStateVars() {
 // formatInitializer builds the constant initializer (right of '=') for a
 // file-scope static. Arrays accept a brace list {a, b, ...} or a single scalar
 // that fills every element (the `double[2] arr = 1e-6` feature). nil -> {}.
-func formatInitializer(ht hoverType, init ast.Expression) string {
+func (g *generator) formatInitializer(ht hoverType, init ast.Expression) string {
 	if !ht.isArray() {
+		if ht.elem == CStruct {
+			return g.formatStructLiteral(ht.structName, init)
+		}
 		if num, ok := init.(*ast.NumberExpression); ok {
 			return formatTypedLiteral(elaborator.ParseEngineering(num.Value), ht.elem)
 		}
 		return formatTypedLiteral(0.0, ht.elem)
 	}
-	return formatArrayLiteral(ht.elem, ht.dims, init)
+	return g.formatArrayLiteral(ht.elem, ht.structName, ht.dims, init)
 }
 
 // formatArrayLiteral builds a (possibly nested) C++ brace initializer for an
 // array of the given element type and dimensions. Handles nested brace lists
-// ({{1,2},{2,3}}) and scalar-fill at any level (double[2][2] = 1e-6).
-func formatArrayLiteral(elem CType, dims []int, init ast.Expression) string {
+// ({{1,2},{2,3}}) and scalar-fill at any level (double[2][2] = 1e-6, or the
+// struct counterpart Point[4] pts = Point{x:0,y:0}; filling every slot with
+// the same struct literal).
+func (g *generator) formatArrayLiteral(elem CType, structName string, dims []int, init ast.Expression) string {
 	if len(dims) == 0 {
+		if elem == CStruct {
+			return g.formatStructLiteral(structName, init)
+		}
 		if num, ok := init.(*ast.NumberExpression); ok {
 			return formatTypedLiteral(elaborator.ParseEngineering(num.Value), elem)
 		}
@@ -96,17 +105,58 @@ func formatArrayLiteral(elem CType, dims []int, init ast.Expression) string {
 	case *ast.ArrayExpression:
 		parts := make([]string, 0, len(v.Elements))
 		for _, el := range v.Elements {
-			parts = append(parts, formatArrayLiteral(elem, dims[1:], el))
+			parts = append(parts, g.formatArrayLiteral(elem, structName, dims[1:], el))
+		}
+		return "{" + strings.Join(parts, ", ") + "}"
+	case *ast.StructLiteralExpression: // scalar-fill at this dimension level (array of struct)
+		parts := make([]string, dims[0])
+		for i := range parts {
+			parts[i] = g.formatArrayLiteral(elem, structName, dims[1:], v)
 		}
 		return "{" + strings.Join(parts, ", ") + "}"
 	case *ast.NumberExpression: // scalar-fill at this dimension level
 		parts := make([]string, dims[0])
 		for i := range parts {
-			parts[i] = formatArrayLiteral(elem, dims[1:], v)
+			parts[i] = g.formatArrayLiteral(elem, structName, dims[1:], v)
 		}
 		return "{" + strings.Join(parts, ", ") + "}"
 	}
 	return "{}"
+}
+
+// formatStructLiteral is formatInitializer/formatArrayLiteral's struct
+// counterpart — a COMPILE-TIME-CONSTANT designated initializer for a
+// struct-typed state variable. Mirrors their existing discipline exactly:
+// only ast.NumberExpression (and, recursively, nested struct/array
+// literals built from the same) are folded. Anything else — a function
+// call, an identifier reference — can't run safely before main() the way a
+// state initializer must (see formatStateInitializer's own doc comment),
+// so that field is simply left out of the designator list and C++ itself
+// value-initializes (zeroes) it, exactly like emitStructLiteral's runtime
+// counterpart in expressions.go.
+func (g *generator) formatStructLiteral(typeName string, init ast.Expression) string {
+	sd, ok := g.prog.Structs[typeName]
+	if !ok {
+		return typeName + "{}"
+	}
+	lit, ok := init.(*ast.StructLiteralExpression)
+	if !ok {
+		return typeName + "{}"
+	}
+	byName := make(map[string]ast.Expression, len(lit.Fields))
+	for _, f := range lit.Fields {
+		byName[f.Name] = f.Value
+	}
+	parts := make([]string, 0, len(sd.Fields))
+	for _, f := range sd.Fields {
+		val, given := byName[f.Name]
+		if !given {
+			continue
+		}
+		ht := g.hoverTypeOf(f.Type)
+		parts = append(parts, "."+f.Name+" = "+g.formatInitializer(ht, val))
+	}
+	return typeName + "{" + strings.Join(parts, ", ") + "}"
 }
 
 // formatTypedLiteral formats a float64 value as the correct C++ literal
@@ -223,7 +273,10 @@ func (g *generator) emitMain() error {
 // scope (a Hover-function call would need vm before main), so it falls back to 0.
 func (g *generator) formatStateInitializer(ht hoverType, si stateInit) string {
 	if ht.isArray() {
-		return formatArrayLiteral(ht.elem, ht.dims, si.value)
+		return g.formatArrayLiteral(ht.elem, ht.structName, ht.dims, si.value)
+	}
+	if ht.elem == CStruct {
+		return g.formatStructLiteral(ht.structName, si.value)
 	}
 	switch v := si.value.(type) {
 	case nil:

@@ -327,6 +327,42 @@ func (ds *DirectiveStatement) String() string {
 	return "." + ds.Name + "(...);"
 }
 
+// ============================================
+// STRUCT DECLARATION
+// ============================================
+
+// StructDeclStatement declares a named aggregate type:
+//
+//	struct Point { double x; double y; }
+//
+// Fields reuse the ordinary type grammar (parseType), so a field's type may
+// itself be a primitive, a fixed-size array, or another (previously
+// declared) struct name — no new grammar was needed for that. Declared
+// top-level only, alongside module/func declarations.
+type StructDeclStatement struct {
+	Token  token.Token // the 'struct' token
+	Name   string
+	Fields []StructField
+}
+
+type StructField struct {
+	Type Type
+	Name string
+}
+
+func (sd *StructDeclStatement) statementNode()       {}
+func (sd *StructDeclStatement) TokenLiteral() string { return sd.Token.Literal }
+func (sd *StructDeclStatement) Line() int            { return sd.Token.Line }
+func (sd *StructDeclStatement) String() string {
+	var out strings.Builder
+	out.WriteString("struct " + sd.Name + " {\n")
+	for _, f := range sd.Fields {
+		out.WriteString("\t" + f.Type.String() + " " + f.Name + ";\n")
+	}
+	out.WriteString("}")
+	return out.String()
+}
+
 // ImportedSymbol is one entry in a selective import's name list:
 // the name as the imported file declares it, plus the (optional) local
 // name it is bound to in the importing file.

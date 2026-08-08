@@ -35,6 +35,8 @@ func (p *parser) parse_statement() ast.Statement {
 		return p.parseFuncDecl()
 	case token.STATE, token.DOUBLE, token.INT, token.FLOAT, token.UNSIGNED, token.WIRE:
 		return p.parseLocalDecl()
+	case token.STRUCT:
+		return p.parseStructDecl()
 	case token.IF:
 		return p.parseIfStatement()
 	case token.WHILE:
@@ -49,6 +51,13 @@ func (p *parser) parse_statement() ast.Statement {
 		// Could be a Physical Primitive (R, C, L) or an Assignment (x = 5;)
 		if p.currentTokenType() == token.IDENT && isPhysicalPrimitive(p.currentToken().Literal) {
 			return p.parsePhysicalPrimitive()
+		}
+		// A bare (non-`state`) declaration of a named type — `Point p;`,
+		// `Point[4] pts;` — checked before falling into expression/assignment
+		// parsing, which cannot handle this shape (a leading type name with
+		// no keyword) at all.
+		if p.isTypedLocalDeclStart() {
+			return p.parseLocalDecl()
 		}
 		return p.parseExpressionOrAssignment()
 	}

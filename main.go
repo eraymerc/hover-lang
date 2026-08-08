@@ -331,6 +331,11 @@ func main() {
 			if !ok {
 				continue
 			}
+			// Struct types are a single flat, non-alias-qualified namespace
+			// (see RegisterImportedStructs) — registered the same way
+			// regardless of whether the import itself is selective or
+			// aliased/qualified.
+			analyzer.RegisterImportedStructs(f.Program)
 			switch {
 			case imp.Selective:
 				// Only the names actually asked for, under their local spelling.

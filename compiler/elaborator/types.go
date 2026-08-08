@@ -110,6 +110,12 @@ type ElaboratedProgram struct {
 	// and empty is a meaningful answer — main has no such args.
 	MainParams map[string]float64
 	MainPorts  map[string]string
+
+	// Structs is every struct type declared across the loaded file set,
+	// keyed by its bare declared name — a single flat namespace, not scoped
+	// per file (see buildStructRegistry for why that diverges from
+	// FuncScopes/module scoping).
+	Structs map[string]*ast.StructDeclStatement
 }
 
 // ImportedFile is one file's parsed program plus its own (non-transitive)
@@ -136,6 +142,12 @@ type Elaborator struct {
 	// which fills output.FuncScopes from the same per-file import lists.
 	scopes   map[string]*fileScope
 	declFile map[*ast.ModuleDeclStatement]string
+
+	// structFile maps a struct declaration back to the file that declared
+	// it, used only to point a cross-file name-collision error at both
+	// locations (buildStructRegistry) — the struct-decl counterpart of
+	// declFile.
+	structFile map[*ast.StructDeclStatement]string
 
 	// entryScope is the scope of the file compilation started from. It owns
 	// 'main', and serves as the fallback for modules with no recorded origin
@@ -219,6 +231,7 @@ func New(program *ast.Program) *Elaborator {
 	// Cannot fail: one file with no imports has nothing to collide with and no
 	// import path to resolve.
 	_ = e.buildFunctionScopes(files)
+	_ = e.buildStructRegistry(files)
 	e.collectEntryDirectives(program)
 	return e
 }
@@ -230,6 +243,7 @@ func newElaborator() *Elaborator {
 	return &Elaborator{
 		scopes:       make(map[string]*fileScope),
 		declFile:     make(map[*ast.ModuleDeclStatement]string),
+		structFile:   make(map[*ast.StructDeclStatement]string),
 		expanding:    make(map[*ast.ModuleDeclStatement]bool),
 		elementIndex: make(map[string]int),
 		output: &ElaboratedProgram{
@@ -239,6 +253,7 @@ func newElaborator() *Elaborator {
 			FuncScopes: make(map[string]map[string]*FunctionInfo),
 			MainParams: make(map[string]float64),
 			MainPorts:  make(map[string]string),
+			Structs:    make(map[string]*ast.StructDeclStatement),
 		},
 	}
 }
@@ -279,6 +294,11 @@ func NewWithImports(files map[string]*ImportedFile, entryPath string) (*Elaborat
 
 	// 2. Per-file function scopes, likewise (scope.go).
 	if err := e.buildFunctionScopes(files); err != nil {
+		return nil, err
+	}
+
+	// 2b. Struct type registry — flat, not per-file (see buildStructRegistry).
+	if err := e.buildStructRegistry(files); err != nil {
 		return nil, err
 	}
 

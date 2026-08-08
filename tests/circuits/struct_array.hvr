@@ -1,0 +1,28 @@
+// Golden test circuit: a fixed-size array of a struct type — state
+// declaration, array-of-struct-literal init, indexed read, and indexed
+// field write.
+.tran(0, 1m, 1u);
+.save(main.box.sum_x, main.box.p1y);
+
+struct Point {
+    double x;
+    double y;
+}
+
+digital module Box<>() [] {
+    state Point[4] pts = {Point{x: 0.0, y: 0.0}, Point{x: 1.0, y: 1.0},
+                           Point{x: 2.0, y: 2.0}, Point{x: 3.0, y: 3.0}};
+    state double sum_x = 0;
+    state double p1y = 0;
+
+    pts[0].y = 5.0;
+    sum_x = pts[0].x + pts[1].x + pts[2].x + pts[3].x;
+    p1y = pts[1].y;
+}
+
+module main<>()[] {
+    wire node_a;
+    module box = Box<>()[];
+    R<1k>()[node_a, gnd];
+    voltage_source<5>()[node_a, gnd];
+}

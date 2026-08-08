@@ -86,8 +86,22 @@ func (g *generator) emitExpr(expr ast.Expression, logic elaborator.LogicObject) 
 		return innerCode, innerType
 
 	case *ast.BinaryExpression:
-		// Dot operator — member access, just emit right side
 		if n.Operator == "." {
+			if n.IsFieldAccess {
+				// Real struct member access (semantic analysis set this
+				// flag — see checkExpression's "." case): emit left.field
+				// as a genuine C++ member-access expression, typed as the
+				// field's own declared type.
+				leftCode, _ := g.emitExpr(n.Left, logic)
+				fieldName := fieldNameOf(n)
+				leftStruct := g.exprStructName(n.Left, logic)
+				fieldType, _ := g.structFieldType(leftStruct, fieldName)
+				fieldHT := g.hoverTypeOf(fieldType)
+				return leftCode + "." + fieldName, fieldHT.elem
+			}
+			// Unchanged: M.sin(x)-style qualified-import calls and any
+			// other dotted expression semantic analysis left un-tagged —
+			// only the right side (the resolved name) is meaningful in C++.
 			return g.emitExpr(n.Right, logic)
 		}
 
@@ -263,9 +277,82 @@ func (g *generator) emitExpr(expr ast.Expression, logic elaborator.LogicObject) 
 			parts[i], elemT = c, t
 		}
 		return "{" + strings.Join(parts, ", ") + "}", elemT
+
+	case *ast.StructLiteralExpression:
+		return g.emitStructLiteral(n, logic), CStruct
 	}
 
 	return "0.0", CDouble
+}
+
+// emitStructLiteral emits TypeName{...} as a C++20 designated initializer,
+// e.g. Point{.x = 1.0, .y = 2.0}. Fields are emitted in the STRUCT'S
+// declared order (a C++ requirement for designated initializers), each
+// value cast to that field's declared type; a field the literal doesn't
+// mention is simply omitted from the designator list, and C++ itself
+// value-initializes (zeroes) it — no need to synthesize a zero value here.
+func (g *generator) emitStructLiteral(n *ast.StructLiteralExpression, logic elaborator.LogicObject) string {
+	sd, ok := g.prog.Structs[n.TypeName]
+	if !ok {
+		return n.TypeName + "{}" // semantic analysis already rejected this; emit something that at least parses
+	}
+	byName := make(map[string]ast.Expression, len(n.Fields))
+	for _, f := range n.Fields {
+		byName[f.Name] = f.Value
+	}
+	parts := make([]string, 0, len(sd.Fields))
+	for _, f := range sd.Fields {
+		val, given := byName[f.Name]
+		if !given {
+			continue
+		}
+		ht := g.hoverTypeOf(f.Type)
+		valCode, valType := g.emitExpr(val, logic)
+		parts = append(parts, "."+f.Name+" = "+castToHover(valCode, valType, ht))
+	}
+	return n.TypeName + "{" + strings.Join(parts, ", ") + "}"
+}
+
+// fieldNameOf returns the field name on the right of a real field-access
+// BinaryExpression (n.IsFieldAccess == true) — semantic analysis only ever
+// sets that flag when Right is a bare IdentifierExpression (see
+// checkExpression's "." case), so this is always safe to call there.
+func fieldNameOf(n *ast.BinaryExpression) string {
+	if id, ok := n.Right.(*ast.IdentifierExpression); ok {
+		return id.Value
+	}
+	return ""
+}
+
+// exprStructName resolves the declared struct type name of an expression
+// known to evaluate to a struct value — the codegen-side counterpart of the
+// type resolution semantic analysis already performed once, needed here
+// just enough to look up which struct's fields apply for chained field
+// access (`p.origin.x`) and struct-returning function calls. Returns "" if
+// expr isn't a shape that can hold a struct; callers only reach that case
+// if semantic analysis would already have rejected the program.
+func (g *generator) exprStructName(expr ast.Expression, logic elaborator.LogicObject) string {
+	switch n := expr.(type) {
+	case *ast.IdentifierExpression:
+		return g.identifierHoverType(n.Value, logic).structName
+	case *ast.IndexExpression:
+		// Indexing an array-of-struct keeps the same element struct type.
+		return g.exprStructName(n.Left, logic)
+	case *ast.BinaryExpression:
+		if n.Operator == "." && n.IsFieldAccess {
+			leftStruct := g.exprStructName(n.Left, logic)
+			fieldType, ok := g.structFieldType(leftStruct, fieldNameOf(n))
+			if !ok {
+				return ""
+			}
+			return fieldType.Base
+		}
+	case *ast.CallExpression:
+		if info := g.resolveFunction(callExpressionName(n.Function), logic); info != nil {
+			return info.Decl.ReturnType.Base
+		}
+	}
+	return ""
 }
 
 // identifierType resolves the CType of an identifier in the context of a
@@ -275,14 +362,22 @@ func (g *generator) emitExpr(expr ast.Expression, logic elaborator.LogicObject) 
 // real C++ doubles), and everything else is looked up in the type table
 // built by collectVarTypes.
 func (g *generator) identifierType(name string, logic elaborator.LogicObject) CType {
+	return g.identifierHoverType(name, logic).elem
+}
+
+// identifierHoverType is identifierType's full-hoverType counterpart —
+// needed wherever the struct name matters, not just the element CType (see
+// exprStructName). Same resolution rules as identifierType, just returning
+// more of what typeOf already knows.
+func (g *generator) identifierHoverType(name string, logic elaborator.LogicObject) hoverType {
 	if _, ok := logic.Params[name]; ok {
-		return CDouble
+		return hoverType{elem: CDouble}
 	}
 	if name == "time" || name == "dt" {
-		return CDouble
+		return hoverType{elem: CDouble}
 	}
 	mangled := resolveWrite(name, logic)
-	return g.typeOf(mangled).elem
+	return g.typeOf(mangled)
 }
 
 // emitUserFunctionCall resolves and emits a call to a user-defined Hover
@@ -329,13 +424,19 @@ func (g *generator) emitUserFunctionCall(fnName string, argExprs []ast.Expressio
 	for i, arg := range argExprs {
 		argCode, argType := g.emitExpr(arg, logic)
 		if i < len(fnDecl.Parameters) {
-			pht := hoverTypeOf(fnDecl.Parameters[i].Type)
+			pht := g.hoverTypeOf(fnDecl.Parameters[i].Type)
 			switch {
 			case fnDecl.IsExtern:
 				// reconcile Hover storage with the header's real C types
 				argCode = "(" + pht.cFFIType() + ")(" + argCode + ")"
 			case pht.isArray() || pht.isPointer():
 				// Hover array/pointer decays; no scalar cast
+			case pht.elem == CStruct:
+				// By-value struct argument — C++ copies the whole aggregate
+				// via its implicit operator=; emitCast would already no-op
+				// here too (needsCast(CStruct, CStruct) is false), but this
+				// case makes the by-value-no-cast intent explicit rather
+				// than relying on that being incidentally true.
 			default:
 				argCode = emitCast(argCode, argType, pht.elem)
 			}
@@ -346,6 +447,6 @@ func (g *generator) emitUserFunctionCall(fnName string, argExprs []ast.Expressio
 	// info.CName is already the raw header name for an extern, so no special
 	// case is needed here any more.
 	callName := info.CName
-	returnType := hoverTypeOf(fnDecl.ReturnType).elem
+	returnType := g.hoverTypeOf(fnDecl.ReturnType).elem
 	return fmt.Sprintf("%s(%s)", callName, strings.Join(args, ", ")), returnType
 }

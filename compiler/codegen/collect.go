@@ -154,7 +154,7 @@ func (g *generator) collectVarTypes() map[string]hoverType {
 			if s.Type.IsWire() {
 				return
 			}
-			ht := hoverTypeOf(s.Type)
+			ht := g.hoverTypeOf(s.Type)
 			for _, d := range s.Decls {
 				types[resolveWrite(d.Name, logic)] = ht
 			}
@@ -164,7 +164,7 @@ func (g *generator) collectVarTypes() map[string]hoverType {
 			if id, ok := s.Left.(*ast.IdentifierExpression); ok {
 				mangled := resolveWrite(id.Value, logic)
 				if _, exists := types[mangled]; !exists {
-					types[mangled] = hoverTypeOf(ast.TDouble)
+					types[mangled] = g.hoverTypeOf(ast.TDouble)
 				}
 			}
 		case *ast.BlockStatement:
@@ -193,7 +193,7 @@ func (g *generator) collectVarTypes() map[string]hoverType {
 	// walk g.prog.Functions to record them too.
 	for _, fn := range g.prog.Functions {
 		for _, p := range fn.Decl.Parameters {
-			types[mangle(fn.CName+"."+p.Name)] = hoverTypeOf(p.Type)
+			types[mangle(fn.CName+"."+p.Name)] = g.hoverTypeOf(p.Type)
 		}
 	}
 
@@ -211,5 +211,5 @@ func (g *generator) typeOf(mangledName string) hoverType {
 	if t, ok := g.typeTable[mangledName]; ok {
 		return t
 	}
-	return hoverTypeOf(ast.TDouble)
+	return g.hoverTypeOf(ast.TDouble)
 }

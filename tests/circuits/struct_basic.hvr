@@ -1,0 +1,35 @@
+// Golden test circuit: exercises the basic struct feature — declaration,
+// named-field literal (fields out of declared order, proving order-
+// independence), a state struct variable, and field read/write inside a
+// digital module's logic body.
+.tran(0, 1m, 1u);
+.save(main.box.x_out, main.box.y_out);
+
+struct Point {
+    double x;
+    double y;
+}
+
+digital module Counter<>() [] {
+    // Fields given out of declaration order (y before x) — order must not
+    // matter for a named-field literal.
+    state Point acc = Point{y: 1.0, x: 0.0};
+    state double x_out = 0;
+    state double y_out = 0;
+
+    acc.x = acc.x + 1.0;
+    acc.y = acc.y + acc.x * 1m;
+    // .save() validates against the flat MNA/logic-signal table and isn't
+    // struct-field-aware (out of scope for this feature) — mirror the
+    // fields into plain double signals so the golden test can still
+    // observe their values.
+    x_out = acc.x;
+    y_out = acc.y;
+}
+
+module main<>()[] {
+    wire node_a;
+    module box = Counter<>()[];
+    R<1k>()[node_a, gnd];
+    voltage_source<5>()[node_a, gnd];
+}

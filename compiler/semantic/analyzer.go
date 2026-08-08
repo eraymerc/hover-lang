@@ -21,6 +21,12 @@ type Analyzer struct {
 	// a qualified reference (`M.sin`), not member access on a variable
 	// called M — see checkExpression's "." case, which is the only consumer.
 	importAliases map[string]bool
+
+	// structs holds every struct type declared so far — entry file plus
+	// imports (see RegisterImportedStructs) — keyed by bare name. Struct
+	// types are not alias-qualifiable (see RegisterImportedStructs), so
+	// unlike importAliases this is a single flat namespace.
+	structs map[string]*StructInfo
 }
 
 func NewAnalyzer() *Analyzer {
@@ -39,6 +45,7 @@ func NewAnalyzer() *Analyzer {
 		inLogicBlock:  false,
 		currentDomain: token.ILLEGAL,
 		importAliases: map[string]bool{},
+		structs:       map[string]*StructInfo{},
 	}
 }
 
