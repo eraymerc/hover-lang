@@ -12,10 +12,8 @@
 .tran(0, 400m, 1u, 20u);
 .solver(bdf2);
 
-import <semiconductors/bjt/npn.hvr> as NPN;
-import <semiconductors/bjt/pnp.hvr> as PNP;
-import <semiconductors/diode.hvr> as Diode;
-import <math/math.hvr>;
+import <semiconductors/bjt>;
+import <semiconductors> as devices;
 
 // ═══════════════════════════════════════════════════════════════
 //  DC MOTOR MODEL (electromechanical analogy)
@@ -163,19 +161,19 @@ module HBridge<double Rbase>
     R<Rbase>() [railBR, baseBR];
 
     // High side (PNP): emitter=vcc, collector=motor terminal.
-    module qTL = PNP.PNP<0.01p, 150, 3, 0.026>() [baseTL, motor_a, vcc];
-    module qTR = PNP.PNP<0.01p, 150, 3, 0.026>() [baseTR, motor_b, vcc];
+    module qTL = bjt.PNP<0.01p, 150, 3, 0.026>() [baseTL, motor_a, vcc];
+    module qTR = bjt.PNP<0.01p, 150, 3, 0.026>() [baseTR, motor_b, vcc];
 
     // Low side (NPN): collector=motor terminal, emitter=gnd.
-    module qBL = NPN.NPN<0.01p, 150, 3, 0.026>() [baseBL, motor_a, gnd];
-    module qBR = NPN.NPN<0.01p, 150, 3, 0.026>() [baseBR, motor_b, gnd];
+    module qBL = bjt.NPN<0.01p, 150, 3, 0.026>() [baseBL, motor_a, gnd];
+    module qBR = bjt.NPN<0.01p, 150, 3, 0.026>() [baseBR, motor_b, gnd];
 
     // Flyback / recirculation diodes: clamp each motor terminal to
     // [gnd - Vf, vcc + Vf] regardless of switch state.
-    module dA_hi = Diode.Diode<1p, 1.0, 0.026>() [motor_a, vcc];
-    module dA_lo = Diode.Diode<1p, 1.0, 0.026>() [gnd, motor_a];
-    module dB_hi = Diode.Diode<1p, 1.0, 0.026>() [motor_b, vcc];
-    module dB_lo = Diode.Diode<1p, 1.0, 0.026>() [gnd, motor_b];
+    module dA_hi = devices.Diode<1p, 1.0, 0.026>() [motor_a, vcc];
+    module dA_lo = devices.Diode<1p, 1.0, 0.026>() [gnd, motor_a];
+    module dB_hi = devices.Diode<1p, 1.0, 0.026>() [motor_b, vcc];
+    module dB_lo = devices.Diode<1p, 1.0, 0.026>() [gnd, motor_b];
 }
 
 // ═══════════════════════════════════════════════════════════════

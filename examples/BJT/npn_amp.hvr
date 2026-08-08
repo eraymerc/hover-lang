@@ -7,9 +7,8 @@
 .tran(0, 30m, 1u, 10u); // 5 ms run, 1 µs timesteps (1 kHz sine will show 5 full cycles)
 .solver(bdf2);
 
-import <semiconductors/bjt/npn.hvr> as bjt;
-import <math/math.hvr>;
-import <math/physicalmath.hvr>;
+import <semiconductors/bjt>;
+from <math> import sin;
 // ═══════════════════════════════════════════════════════════════
 //  TOP-LEVEL CIRCUIT
 // ═══════════════════════════════════════════════════════════════

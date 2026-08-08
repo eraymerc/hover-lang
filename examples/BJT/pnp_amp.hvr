@@ -7,8 +7,8 @@
 .tran(0, 30m, 1u, 10u); // 30 ms run
 .solver(bdf2);
 
-import <semiconductors/bjt/pnp.hvr> as bjt;
-import <math/math.hvr>;
+import <semiconductors/bjt>;
+from <math> import sin;
 
 // ═══════════════════════════════════════════════════════════════
 //  AC VOLTAGE SOURCE

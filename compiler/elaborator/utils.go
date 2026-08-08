@@ -110,7 +110,7 @@ func splitQualifiedName(name string) (alias string, bare string, isQualified boo
 //
 // This used to be a small local copy of the loader's logic, kept so the
 // elaborator wouldn't depend on filesystem layout. That stopped being
-// tenable once `import <@pkg/...>` existed: package resolution consults a
+// tenable once `import <pkg/...>` existed: package resolution consults a
 // per-project table built from the lockfile, and two independent copies of
 // the rule would silently resolve the same import to two different files —
 // the elaborator would then report "import could not be resolved" for a file

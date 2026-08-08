@@ -1,0 +1,43 @@
+# A project manifest.
+#
+# Found by walking UP from the current directory, so `hover hpm install`
+# works from anywhere inside the project, and `hover rc_filter.hvr` resolves
+# `import <hvr-rc/...>` against whatever hover.lock next to this file says.
+
+[package]
+name = "rc-filter-demo"
+version = "0.1.0"
+
+[dependencies]
+# The normal form: a name from the official index, with a version
+# requirement. Supported: an exact version, ^1.2.0, ~1.2.0, >=1.2.0, and *.
+#
+# Commented out because the official index does not exist yet — see
+# ../README.md for how to install this package from a local archive instead.
+#
+# hvr-rc = "^0.1.0"
+
+# The unindexed form: a direct archive URL. This is the escape hatch for
+# private and vendor packages that will never be in a public index. Note it
+# names one exact archive — no version resolution happens, and the content
+# hash in hover.lock is what pins it.
+#
+# [dependencies.hvr-rc]
+# url = "https://example.com/hvr-rc-0.1.0.tar.gz"
+
+# The private form: the opt-in git transport, for a repository that needs
+# credentials. This is the ONLY thing in hpm that requires git to be
+# installed, and a machine without it can still install everything else.
+#
+# [dependencies.internal-models]
+# git = "git@github.internal:eng/models.git"
+# rev = "v0.3.0"
+
+# An additional index would go here. Its packages are then only reachable as
+# myindex:package — both in this file and in `import <myindex:pkg/x.hvr>` —
+# so it can never shadow an official name. Add one with
+# `hover hpm index add <url>`, which is the one command that prompts.
+#
+# [[index]]
+# name = "myindex"
+# url = "https://example.com/my-hover-index.tar.gz"

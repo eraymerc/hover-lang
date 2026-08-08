@@ -3,6 +3,7 @@ package codegen
 import (
 	"fmt"
 	"hover/compiler/token"
+	"sort"
 	"strings"
 )
 
@@ -137,6 +138,21 @@ func (g *generator) emitStateVarSnapshot() {
 	stateNames := g.collectStateInits()
 	dottedNames := g.collectStateVarDottedNames()
 
+	// Sorted, because both loops below iterate this set and emit one line per
+	// entry. Ranging the map directly meant two builds of identical source
+	// produced sim.cpp files whose save/restore bodies had the same statements
+	// in different orders — observable by running examples/DCMotor twice.
+	//
+	// The emitted code is correct either way (these are independent
+	// assignments), so this is purely about reproducibility — which is worth
+	// having on its own, and doubly so given that hpm identifies every package
+	// by the hash of its contents.
+	mangledNames := make([]string, 0, len(stateNames))
+	for mangled := range stateNames {
+		mangledNames = append(mangledNames, mangled)
+	}
+	sort.Strings(mangledNames)
+
 	// save_state_vars: state global -> vm->values[dottedName]
 	g.raw(`// ── STATE SNAPSHOT — save 'state' variables into vm->values ─────────────────`)
 	g.raw(`// Used by vm_save_state (snapshot.cpp) so ZCD probes and rejected solver`)
@@ -144,7 +160,7 @@ func (g *generator) emitStateVarSnapshot() {
 	g.raw(`static void save_state_vars(VM *vm) {`)
 	g.push()
 	g.line("(void)(vm);")
-	for mangled := range stateNames {
+	for _, mangled := range mangledNames {
 		ht := g.typeOf(mangled)
 		if ht.isArray() || ht.isPointer() {
 			continue
@@ -160,7 +176,7 @@ func (g *generator) emitStateVarSnapshot() {
 	g.raw(`static void restore_state_vars(VM *vm) {`)
 	g.push()
 	g.line("(void)(vm);")
-	for mangled := range stateNames {
+	for _, mangled := range mangledNames {
 		ht := g.typeOf(mangled)
 		if ht.isArray() || ht.isPointer() {
 			continue

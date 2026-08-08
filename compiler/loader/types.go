@@ -16,31 +16,49 @@ func (s SelectedSymbol) Local() string {
 	return s.Name
 }
 
-// ImportEntry describes a single import statement resolved to an absolute path.
-// Alias is "" for a bare import (import "x.hvr";).
+// ImportEntry describes a single import statement resolved to the directory
+// it names and the files inside it.
 type ImportEntry struct {
-	Alias        string // "" means bare import, no namespace prefix
-	ResolvedPath string // absolute, cleaned filesystem path
-	RawPath      string // the path as written in source, for error messages
-	Line         int    // line of the import statement, for error messages
-	IsSystem     bool   // true for `import <...>` (standard library), false for `import "..."`
+	// Qualifier is the name this import binds. Every whole-directory import
+	// is qualified: names from it are reached as Qualifier.Name. Defaults to
+	// the last path segment, overridden by `as`.
+	Qualifier string
+
+	Alias string // the explicit `as` name, or "" when the default was used
+
+	// ResolvedDir is the absolute directory the import names; Files are the
+	// .hvr files directly inside it, sorted. All of them are loaded and all
+	// of them share one namespace.
+	ResolvedDir string
+	Files       []string
+
+	RawPath  string // the path as written in source, for error messages
+	Line     int    // line of the import statement, for error messages
+	IsSystem bool   // true for `import <...>`, false for `import "..."`
 
 	// Selective and Selected describe the `from ... import ...` form. Which
-	// file to load is identical either way; these only record which names
-	// that file was asked for, for callers doing visibility work.
+	// directory to load is identical either way; these record which names
+	// were asked for, and mean the qualifier is not used.
 	Selective bool
 	Selected  []SelectedSymbol
 
-	// Package is the qualified package name for `import <@pkg/...>`, or ""
-	// for a stdlib or relative import.
+	// Package is the package name for an import resolved through the
+	// lockfile, or "" for bundled-stdlib and relative imports.
 	Package string
 }
 
 // LoadResult is the output of Load(). It contains every file reachable from
 // the entry file, plus a per-file table of that file's own imports.
 //
-// Imports are non-transitive: Imports[fileA] only lists what fileA itself
-// wrote in an `import` statement. A file never sees what its imports import.
+// Two kinds of grouping matter here and they are not the same:
+//
+//   - Files are still loaded, lexed and parsed INDIVIDUALLY, so every error
+//     keeps an accurate file and line.
+//   - Names are scoped by DIRECTORY. Sibling .hvr files share one namespace,
+//     which is what makes an import name a directory rather than a file.
+//
+// Imports remain non-transitive: Imports[fileA] lists only what fileA itself
+// wrote. A file never sees what its imports import.
 type LoadResult struct {
 	EntryPath string // absolute path of the entry file
 
@@ -48,8 +66,7 @@ type LoadResult struct {
 	Sources map[string]string
 
 	// Imports maps an absolute file path to the list of imports that file
-	// declared. Each entry has already been resolved to an absolute path
-	// of another key in Sources.
+	// declared, each already resolved to a directory and its files.
 	Imports map[string][]ImportEntry
 
 	// LoadOrder lists every file in the order it was first discovered,

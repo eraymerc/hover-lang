@@ -1,0 +1,23 @@
+# A package's own manifest.
+#
+# Optional: a package of pure .hvr source with no dependencies of its own
+# needs no hover.toml at all, and hpm treats a missing one as "no
+# dependencies". Include it when the package HAS dependencies, or when you
+# want the name and version recorded alongside the source.
+#
+# Declarative only — hover never executes this file. That is deliberate: an
+# executable manifest (setup.py's model) means installing a package runs
+# arbitrary code before anyone has read a line of it.
+
+[package]
+name = "hvr-rc"
+version = "0.1.0"
+
+[dependencies]
+# Nothing. <math/math.hvr> is the standard library, which ships with hover
+# and is never a dependency.
+#
+# If this package did need another package, it would go here exactly as in a
+# project — but note a dependency may only name the official index or a URL.
+# It cannot name an added index: that would let this package pull in an index
+# the consuming project never agreed to trust.

@@ -9,7 +9,7 @@ import (
 )
 
 // ProjectPackages maps every qualified package name this project depends on
-// to the directory holding its sources, for `import <@pkg/file.hvr>`.
+// to the directory holding its sources, for `import <pkg/file.hvr>`.
 //
 // Read from the LOCKFILE, not the manifest: the manifest says what versions
 // are acceptable, the lockfile says which ones were chosen. Compiling must

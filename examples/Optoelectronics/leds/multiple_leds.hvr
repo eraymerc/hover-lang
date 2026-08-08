@@ -14,9 +14,7 @@
 .op;
 .tran(0, 5m, 1u, 50u);
 .solver(bdf2);
-import <math/math.hvr>;
-import <optoelectronics/leds/led.hvr>;
-import <optoelectronics/leds/led_colors.hvr>;
+from <optoelectronics/leds> import LED, LED_RED, LED_GREEN;
 // ═══════════════════════════════════════════════════════════════
 //  TOP-LEVEL TESTBENCH — independent 5V/220ohm drive per LED
 // ═══════════════════════════════════════════════════════════════

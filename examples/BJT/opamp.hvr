@@ -11,10 +11,9 @@
 .tran(0, 5m, 1u, 10u); // 5 ms run, 5 cycles of 1kHz
 .solver(bdf2);
 
-import <semiconductors/bjt/npn.hvr> as NPN;
-import <semiconductors/bjt/pnp.hvr> as PNP;
-import <semiconductors/diode.hvr> as Diode;
-import <math/math.hvr>;
+import <semiconductors/bjt>;
+import <semiconductors> as devices;
+from <math> import sin;
 
 // ═══════════════════════════════════════════════════════════════
 //  MACRO-MODEL: 3-STAGE DISCRETE OP-AMP
@@ -26,8 +25,8 @@ module DiscreteOpAmp<>() [wire non_inv, wire inv, wire vcc, wire vee, wire out]
 
     // ─── 1. DIFFERENTIAL INPUT STAGE ───
     // Compares the non-inverting and inverting inputs
-    module q1 = NPN.NPN<0.01p, 150, 3, 0.026>() [non_inv, c1, tail];
-    module q2 = NPN.NPN<0.01p, 150, 3, 0.026>() [inv, c2, tail];
+    module q1 = bjt.NPN<0.01p, 150, 3, 0.026>() [non_inv, c1, tail];
+    module q2 = bjt.NPN<0.01p, 150, 3, 0.026>() [inv, c2, tail];
     
     R<10k>() [tail, vee]; // Tail current sink to negative rail
     R<10k>() [vcc, c1];   // Collector load 1 (Drives the next stage)
@@ -42,7 +41,7 @@ module DiscreteOpAmp<>() [wire non_inv, wire inv, wire vcc, wire vee, wire out]
     // (the inv-side collector) makes the two inversions cancel, turning
     // "inv" into a non-inverting pin and the outer feedback network into
     // positive feedback instead of negative feedback.
-    module q3 = PNP.PNP<0.01p, 150, 3, 0.026>() [c1, vas_out, vcc];
+    module q3 = bjt.PNP<0.01p, 150, 3, 0.026>() [c1, vas_out, vcc];
 
     // Miller Compensation Capacitor (crucial for closed-loop AC stability)
     // Must bridge the VAS's actual input/output pair: vas_out <-> c1.
@@ -51,16 +50,16 @@ module DiscreteOpAmp<>() [wire non_inv, wire inv, wire vcc, wire vee, wire out]
     // ─── 3. CLASS-AB DIODE BIAS NETWORK ───
     // Q3 pushes current through these two diodes to VEE.
     // This creates a ~1.4V drop to bias the output transistors on the edge of conduction.
-    module d1 = Diode.Diode<1p, 1.0, 0.026>() [vas_out, d_mid];
-    module d2 = Diode.Diode<1p, 1.0, 0.026>() [d_mid, d_bot];
+    module d1 = devices.Diode<1p, 1.0, 0.026>() [vas_out, d_mid];
+    module d2 = devices.Diode<1p, 1.0, 0.026>() [d_mid, d_bot];
     R<4.7k>() [d_bot, vee]; // Pull-down resistor to complete the VAS circuit
 
     // ─── 4. PUSH-PULL OUTPUT STAGE ───
     // NPN pushes current from VCC to the output load
-    module q4 = NPN.NPN<0.01p, 150, 3, 0.026>() [vas_out, vcc, out];
+    module q4 = bjt.NPN<0.01p, 150, 3, 0.026>() [vas_out, vcc, out];
     
     // PNP pulls current from the output load to VEE
-    module q5 = PNP.PNP<0.01p, 150, 3, 0.026>() [d_bot, vee, out];
+    module q5 = bjt.PNP<0.01p, 150, 3, 0.026>() [d_bot, vee, out];
 }
 
 

@@ -304,26 +304,33 @@ func main() {
 
 	analyzer := semantic.NewAnalyzer()
 	// Make functions from the entry file's own imports (e.g. sin from
-	// <math/math.hvr>) visible to the entry-file-only semantic pass. Real
-	// visibility is still enforced by the elaborator; this only prevents
-	// false "undeclared" errors.
+	// <math>) visible to the entry-file-only semantic pass. Real visibility
+	// is still enforced by the elaborator; this only prevents false
+	// "undeclared" errors.
+	//
+	// An import names a directory, so this walks every file in it — the
+	// declarations of sibling files are one namespace, and which file inside
+	// the directory happened to declare a function is not something the
+	// importing side knows or should care about.
 	for _, imp := range loadResult.Imports[loadResult.EntryPath] {
-		f, ok := importedFiles[imp.ResolvedPath]
-		if !ok {
-			continue
-		}
-		switch {
-		case imp.Selective:
-			// Only the names actually asked for, under their local spelling.
-			locals := make(map[string]string, len(imp.Selected))
-			for _, sym := range imp.Selected {
-				locals[sym.Name] = sym.Local()
+		for _, path := range imp.Files {
+			f, ok := importedFiles[path]
+			if !ok {
+				continue
 			}
-			analyzer.RegisterSelectedFunctions(f.Program, locals)
-		case imp.Alias != "":
-			// aliased funcs are called as Alias.f, not bare globals
-		default:
-			analyzer.RegisterImportedFunctions(f.Program)
+			switch {
+			case imp.Selective:
+				// Only the names actually asked for, under their local spelling.
+				locals := make(map[string]string, len(imp.Selected))
+				for _, sym := range imp.Selected {
+					locals[sym.Name] = sym.Local()
+				}
+				analyzer.RegisterSelectedFunctions(f.Program, locals)
+			default:
+				// Whole-directory imports are qualified, so functions are
+				// registered as Qualifier.name rather than as bare globals.
+				analyzer.RegisterAliasedFunctions(imp.Qualifier, f.Program)
+			}
 		}
 	}
 

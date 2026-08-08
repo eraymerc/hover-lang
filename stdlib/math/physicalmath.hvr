@@ -1,5 +1,4 @@
 // This file contains functions which are useful to use with physicals.
-import <math/math.hvr>;
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  limexp — exponential growth limiter, written entirely in Hover.
@@ -41,7 +40,6 @@ func double limexp(double x) {
     return e_t * (1.0 + (x - threshold));
 }
 
-import <math/math.hvr>;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // pnjlim() - Newton-Raphson Junction Voltage Limiter

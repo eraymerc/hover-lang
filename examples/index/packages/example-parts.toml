@@ -1,0 +1,61 @@
+# A reference entry showing every field an index supports.
+#
+# Unlike hvr-rc.toml, this one is ILLUSTRATIVE ONLY — the URLs do not exist,
+# so `hover hpm install example-parts` will resolve a version and then fail
+# to download it. That failure is itself worth seeing once: it is exactly
+# what link rot looks like, and it is the exposure this design accepts in
+# exchange for never hosting package bytes.
+
+name = "example-parts"
+description = "Vendor device models — demonstrates versions, yanking, and signing fields"
+repository = "https://github.com/example/example-parts"
+
+# ── Versions ─────────────────────────────────────────────────────────────────
+# Order in the file does not matter. `hpm` picks the HIGHEST version that
+# satisfies every accumulated requirement, so listing them oldest-first is
+# just convention.
+
+[[version]]
+version = "0.1.0"
+url = "https://example.invalid/example-parts-0.1.0.tar.gz"
+hash = "sha256:0000000000000000000000000000000000000000000000000000000000000001"
+
+[[version]]
+version = "0.2.0"
+url = "https://example.invalid/example-parts-0.2.0.tar.gz"
+hash = "sha256:0000000000000000000000000000000000000000000000000000000000000002"
+
+# A YANKED version. Yanking says "don't pick this for anything new", not
+# "this never existed":
+#
+#   - `example-parts = "^0.2"` will resolve to 0.2.0, skipping this.
+#   - `example-parts = "0.3.0"`, naming it exactly, still resolves.
+#   - Anyone whose hover.lock already pins it keeps building.
+#
+# That last property is the whole point. Deleting a published version is
+# npm's unpublish, which is how the left-pad removal broke thousands of
+# builds that had done nothing wrong.
+[[version]]
+version = "0.3.0"
+url = "https://example.invalid/example-parts-0.3.0.tar.gz"
+hash = "sha256:0000000000000000000000000000000000000000000000000000000000000003"
+yanked = true
+
+# A newer release with the signing fields filled in.
+#
+# These are PARSED AND CARRIED BUT NOT YET CHECKED — nothing today verifies
+# a signature. They exist in the schema now on purpose: a hash proves "these
+# are the same bytes that were indexed", which is integrity, but not "the
+# right person made this", which is authenticity. If an upstream account is
+# compromised, the hash recorded for a new version is simply whatever the
+# attacker published.
+#
+# Reserving the fields before an ecosystem depends on the format is far
+# cheaper than retrofitting them afterwards — the same reasoning that put
+# .tar.zst support in before anyone had published one.
+[[version]]
+version = "0.4.0"
+url = "https://example.invalid/example-parts-0.4.0.tar.zst"
+hash = "sha256:0000000000000000000000000000000000000000000000000000000000000004"
+signature = "<reserved — not verified yet>"
+signed_by = "<reserved — not verified yet>"

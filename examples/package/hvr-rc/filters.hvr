@@ -1,0 +1,62 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  hvr-rc — passive RC filter building blocks
+//
+//  A package is nothing more than a directory of .hvr files. There is no
+//  build step and no manifest of exported names: every top-level module and
+//  function in a file is what importing that file gives you.
+//
+//  An import names a DIRECTORY: every .hvr file directly inside it is
+//  imported together. Adding a second file next to this one needs no import
+//  between them — siblings share one namespace — but a consumer still writes
+//  a single `import <hvr-rc>` and sees both.
+//
+//  Note there are no imports at all: nothing here calls a standard-library
+//  function. If it did, it would have to say so itself — imports are NOT
+//  transitive in Hover, so a library that relied on its consumer having
+//  imported math would compile or not depending on what the consumer
+//  happened to write. See docs/imports.md.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// First-order low-pass: series R into a shunt C.
+//
+//   in ──[ R ]──┬── out
+//               │
+//              === C
+//               │
+//              gnd
+//
+// Cutoff is 1 / (2*pi*R*C) — use the cutoff() helper below rather than
+// re-deriving it at each call site.
+analog module RCLowPass<double r, double c>() [wire in, wire out] {
+    R<r>() [in, out];
+    C<c>() [out, gnd];
+}
+
+// First-order high-pass: series C into a shunt R.
+analog module RCHighPass<double r, double c>() [wire in, wire out] {
+    C<c>() [in, out];
+    R<r>() [out, gnd];
+}
+
+// Two cascaded low-pass sections. Note this instantiates RCLowPass by its
+// bare name: a module declared in the same file needs no import, and this is
+// what a consumer sees flattened whether they imported RCLowPass or not.
+analog module RCLowPass2<double r, double c>() [wire in, wire out] {
+    wire mid;
+    module first  = RCLowPass<r, c>() [in, mid];
+    module second = RCLowPass<r, c>() [mid, out];
+}
+
+// Cutoff frequency in Hz for a given R and C.
+func double cutoff(double r, double c) {
+    return 1.0 / (2.0 * 3.14159265359 * r * c);
+}
+
+// The R or C that puts the cutoff at a chosen frequency, given the other.
+func double resistorFor(double hz, double c) {
+    return 1.0 / (2.0 * 3.14159265359 * hz * c);
+}
+
+func double capacitorFor(double hz, double r) {
+    return 1.0 / (2.0 * 3.14159265359 * hz * r);
+}

@@ -7,8 +7,8 @@
 .tran(0, 100m, 1u, 10u); // 100 ms run to capture 5 full cycles of 50 Hz
 .solver(bdf2);
 
-import <semiconductors/diode.hvr> as diode;
-import <math/math.hvr>;
+import <semiconductors> as diode;
+from <math> import sin;
 
 // ═══════════════════════════════════════════════════════════════
 //  AC VOLTAGE SOURCE

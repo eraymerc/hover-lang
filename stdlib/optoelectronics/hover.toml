@@ -1,0 +1,22 @@
+# The `optoelectronics` standard-library package.
+#
+# Note this package's ROOT directory holds no .hvr files — everything lives in
+# leds/. That is legal and intentional: a package is a distribution unit, and
+# it may be a pure container for subdirectories.
+#
+# The consequence is that `import <optoelectronics>;` is an ERROR ("contains
+# no .hvr files"), because there is nothing in the root to import. Reach the
+# contents directly:
+#
+#   import <optoelectronics/leds>;
+#   from <optoelectronics/leds> import LED, LED_RED;
+#
+# Declarative only; hover never executes this file.
+
+[package]
+name = "optoelectronics"
+version = "0.8.0"
+
+[dependencies]
+# None. leds/led.hvr and leds/led_colors.hvr are siblings in one directory,
+# so they see each other with no import, and neither calls a math function.

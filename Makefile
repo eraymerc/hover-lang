@@ -42,7 +42,7 @@ ZIG_VERSION ?= $(shell $(ZIG) version)
 
 VERSION ?= v0.0.0-dev
 
-STANDARD_LIB := standard_library
+STANDARD_LIB := stdlib
 RUNTIME_DIR  := runtime
 
 # ── PLATFORM MATRIX ────────────────────────────────────────────────────────────
@@ -147,7 +147,7 @@ $(1):
 	@echo "\n[$(1)] Assembling Hover Standalone..."
 	@rm -rf $$(DIR_$(1))
 	@mkdir -p $$(DIR_$(1))
-	cp -r $(STANDARD_LIB) $$(DIR_$(1))/standard_library
+	cp -r $(STANDARD_LIB) $$(DIR_$(1))/stdlib
 	# Runtime ships complete, sources included — `hover --setup` compiles it.
 	cp -r $(RUNTIME_DIR) $$(DIR_$(1))/runtime
 	rm -rf $$(DIR_$(1))/runtime/build

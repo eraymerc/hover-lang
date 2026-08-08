@@ -73,33 +73,108 @@ func loadFile(filePath string, result *LoadResult, visiting map[string]bool, vis
 
 	entries := make([]ImportEntry, 0, len(scanned))
 	for _, imp := range scanned {
-		resolved := ResolveImportPath(fileDir, imp.PathLiteral, imp.IsSystem)
+		// The old file-based spelling is caught here rather than left to fail
+		// as "not a directory". The parser has the same check, but the loader
+		// runs first, so this is the one a user actually sees — and naming
+		// the exact replacement is what makes the migration mechanical.
+		if strings.HasSuffix(imp.PathLiteral, ".hvr") {
+			return fmt.Errorf("in %s, line %d: an import names a directory, not a file — "+
+				"write %s instead of %s (every .hvr file in that directory is imported together)",
+				filePath, imp.Line,
+				bracketPath(dirOf(imp.PathLiteral), imp.IsSystem),
+				bracketPath(imp.PathLiteral, imp.IsSystem))
+		}
+
+		dir := ResolveImportPath(fileDir, imp.PathLiteral, imp.IsSystem)
+
+		// Importing the directory you are already in is not a cycle to
+		// report, it is a leftover from the file-based scheme: siblings
+		// already share a namespace, so the import is simply unnecessary.
+		// Saying so is far more useful than "import cycle detected", which
+		// is what the generic path would produce.
+		if sameDir(dir, fileDir) {
+			return fmt.Errorf("in %s, line %d: %q is this file's own directory — "+
+				"files in the same directory already share a namespace, so remove the import",
+				filePath, imp.Line, imp.PathLiteral)
+		}
+
+		files, err := HvrFilesIn(dir)
+		if err != nil {
+			if hint := missingPackageHint(imp.PathLiteral, imp.IsSystem); hint != "" {
+				return fmt.Errorf("in %s, line %d: %s", filePath, imp.Line, hint)
+			}
+			return fmt.Errorf("in %s, line %d: could not read imported directory %q (looked in %s): %w",
+				filePath, imp.Line, imp.PathLiteral, dir, err)
+		}
+		if len(files) == 0 {
+			return fmt.Errorf("in %s, line %d: %q contains no .hvr files (%s)",
+				filePath, imp.Line, imp.PathLiteral, dir)
+		}
+
+		// A bad qualifier has to be rejected HERE, before anything is parsed.
+		// The default comes from a directory name and a directory can be
+		// called anything, so `import "./3d-parts"` would bind `3d_parts` —
+		// and the first reference to it fails to lex, producing a syntax
+		// error pointing at the use site with no hint that the import is
+		// what needs fixing.
+		qualifier := QualifierFor(imp.PathLiteral, imp.Alias)
+		if !imp.Selective {
+			if err := validQualifier(qualifier); err != nil {
+				return fmt.Errorf("in %s, line %d: %s would be imported as '%s', which %w — add `as <name>`",
+					filePath, imp.Line, bracketPath(imp.PathLiteral, imp.IsSystem), qualifier, err)
+			}
+		}
+
 		entries = append(entries, ImportEntry{
-			Alias:        imp.Alias,
-			ResolvedPath: resolved,
-			RawPath:      imp.PathLiteral,
-			Line:         imp.Line,
-			IsSystem:     imp.IsSystem,
-			Selective:    imp.Selective,
-			Selected:     imp.Names,
-			Package:      PackageOf(imp.PathLiteral, imp.IsSystem),
+			Qualifier:   qualifier,
+			Alias:       imp.Alias,
+			ResolvedDir: dir,
+			Files:       files,
+			RawPath:     imp.PathLiteral,
+			Line:        imp.Line,
+			IsSystem:    imp.IsSystem,
+			Selective:   imp.Selective,
+			Selected:    imp.Names,
+			Package:     PackageOf(imp.PathLiteral, imp.IsSystem),
 		})
 
-		if err := loadFile(resolved, result, visiting, visited); err != nil {
-			if pkg := PackageOf(imp.PathLiteral, imp.IsSystem); pkg != "" && !filepath.IsAbs(resolved) {
-				// resolved is only relative when the package had no entry in
-				// PackageRoots, i.e. it is not installed for this project.
-				// Say that, rather than reporting a path nobody wrote.
-				return fmt.Errorf("in %s, line %d: package %q is not installed — run `hover hpm install %s`",
-					filePath, imp.Line, pkg, pkg)
+		for _, f := range files {
+			if err := loadFile(f, result, visiting, visited); err != nil {
+				return fmt.Errorf("in %s, line %d: %w", filePath, imp.Line, err)
 			}
-			return fmt.Errorf("in %s, line %d: %w", filePath, imp.Line, err)
 		}
 	}
 
 	result.Imports[filePath] = entries
 	visited[filePath] = true
 	return nil
+}
+
+// dirOf strips the final segment of an import path, turning the old
+// file-based spelling into the directory that replaces it. Always uses '/',
+// since import paths are slash-separated regardless of platform.
+func dirOf(importPath string) string {
+	if i := strings.LastIndexByte(importPath, '/'); i >= 0 {
+		return importPath[:i]
+	}
+	return "."
+}
+
+// bracketPath re-renders a path in whichever delimiters the user wrote, so a
+// suggested replacement can be pasted verbatim.
+func bracketPath(path string, isSystem bool) string {
+	if isSystem {
+		return "<" + path + ">"
+	}
+	return "\"" + path + "\""
+}
+
+// sameDir compares two directory paths for identity, tolerating the ways the
+// same directory can be spelled (trailing separators, "." segments, and — on
+// systems where it matters — nothing more, since both sides have already been
+// through filepath.Clean).
+func sameDir(a, b string) bool {
+	return filepath.Clean(a) == filepath.Clean(b)
 }
 
 // describeCycle builds a human-readable chain like "a.hvr -> b.hvr -> a.hvr"

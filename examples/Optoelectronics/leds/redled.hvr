@@ -9,8 +9,7 @@
 .tran(0, 5m, 1u, 50u);
 .solver(bdf2);
 
-import <math/math.hvr>;
-import <optoelectronics/leds/led.hvr>;
+from <optoelectronics/leds> import LED;
 
 // ═══════════════════════════════════════════════════════════════
 //  RED LED PRESET

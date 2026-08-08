@@ -1,4 +1,4 @@
-import <math/math.hvr>;
+from <math> import exp;
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  PNP Ebers-Moll Bipolar Junction Transistor

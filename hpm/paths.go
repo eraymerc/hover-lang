@@ -53,7 +53,7 @@ func officialIndexURL() string {
 // or $HOVER_HOME if set.
 //
 // Deliberately user-scoped rather than executable-relative, unlike
-// standard_library. Dependencies must not be written into a possibly
+// stdlib. Dependencies must not be written into a possibly
 // root-owned install directory — a `hover hpm install` run by a normal user
 // against a /usr/local install would otherwise fail on permissions, or worse,
 // succeed once under sudo and be unreadable afterwards.

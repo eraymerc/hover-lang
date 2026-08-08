@@ -1,0 +1,32 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  hvr-rc — resistive dividers
+//
+//  A SECOND file in the same package directory. Note what is missing: there
+//  is no import of filters.hvr, yet RCLowPass below is used directly.
+//
+//  Files in one directory share a single namespace, so siblings see each
+//  other's declarations without importing anything. That is the whole point
+//  of an import naming a directory rather than a file — a package can be
+//  split across as many files as its author finds readable, and a consumer
+//  still writes one `import <hvr-rc>` and sees all of it.
+//
+//  The flip side: two files in one directory may not declare the same name,
+//  because there would be no way to say which one a reference meant. That is
+//  an error, reported with both source locations.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Plain resistive divider. out = in * (r_bottom / (r_top + r_bottom)).
+analog module Divider<double r_top, double r_bottom>() [wire in, wire out] {
+    R<r_top>() [in, out];
+    R<r_bottom>() [out, gnd];
+}
+
+// A divider whose output is low-pass filtered — uses RCLowPass from
+// filters.hvr with no import, because it is a sibling.
+analog module FilteredDivider<double r_top, double r_bottom, double c>()
+    [wire in, wire out]
+{
+    wire mid;
+    module div = Divider<r_top, r_bottom>() [in, mid];
+    module lpf = RCLowPass<r_bottom, c>() [mid, out];
+}

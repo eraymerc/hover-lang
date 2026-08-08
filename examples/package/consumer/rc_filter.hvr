@@ -1,0 +1,66 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  HVR Testbench — driving a package's filter with an AC source
+//
+//  Demonstrates consuming an installed package. An import names a DIRECTORY,
+//  so one line brings in every .hvr file in the package — here both
+//  filters.hvr and dividers.hvr, which the package author split for
+//  readability and which a consumer never has to know about.
+//
+//  Both import styles are used deliberately:
+//
+//    import <hvr-rc>;                          // hvr_rc.RCLowPass2, hvr_rc.cutoff
+//    from <hvr-rc> import Divider;             // Divider, unqualified
+//
+//  The first is the default and always qualified; the second binds exactly
+//  the names asked for. You would normally pick one — both are here to show
+//  they compose. Note the qualifier is `hvr_rc`: the directory is `hvr-rc`,
+//  and a hyphen is not a legal identifier, so it becomes an underscore. Use
+//  `as` if you want something else.
+//
+//  Run from THIS directory (so hover.toml/hover.lock are found):
+//      hover hpm install
+//      hover rc_filter.hvr
+// ─────────────────────────────────────────────────────────────────────────────
+
+.save(main.vin, main.vout);
+.tran(0, 5m, 1u, 10u);
+
+import <hvr-rc>;
+from <hvr-rc> import Divider;
+from <math> import sin, sqrt;
+
+// A 1 kHz sine. sin() is named explicitly above — this file needs it whether
+// or not the package also uses it, since imports are not transitive.
+analog module AC_Source<double amp, double freq>() [wire p, wire n] {
+    double v = amp * sin(2.0 * 3.14159265359 * freq * time);
+    voltage_source<>(v)[p, n];
+}
+
+// Reports the filter's theoretical gain at a frequency, using the package's
+// own helper through the qualifier.
+analog module GainProbe<double hz>() [wire p, wire n] {
+    double fc = hvr_rc.cutoff(1k, 100n);
+    double gain = 1.0 / sqrt(1.0 + (hz / fc) * (hz / fc));
+    voltage_source<>(gain)[p, n];
+}
+
+module main<>() []
+{
+    wire vin, vout, tap, gain;
+
+    module src = AC_Source<1.0, 1000.0>() [vin, gnd];
+
+    // Two cascaded RC sections, 1k / 100n each — about a 1.6 kHz corner, so a
+    // 1 kHz input passes with mild attenuation. Qualified, from filters.hvr.
+    module filter = hvr_rc.RCLowPass2<1k, 100n>() [vin, vout];
+
+    // Unqualified, from dividers.hvr — a different file in the same package,
+    // reached through the same single import.
+    module div = Divider<10k, 10k>() [vin, tap];
+
+    module probe = GainProbe<1000.0>() [gain, gnd];
+
+    R<1Meg>() [vout, gnd];
+    R<1Meg>() [tap, gnd];
+    R<1Meg>() [gain, gnd];
+}

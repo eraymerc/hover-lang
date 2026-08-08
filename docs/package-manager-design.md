@@ -194,16 +194,30 @@ already works with resource resolution, since `ExeDir()` calls
 - **`hover.toml`** — manifest. Declarative only. Holds dependencies *and* the
   index list, so adding an index appears in a reviewable diff rather than
   mutating hidden global state.
-- **`hover.lock`** — generated, committed. Pins version, resolved commit,
-  content hash, and originating index per dependency.
-- **`~/.hover/index/<name>/`** — cloned index repos.
+- **`hover.lock`** — generated, committed. Pins version, archive URL, content
+  hash and originating index per dependency. Regenerated whole and sorted by
+  name, so two machines resolving the same dependencies produce byte-identical
+  lockfiles and `git diff hover.lock` stays readable.
+- **`~/.hover/index/<name>/`** — unpacked index archives.
 - **`~/.hover/hpm/<hash>/`** — content-addressed package cache, shared across
   projects. Not vendored per-project; a `hover vendor` command can come later
   if air-gapped builds need it.
 
-The cache is deliberately **user-scoped, unlike `standard_library`, which is
+`HOVER_HOME` relocates all of it; `HOVER_INDEX_URL` overrides the official
+index (for testing and air-gapped mirrors — replacing the official index for
+real should be a named `[[index]]`, so it stays qualified and visible).
+
+The cache is deliberately **user-scoped, unlike `stdlib`, which is
 executable-relative.** Dependencies must not land in a potentially root-owned
 install directory — the same sharp edge `hover --setup` already has.
+
+The manifest is edited **line by line, not re-serialized.** Comments, blank
+lines and key order survive an `hpm install`; a file people maintain by hand
+must not be reformatted by the tool that reads it. The TOML subset that makes
+this possible is deliberately tiny ([`hpm/toml.go`](../hpm/toml.go)) — no
+inline tables, no arrays, no dotted keys — and hand-written rather than
+pulled from a dependency, because a package manager is a bad place to start
+growing a dependency tree.
 
 ### The manifest must not be executable
 
@@ -218,7 +232,7 @@ the extension should not suggest the file is Hover code.
 
 ## Behavior decisions
 
-### Index entries pin commits and hashes
+### Index entries pin archives and hashes
 
 Mapping `name → repo URL` alone is the design PyPI ran until ~2013 and
 abandoned *because it did not work* — repos deleted, tags moved, force
@@ -226,10 +240,17 @@ pushes, branch renames, constant breakage. Homebrew survives the same model
 only because formulae carry a version and checksum plus a large maintainer
 team fixing rot quickly.
 
-So the mapping is `name → {version → {url, commit, hash}}`. Tags resolve to
-immutable commits at index time; content is verified on fetch; the result is
-written to the lockfile. This converts "upstream changed under me" from a
-silent wrong-code bug into a clean error.
+So the mapping is `name → {version → {url, hash}}`, where the URL names one
+exact archive. Content is verified on fetch; the result is written to the
+lockfile. This converts "upstream changed under me" from a silent wrong-code
+bug into a clean error, and it is what makes the same package fetched over
+HTTP and over the git transport hash identically.
+
+Index entries also carry `signature` / `signed_by` fields that nothing checks
+yet, and a `yanked` flag. Yanking is crates.io's model: a yanked version is
+skipped for new resolutions but still resolves for anyone who already locked
+it. Deleting a version outright is npm's unpublish, which is how left-pad
+broke thousands of builds.
 
 It also preserves the upgrade path: if link rot starts hurting, a caching
 mirror can be added later (the `proxy.golang.org` move) as a pure
@@ -344,39 +365,157 @@ Pacman's flag composition (`-Syu`, `-Rns`, `-Qdt`) is excellent for experts
 and opaque to newcomers. Verb subcommands are the right call for a language
 tool.
 
-## Open question: the import namespace
+## The import namespace
 
 Everything above is tooling. The **only language change** is the import
 namespace, and it is the piece that becomes expensive to revise once
 third-party Hover code exists.
 
-Today there are two forms (`compiler/loader/resolve.go`):
+Full details in [imports.md](imports.md); what matters here is the shape.
+
+**An import names a directory, not a file** — every `.hvr` file inside it is
+one unit sharing one namespace, as in Go and Python. Sibling files see each
+other without importing, and how an author split a package across files is
+invisible to consumers.
 
 ```
-import <math/matrix.hvr>      stdlib, executable-relative
-import "./local.hvr"          relative to the importing file
+import <math>;                       whole directory, as math.x
+import <math> as m;                  ... as m.x
+import "./local";                    relative to the importing file
+from <math> import sin;              just sin, unqualified
+from <math> import sin as wave, cos; just those, renamed
 ```
 
-Proposed — a sigil, rather than overloading either existing form:
+Whole-directory imports are **qualified by default**. Merging into a flat
+namespace would mean adding a declaration to a library could break its
+consumers, and a reader could not tell where a name came from without
+checking every import in the file. The cost is noise in math-dense analog
+bodies, which is exactly what the `from ... import` form buys back — one line
+at the top and `sin(x)` reads as it always did.
+
+### Reversed: no sigil for packages
+
+An earlier draft marked packages with `@`:
 
 ```
-import <@foo/bar.hvr>             package foo, official index
-import <@myindex:foo/bar.hvr>     package foo, from index "myindex"
+import <@foo/bar>;                   rejected
 ```
 
-Unambiguous, breaks no existing code, and makes the trust boundary visible at
-the import site: you can tell at a glance whether a file pulls from a
-non-official index.
+That was wrong, for a reason that only shows up when you look one step ahead:
+**the standard library is intended to become an installable package itself.**
+With a sigil, `import <math>` and `import <@math>` would be two spellings of
+the same thing depending on where math happened to come from, and pinning a
+stdlib version would mean editing every import in a project.
 
-This is the decision worth sitting with, since it is the only one that ends
-up in user source files.
+So the first segment of an angle import is simply a package name, and the
+bundled standard library is the fallback when no installed package claims it:
+
+```
+import <math>;               "math" — bundled stdlib, or a pinned package
+import <foo>;                "foo" — an installed package
+import <myindex:foo>;        "foo" from index "myindex" — never stdlib
+from <foo> import Thing;     works with every form
+```
+
+Resolution is lockfile first, bundled `stdlib/` second. Installing
+a package named `math` therefore overrides the bundled one — deliberately,
+since that is the mechanism for pinning a standard-library version, and it is
+auditable because everything consulted comes from a committed `hover.lock`.
+
+The hazard this accepts: a *transitive* dependency named `math` also lands in
+that lockfile and overrides project-wide. It is visible in `hover.lock` and
+`hover hpm list`, which is the mitigation, and it is the price of the uniform
+spelling. Index-qualified names are exempt — they never fall back to stdlib,
+so an added index cannot satisfy an import meant for the standard library.
+
+The index qualifier travels with the package name because that pair *is* the
+identity — two indexes may legitimately publish the same name, and they are
+not the same package.
+
+### `from` is a contextual keyword
+
+Not reserved. It is an import only when it starts a statement and a path
+follows; `from = to;` and `R d(from, to);` still parse as they always did.
+This is not hypothetical — the standard library already declares
+`nextafter(double from, double to)`, and two-terminal circuit code naming its
+nodes `from`/`to` is entirely natural. The one-token lookahead that
+disambiguates it is cheaper than breaking that.
+
+### Reversed: an import names a directory, not a file
+
+The first implementation imported a FILE. That was replaced, because it is
+the model every modern language has moved away from and it forced three
+things nobody wants: a library had to import its own siblings, splitting a
+package across files was a breaking change for consumers, and a consumer had
+to know the author's file layout.
+
+The unit is now a directory. All `.hvr` files directly inside one share a
+namespace; subdirectories are separate units. Consequences worth stating:
+
+- Two files in one directory may not declare the same name — there would be
+  no way to say which one a reference meant. Reported with both locations.
+- Importing your own directory is an error with its own message, not a cycle:
+  the names are already visible.
+- **The entry file is not merged with its siblings.** You compile a file, and
+  it is its own scope. Without that exception a directory of independent
+  testbenches — which `examples/BJT/` is — would have several `main` modules
+  colliding.
+
+### Selective imports bind names, not directories
+
+`from <dir> import A, B as C;` puts only the listed declarations into the
+importing file's flat namespace, under their local spelling. `as` there
+renames one declaration, where `import ... as` qualifies a whole directory —
+the two meanings are mutually exclusive by construction.
+
+A selected name may be a module *or* a function, so "this file declares no
+such thing" is reported by the function pass, the only one that can see both
+namespaces — and it lists what the file does declare, since a typo or a
+renamed declaration is overwhelmingly the cause.
+
+### Resolution has exactly one implementation
+
+The elaborator used to keep a private copy of the loader's path-resolution
+rule, kept local so it wouldn't depend on filesystem layout. That stopped
+being tenable with packages: resolution now consults a per-project table
+built from the lockfile, and two copies of the rule would resolve the same
+import to two different files — the elaborator reporting "import could not be
+resolved" for a file the loader had just read successfully. It calls
+`loader.ResolveImportPath` now.
+
+Package roots are read from the **lockfile**, never the manifest, and
+compiling never resolves or installs anything. The manifest says which
+versions are acceptable; the lockfile says which were chosen. A compile that
+reached for the network because a manifest changed is how you get a build
+that succeeds on one machine and not another.
 
 ## Staging
 
-1. Import namespace + `hover.toml` manifest, resolving from the local cache.
-   No network at all.
-2. `hover hpm install <url>` — fetch, hash-verify, lockfile.
-3. The index: static repo, `hover hpm install foo`, `hover hpm index add`.
+Stages 1–3 are done; 4 is deliberately not.
+
+1. ~~Import namespace + `hover.toml` manifest, resolving from the local
+   cache.~~
+2. ~~`hover hpm install <url>` — fetch, hash-verify, lockfile.~~
+3. ~~The index: static archive, `hover hpm install foo`, `hover hpm index
+   add`.~~
 4. Only if the ecosystem ever grows enough that discovery genuinely hurts:
    reconsider hosting, or add a caching mirror. Note that retiring a registry
    people depend on is not possible, whereas adding one later is.
+
+### Still open
+
+- **The official index does not exist yet.** `DefaultOfficialIndexURL` points
+  at `github.com/hover-lang/hover-index`, which has to be created and made to
+  publish an `index.tar.gz`. Until then only URL and git dependencies work.
+- **Signatures are reserved, not checked.** The trust anchor is index review
+  plus upstream account security — roughly AUR's level.
+- **Version requirements are a small subset**: exact, `^`, `~`, `>=`, `*`.
+  No unions, no ranges, no pre-release ordering beyond "a release outranks
+  its own pre-releases". Anything else is rejected by name rather than
+  silently reinterpreted.
+- **Resolution does not backtrack.** Requirements accumulate per name and a
+  conflict is reported naming who asked for what. A failure a person can read
+  beats one an algorithm found clever — but a graph that a solver could
+  satisfy and this cannot will report a conflict.
+- **`--offline` does not cover a first install**, by construction: there is
+  nothing cached to work from.

@@ -1,14 +1,16 @@
 package loader
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
 // ExeDir returns the directory containing the running hover executable
 // (symlinks resolved) — the anchor for locating every resource shipped
-// alongside it (standard_library, runtime lib/headers, bundled toolchain),
+// alongside it (stdlib, runtime lib/headers, bundled toolchain),
 // independent of the caller's current working directory or the source
 // file's location. This is what makes hover usable as `hover foo.hvr` from
 // any directory once it's on PATH.
@@ -23,7 +25,7 @@ func ExeDir() (string, error) {
 	return filepath.Dir(exe), nil
 }
 
-// stdlibRoot is the standard library directory, always a "standard_library"
+// stdlibRoot is the standard library directory, always a "stdlib"
 // folder next to the hover executable — not the current working directory,
 // and not the source file's directory. This is what makes `import <...>`
 // location-independent.
@@ -32,7 +34,7 @@ func stdlibRoot() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, "standard_library"), nil
+	return filepath.Join(dir, "stdlib"), nil
 }
 
 // PackageRoots maps a qualified package name to the directory its sources
@@ -52,77 +54,212 @@ var PackageRoots map[string]string
 // own resolution without going through a lockfile on disk.
 func SetPackageRoots(roots map[string]string) { PackageRoots = roots }
 
-// ResolveImportPath turns an import into an absolute file path.
+// ResolveImportPath turns an import into the absolute DIRECTORY it names.
 //
-//	import <a/b.hvr>       ->  {binaryDir}/standard_library/a/b.hvr
-//	import <@pkg/b.hvr>    ->  {package cache dir for "pkg"}/b.hvr
-//	import <@idx:pkg/b.hvr>->  {package cache dir for "idx:pkg"}/b.hvr
-//	import "./a/b.hvr"     ->  {importerDir}/a/b.hvr
+//	import <a>          ->  package "a" if installed, else
+//	                        {binaryDir}/stdlib/a
+//	import <a/b>        ->  the "b" subdirectory of either
+//	import <idx:a/b>    ->  package "a" from index "idx" — never stdlib
+//	import "./a/b"      ->  {importerDir}/a/b
 //
-// stdlibRoot: the standard_library dir shipped next to the hover binary
-// (Makefile copies it there), independent of cwd or source location.
+// An import names a directory, not a file: every `.hvr` file directly inside
+// it is imported together, as one unit sharing one namespace. This is Go's
+// package rule and Python's package rule, and it is why a library no longer
+// has to import its own siblings.
 //
-// An unresolvable package returns a path under a sentinel directory rather
-// than an error, so the "could not read imported file" diagnostic — which
-// knows the importing file and line — is what the user sees, instead of a
-// second, worse error path here that does not.
+// THE FIRST SEGMENT OF AN ANGLE IMPORT IS A PACKAGE NAME. There is no sigil
+// distinguishing a package from the standard library, and that is the point:
+// the standard library is intended to become an ordinary installable package
+// itself, so `import <math>` must keep working whether math is the copy
+// bundled next to the binary or a version pinned in the lockfile.
+//
+// Resolution order is therefore: the project's lockfile first, the bundled
+// stdlib second. A project that installs a package named `math`
+// overrides the bundled one — deliberately, since that is how you pin a
+// standard-library version. It is an auditable decision rather than a silent
+// one: everything consulted here comes from a committed hover.lock.
+//
+// The hazard worth knowing about is that a TRANSITIVE dependency named `math`
+// also lands in that lockfile and would override it project-wide. That is
+// visible in `hover.lock` and in `hover hpm list`, which is the mitigation —
+// but it is a real reason to read what a new dependency drags in.
+//
+// An index-qualified name (`idx:a`) is only ever a package. It skips the
+// stdlib fallback entirely, so an added index can never satisfy an import
+// that was meant for the standard library.
 func ResolveImportPath(currentFileDir, importPath string, isSystem bool) string {
 	if isSystem {
-		if pkg, rest, ok := splitPackagePath(importPath); ok {
-			root, found := PackageRoots[pkg]
-			if !found {
-				root = filepath.Join(missingPackageRoot, filepath.FromSlash(pkg))
-			}
+		pkg, rest := splitPackagePath(importPath)
+		if root, found := PackageRoots[pkg]; found {
 			return filepath.Clean(filepath.Join(root, filepath.FromSlash(rest)))
+		}
+		if isQualified(pkg) {
+			// Qualified: a package or nothing. The sentinel makes the
+			// resulting path obviously wrong in the diagnostic a few frames
+			// later, which knows the importing file and line.
+			return filepath.Clean(filepath.Join(missingPackageRoot,
+				filepath.FromSlash(pkg), filepath.FromSlash(rest)))
 		}
 		if root, err := stdlibRoot(); err == nil {
 			return filepath.Clean(filepath.Join(root, filepath.FromSlash(strings.TrimLeft(importPath, "/"))))
 		}
 		// fall through to relative if the binary can't be located
 	}
-	return filepath.Clean(filepath.Join(currentFileDir, importPath))
+	return filepath.Clean(filepath.Join(currentFileDir, filepath.FromSlash(importPath)))
 }
 
-// missingPackageRoot is the stand-in directory for a package that is named
-// in source but absent from the lockfile. It exists only so the resulting
-// path is obviously wrong in the error message a few frames later.
+// missingPackageRoot is the stand-in directory for an index-qualified package
+// that is named in source but absent from the lockfile.
 const missingPackageRoot = "<package-not-installed>"
 
-// splitPackagePath recognises the package form of a system import and splits
-// it into the qualified package name and the path within that package:
+// splitPackagePath splits a system import into its leading package name and
+// the path within that package. Unlike the file-based scheme this replaced,
+// a bare package name is a complete import — `<math>` names the package's
+// own root directory — so rest may be empty.
 //
-//	"@foo/bar.hvr"       -> "foo",       "bar.hvr"
-//	"@idx:foo/bar.hvr"   -> "idx:foo",   "bar.hvr"
-//	"@foo/a/b.hvr"       -> "foo",       "a/b.hvr"
+//	"foo"          -> "foo",      ""
+//	"foo/bar"      -> "foo",      "bar"
+//	"idx:foo/bar"  -> "idx:foo",  "bar"
 //
-// The index qualifier travels with the package name because that pair is
-// what identifies a package: an added index may legitimately publish a name
-// the official index also uses, and they are different packages.
-func splitPackagePath(importPath string) (pkg, rest string, ok bool) {
-	s := strings.TrimLeft(importPath, "/")
-	if !strings.HasPrefix(s, "@") {
-		return "", "", false
-	}
-	s = s[1:]
+// An index qualifier travels with the package name because that pair is what
+// identifies a package: two indexes may legitimately publish the same name,
+// and they are not the same package.
+func splitPackagePath(importPath string) (pkg, rest string) {
+	s := strings.Trim(importPath, "/")
 	slash := strings.IndexByte(s, '/')
-	if slash <= 0 || slash == len(s)-1 {
-		return "", "", false // "@foo" alone names no file
+	if slash < 0 {
+		return s, ""
 	}
-	return s[:slash], s[slash+1:], true
+	return s[:slash], s[slash+1:]
 }
 
-// PackageOf returns the qualified package name a system import refers to, or
-// "" if it is a plain standard-library import. Used to report which packages
-// a source tree actually depends on.
+// QualifierFor returns the name an import binds in the importing file.
+//
+// By default that is the last segment of the path — `import <semiconductors/bjt>`
+// binds `bjt` — because that is what a reader would call it, and it matches
+// Go and Python. An explicit `as` overrides it.
+//
+// Hyphens become underscores so a package name that is not a legal
+// identifier still has a usable default: `hvr-rc` binds as `hvr_rc`. Go
+// solves the same problem with a `package` clause inside every file; a
+// mechanical conversion is less machinery for the same result, and `as` is
+// there when the automatic answer is ugly.
+func QualifierFor(importPath, alias string) string {
+	if alias != "" {
+		return alias
+	}
+	s := strings.Trim(importPath, "/")
+	if i := strings.LastIndexByte(s, '/'); i >= 0 {
+		s = s[i+1:]
+	}
+	if i := strings.IndexByte(s, ':'); i >= 0 { // an unqualified `<idx:pkg>`
+		s = s[i+1:]
+	}
+	s = strings.ReplaceAll(s, "-", "_")
+	s = strings.ReplaceAll(s, ".", "_")
+	return s
+}
+
+// validQualifier reports why a binding name could not be written as an
+// identifier, or nil if it can. The returned error is a fragment ("starts
+// with a digit"), meant to be embedded in a sentence naming the import.
+func validQualifier(q string) error {
+	if q == "" {
+		return fmt.Errorf("is empty")
+	}
+	if c := q[0]; c >= '0' && c <= '9' {
+		return fmt.Errorf("starts with a digit")
+	}
+	for i := 0; i < len(q); i++ {
+		c := q[i]
+		ok := (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_' ||
+			(c >= '0' && c <= '9')
+		if !ok {
+			return fmt.Errorf("contains %q", string(c))
+		}
+	}
+	return nil
+}
+
+// missingPackageHint returns a diagnostic for an import that failed because
+// its package is not installed, or "" when the failure is an ordinary
+// missing directory that the generic error describes better.
+//
+// Needed because a package import and a standard-library import are spelled
+// identically: `import <hvr-rc>` failing must not report "no such directory
+// .../stdlib/hvr-rc", a path nobody wrote and a directory nobody
+// expected to exist. The test is whether the first segment names anything in
+// the standard library at all — if it does not, the user meant a package.
+func missingPackageHint(importPath string, isSystem bool) string {
+	if !isSystem {
+		return ""
+	}
+	pkg, _ := splitPackagePath(importPath)
+	if pkg == "" {
+		return ""
+	}
+	if _, installed := PackageRoots[pkg]; installed {
+		return "" // installed, so the missing thing is a directory inside it
+	}
+	if isQualified(pkg) {
+		idx, bare, _ := strings.Cut(pkg, ":")
+		return fmt.Sprintf("package %q from index %q is not installed — run `hover hpm install %s`",
+			bare, idx, pkg)
+	}
+	if root, err := stdlibRoot(); err == nil {
+		if info, statErr := os.Stat(filepath.Join(root, filepath.FromSlash(pkg))); statErr == nil && info.IsDir() {
+			return "" // a real stdlib directory; the missing thing is inside it
+		}
+	}
+	return fmt.Sprintf("package %q is not installed — run `hover hpm install %s` "+
+		"(or check the path, if you meant a standard library directory)", pkg, pkg)
+}
+
+func isQualified(pkg string) bool {
+	i := strings.IndexByte(pkg, ':')
+	return i > 0 && i < len(pkg)-1
+}
+
+// PackageOf returns the package name a system import resolved through, or ""
+// when it fell back to the standard library.
 func PackageOf(importPath string, isSystem bool) string {
 	if !isSystem {
 		return ""
 	}
-	pkg, _, ok := splitPackagePath(importPath)
-	if !ok {
+	pkg, _ := splitPackagePath(importPath)
+	if pkg == "" {
 		return ""
 	}
-	return pkg
+	if _, installed := PackageRoots[pkg]; installed || isQualified(pkg) {
+		return pkg
+	}
+	return ""
+}
+
+// HvrFilesIn lists the .hvr files directly inside dir, sorted.
+//
+// Sorted because it decides declaration order across a directory, and
+// therefore the C names codegen assigns and the order it emits them — two
+// builds of the same source have to produce the same sim.cpp, and directory
+// iteration order is not a property of the source.
+//
+// Deliberately NOT recursive. A subdirectory is a separate import unit, as
+// in Go and Python; recursing would make `import <semiconductors>` silently
+// pull in every device model in the tree.
+func HvrFilesIn(dir string) ([]string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	var files []string
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".hvr") {
+			continue
+		}
+		files = append(files, filepath.Join(dir, e.Name()))
+	}
+	sort.Strings(files)
+	return files, nil
 }
 
 func extractAnglePath(s string) (literal, rest string, ok bool) {

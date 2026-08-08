@@ -45,7 +45,7 @@ func isFloatingType(t ast.Type) bool {
 //
 // Enforcing this is what turns `CCCS<2>() [a, b];` from a silently dead stamp
 // (codegen used to emit a "sense element unknown" comment and move on) into an
-// actual compile error. Every usage in examples/ and standard_library/ already
+// actual compile error. Every usage in examples/ and stdlib/ already
 // conforms to this table.
 //
 // Keyed by the spelling the parser accepts (isPhysicalPrimitive); the SPICE

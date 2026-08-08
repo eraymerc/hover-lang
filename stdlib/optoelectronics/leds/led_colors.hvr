@@ -1,4 +1,3 @@
-import <optoelectronics/leds/led.hvr>;
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  LED Color Presets — Blue, White, Green, Yellow

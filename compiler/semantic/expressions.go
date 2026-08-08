@@ -5,6 +5,38 @@ import (
 	ast "hover/compiler/ast"
 )
 
+// qualifiedImportName recognises `Alias.name`, where Alias was introduced by
+// an aliased import in the entry file, and returns the qualified spelling
+// that RegisterAliasedFunctions defined.
+//
+// Deliberately narrow: it fires only when the left side is a bare identifier
+// that is a KNOWN alias. Anything else — `node.port`, `main.vin`, a real
+// member access — falls through to the ordinary operand-by-operand path
+// unchanged, so this cannot change the meaning of an expression that already
+// worked.
+func (a *Analyzer) qualifiedImportName(node *ast.BinaryExpression) (string, bool) {
+	left := leftIdentName(node)
+	right := rightIdentName(node)
+	if left == "" || right == "" || !a.importAliases[left] {
+		return "", false
+	}
+	return left + "." + right, true
+}
+
+func leftIdentName(node *ast.BinaryExpression) string {
+	if id, ok := node.Left.(*ast.IdentifierExpression); ok {
+		return id.Value
+	}
+	return ""
+}
+
+func rightIdentName(node *ast.BinaryExpression) string {
+	if id, ok := node.Right.(*ast.IdentifierExpression); ok {
+		return id.Value
+	}
+	return ""
+}
+
 func (a *Analyzer) checkExpression(exp ast.Expression) ast.Type {
 	if exp == nil {
 		return ast.TUnknown
@@ -19,6 +51,21 @@ func (a *Analyzer) checkExpression(exp ast.Expression) ast.Type {
 	case *ast.NumberExpression:
 		return ast.TNumber
 	case *ast.BinaryExpression:
+		// A dotted name whose left side is an import alias is one qualified
+		// reference, not member access on a variable. Checked BEFORE the
+		// operands, since checking them individually is exactly what
+		// produced "Undeclared variable 'M'" for a valid `M.sin(x)`.
+		if node.Operator == "." {
+			if name, ok := a.qualifiedImportName(node); ok {
+				if sym, ok := a.currentScope.Resolve(name); ok {
+					return sym.Type
+				}
+				a.addError(node, fmt.Sprintf(
+					"'%s' does not declare '%s'", leftIdentName(node), rightIdentName(node)))
+				return ast.TUnknown
+			}
+		}
+
 		l := a.checkExpression(node.Left)
 		r := a.checkExpression(node.Right)
 

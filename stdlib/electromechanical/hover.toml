@@ -1,0 +1,14 @@
+# The `electromechanical` standard-library package.
+#
+# Motor and actuator models. Currently pmsm.hvr (permanent-magnet synchronous
+# machine) at the package root.
+#
+# Declarative only; hover never executes this file.
+
+[package]
+name = "electromechanical"
+version = "0.8.0"
+
+[dependencies]
+# pmsm.hvr does `from <math> import sin, cos;` for the Park/Clarke transforms.
+math = "^0.8.0"

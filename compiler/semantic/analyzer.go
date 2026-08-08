@@ -15,6 +15,12 @@ type Analyzer struct {
 	Errors        []string
 	inLogicBlock  bool
 	currentDomain token.Type
+
+	// importAliases holds the names introduced by `import "x.hvr" as N;` in
+	// the entry file. A dotted expression whose left side is one of these is
+	// a qualified reference (`M.sin`), not member access on a variable
+	// called M — see checkExpression's "." case, which is the only consumer.
+	importAliases map[string]bool
 }
 
 func NewAnalyzer() *Analyzer {
@@ -27,7 +33,13 @@ func NewAnalyzer() *Analyzer {
 	globalScope.Define(&Symbol{Name: "idt", Type: ast.TFunc})
 	globalScope.Define(&Symbol{Name: "ddt", Type: ast.TFunc})
 	globalScope.Define(&Symbol{Name: "nr_prev", Type: ast.TFunc})
-	return &Analyzer{currentScope: globalScope, Errors: []string{}, inLogicBlock: false, currentDomain: token.ILLEGAL}
+	return &Analyzer{
+		currentScope:  globalScope,
+		Errors:        []string{},
+		inLogicBlock:  false,
+		currentDomain: token.ILLEGAL,
+		importAliases: map[string]bool{},
+	}
 }
 
 // RegisterImportedFunctions pre-registers every top-level FuncDeclStatement
@@ -54,6 +66,29 @@ func (a *Analyzer) RegisterImportedFunctions(importedProgram *ast.Program) {
 	for _, stmt := range importedProgram.Statements {
 		if f, ok := stmt.(*ast.FuncDeclStatement); ok {
 			a.currentScope.Define(&Symbol{Name: f.Name, Type: ast.TFunc})
+		}
+	}
+}
+
+// RegisterAliasedFunctions is the `import "x.hvr" as N;` form: it registers
+// the imported file's functions under their qualified spelling, `N.name`.
+//
+// Without this, calling an aliased function was rejected here even though
+// the elaborator resolved it correctly and codegen emitted it — the
+// analyzer saw `M.sin(x)` as member access on an undeclared variable `M`
+// and reported two errors for one perfectly valid call. Aliased MODULE
+// instantiation never had this problem, because module references do not go
+// through expression checking, which is why the gap survived: it only
+// showed up for a library that exported functions and was imported with a
+// name. Packages make that combination ordinary.
+func (a *Analyzer) RegisterAliasedFunctions(alias string, importedProgram *ast.Program) {
+	if alias == "" {
+		return
+	}
+	a.importAliases[alias] = true
+	for _, stmt := range importedProgram.Statements {
+		if f, ok := stmt.(*ast.FuncDeclStatement); ok {
+			a.currentScope.Define(&Symbol{Name: alias + "." + f.Name, Type: ast.TFunc})
 		}
 	}
 }

@@ -1,0 +1,35 @@
+# One package = one file, named after the package: packages/<name>.toml
+#
+# This entry is REAL and installable — it points at the package in
+# ../../package/hvr-rc/, so the walkthrough in ../README.md actually runs.
+#
+# An index entry contains pointers and hashes. It never contains code, and
+# the index host never serves package bytes.
+
+name = "hvr-rc"
+description = "Passive RC filter building blocks — low-pass, high-pass, dividers"
+repository = "https://github.com/example/hvr-rc"
+
+# One [[version]] block per published version. Newest may go anywhere in the
+# file; resolution sorts by version, not by file order.
+[[version]]
+version = "0.1.0"
+
+# The archive URL. .tar.gz or .tar.zst. Whoever publishes the package hosts
+# this — GitHub and GitLab generate one automatically for every tag, at a
+# stable URL:
+#
+#   https://github.com/you/hvr-rc/archive/refs/tags/v0.1.0.tar.gz
+#
+# Here it is a placeholder that ../README.md tells you to rewrite, because
+# the package it describes lives in this repository rather than on a server.
+url = "http://127.0.0.1:8000/hvr-rc-0.1.0.tar.gz"
+
+# The hash of the UNPACKED tree, which is what makes this entry trustworthy.
+# It is independent of the archive format, so the same package published as
+# .tar.gz and .tar.zst hashes identically.
+#
+# Get it by installing the package once by URL and reading hover.lock.
+# It changes whenever the package's files change — if you edit
+# ../../package/hvr-rc/, recompute it or installs will (correctly) refuse.
+hash = "sha256:c2d378500390251d1da65672b70c8fddd2862ac462451fe3827247f52d9b0795"

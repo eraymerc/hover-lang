@@ -9,9 +9,8 @@
 .tran(0, 5m, 1u, 50u);
 .solver(bdf2);
 
-import <math/math.hvr>;
-import <optoelectronics/leds/led.hvr>;
-import <optoelectronics/leds/led_colors.hvr>;
+from <math> import exp, sin;
+from <optoelectronics/leds> import LED, LED_RED;
 
 // ═══════════════════════════════════════════════════════════════
 //  PHOTOTRANSISTOR DEVICE MODEL

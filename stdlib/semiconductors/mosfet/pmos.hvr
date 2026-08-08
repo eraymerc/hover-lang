@@ -1,5 +1,5 @@
-import <math/math.hvr>;
-import <semiconductors/diode.hvr> as Body;
+from <math> import fabs;
+import <semiconductors> as Body;
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  P-Channel MOSFET — Level 1 (Shichman-Hodges) square law

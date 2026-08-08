@@ -98,16 +98,43 @@ func (p *parser) parseFromImportStatement() ast.Statement {
 
 // parseImportPath consumes the path of either import form — `"quoted"` or
 // `<angled>` — and records it on stmt. Shared so the two statement forms can
-// never drift apart in what a path is allowed to look like, which matters
-// now that a path may also name a package (`<@pkg/file.hvr>`).
+// never drift apart in what a path is allowed to look like.
+//
+// An import path names a DIRECTORY, not a file. Every `.hvr` file directly
+// inside it is imported as one unit, the way Go imports a package directory
+// and Python imports a package.
 func (p *parser) parseImportPath(stmt *ast.ImportStatement) {
 	if p.currentTokenType() == token.LT {
 		stmt.IsSystem = true
 		stmt.Path = p.readAnglePath()
-		return
+	} else {
+		stmt.Path = p.currentToken().Literal
+		p.expect(token.STRING)
 	}
-	stmt.Path = p.currentToken().Literal
-	p.expect(token.STRING)
+
+	// Catching the old file-based spelling here, rather than letting it fail
+	// as a missing directory, is what makes the migration mechanical: the
+	// error names the exact replacement.
+	if strings.HasSuffix(stmt.Path, ".hvr") {
+		dir := strings.TrimSuffix(stmt.Path, ".hvr")
+		if i := strings.LastIndexByte(dir, '/'); i >= 0 {
+			dir = dir[:i]
+		} else {
+			dir = "."
+		}
+		p.addError("import paths name a directory, not a file: write " +
+			bracket(dir, stmt.IsSystem) + " instead of " + bracket(stmt.Path, stmt.IsSystem) +
+			" (every .hvr file in that directory is imported together)")
+	}
+}
+
+// bracket re-renders a path in whichever delimiters the user wrote, so the
+// suggested replacement can be pasted verbatim.
+func bracket(path string, isSystem bool) string {
+	if isSystem {
+		return "<" + path + ">"
+	}
+	return "\"" + path + "\""
 }
 
 // skipToSemicolon discards tokens up to and including the next ';' so that

@@ -1,4 +1,4 @@
-import <math/math.hvr>;
+from <math> import exp;
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Ideal Diode (Shockley Model)
