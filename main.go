@@ -10,6 +10,7 @@ import (
 	"hover/compiler/parser"
 	"hover/compiler/semantic"
 	"hover/compiler/token"
+	"hover/hpm"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,6 +19,7 @@ import (
 )
 
 const usage = `Usage: ./hover <filename.hvr> [options]
+       ./hover hpm <command> [arguments]
        ./hover --setup
 
 Options:
@@ -33,7 +35,13 @@ Options:
                   on Windows, downloads one into ./toolchain/zig; on Linux,
                   reports whether one is already on PATH. Run this once
                   after extracting a release, or any time a compile fails
-                  with a "Zig not found" error. Takes no other arguments.`
+                  with a "Zig not found" error. Takes no other arguments.
+
+Package management:
+  hpm <command>   Manage this project's dependencies (install, update,
+                  remove, list, verify, index, clean). Run "hover hpm" for
+                  its own help. Releases also ship an "hpm" symlink to this
+                  binary, so "hpm install foo" works directly.`
 
 // cliOptions is the parsed command line. Parsing lives in parseArgs rather
 // than inline in main so that flag order never matters and an unrecognized
@@ -137,8 +145,38 @@ func checkOutputPath(path string) error {
 	return nil
 }
 
+// invokedAsHPM reports whether this process was started through the `hpm`
+// symlink rather than as `hover`.
+//
+// argv[0] dispatch, the busybox trick. It is what lets `hover hpm install
+// foo` and `hpm install foo` be the same words in the same order from one
+// binary — and it is why "hpm" is a better subcommand-group name than "pkg"
+// would have been, since "pkg" could not also serve as the standalone
+// command without inventing a second vocabulary.
+//
+// A separate hpm binary was considered and rejected: separate binaries
+// create pip's version-pairing problem ("which hover does this hpm install
+// for?"), which would bite harder here because hover resolves the standard
+// library, runtime and toolchain relative to its own executable
+// (loader.ExeDir). The symlink costs nothing, since ExeDir already calls
+// EvalSymlinks and resolves back to the real hover directory.
+func invokedAsHPM() bool {
+	base := strings.ToLower(filepath.Base(os.Args[0]))
+	base = strings.TrimSuffix(base, ".exe")
+	return base == "hpm"
+}
+
 func main() {
-	fmt.Println("Hover v0.7.0")
+	// Dispatched before the version banner: hpm has its own output, and a
+	// stray "Hover v0.8.0" on stdout would land in anything parsing it.
+	if invokedAsHPM() {
+		os.Exit(hpm.Run(os.Args[1:]))
+	}
+	if len(os.Args) > 1 && os.Args[1] == "hpm" {
+		os.Exit(hpm.Run(os.Args[2:]))
+	}
+
+	fmt.Println("Hover v0.8.0")
 
 	if len(os.Args) > 1 && os.Args[1] == "--setup" {
 		if len(os.Args) > 2 {
@@ -167,6 +205,20 @@ func main() {
 	libraryMode := opts.libraryMode
 
 	// ── 0. Load — discover entry file + every (non-transitive) import ────────
+	// Package roots come from the LOCKFILE of whatever project contains the
+	// entry file, before anything is read: `import <@pkg/x.hvr>` has to
+	// resolve to exactly what `hover hpm install` put in the cache. Nothing
+	// here resolves versions or touches the network — compiling must never
+	// install, or a build would silently differ from the one that was
+	// locked. A file outside any project simply gets no packages, and
+	// stdlib plus relative imports keep working as before.
+	pkgRoots, err := hpm.ProjectPackagesForFile(entryFile)
+	if err != nil {
+		fmt.Printf("[hpm] Error: %v\n", err)
+		os.Exit(1)
+	}
+	loader.SetPackageRoots(pkgRoots)
+
 	loadResult, err := loader.Load(entryFile)
 	if err != nil {
 		fmt.Printf("[Loader] Error: %v\n", err)
@@ -256,10 +308,21 @@ func main() {
 	// visibility is still enforced by the elaborator; this only prevents
 	// false "undeclared" errors.
 	for _, imp := range loadResult.Imports[loadResult.EntryPath] {
-		if imp.Alias != "" {
-			continue // aliased funcs are called as Alias.f, not bare globals
+		f, ok := importedFiles[imp.ResolvedPath]
+		if !ok {
+			continue
 		}
-		if f, ok := importedFiles[imp.ResolvedPath]; ok {
+		switch {
+		case imp.Selective:
+			// Only the names actually asked for, under their local spelling.
+			locals := make(map[string]string, len(imp.Selected))
+			for _, sym := range imp.Selected {
+				locals[sym.Name] = sym.Local()
+			}
+			analyzer.RegisterSelectedFunctions(f.Program, locals)
+		case imp.Alias != "":
+			// aliased funcs are called as Alias.f, not bare globals
+		default:
 			analyzer.RegisterImportedFunctions(f.Program)
 		}
 	}

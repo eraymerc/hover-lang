@@ -58,6 +58,28 @@ func (a *Analyzer) RegisterImportedFunctions(importedProgram *ast.Program) {
 	}
 }
 
+// RegisterSelectedFunctions is the `from <path> import a, b as c;` form of
+// RegisterImportedFunctions: it registers only the named declarations, and
+// under the local name each was bound to.
+//
+// locals maps a declared name to the name it is reachable as in the
+// importing file (equal when there is no `as`). Names in locals that turn
+// out to be modules rather than functions are skipped rather than reported:
+// this pass only exists to stop the entry-file semantic check from calling
+// a real function "undeclared", and the elaborator — which can see both
+// namespaces — is what actually rejects a name that exists in neither.
+func (a *Analyzer) RegisterSelectedFunctions(importedProgram *ast.Program, locals map[string]string) {
+	for _, stmt := range importedProgram.Statements {
+		f, ok := stmt.(*ast.FuncDeclStatement)
+		if !ok {
+			continue
+		}
+		if local, wanted := locals[f.Name]; wanted {
+			a.currentScope.Define(&Symbol{Name: local, Type: ast.TFunc})
+		}
+	}
+}
+
 func (a *Analyzer) Analyze(program *ast.Program) []string {
 	for _, stmt := range program.Statements {
 		a.checkStatement(stmt)

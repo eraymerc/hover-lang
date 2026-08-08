@@ -10,6 +10,18 @@ import (
 // ==========================================
 
 func (p *parser) parse_statement() ast.Statement {
+	// `from` is a CONTEXTUAL keyword, not a reserved word: it starts an
+	// import only when a path follows it. Reserving it outright would break
+	// any existing signal, port or parameter named "from" —
+	// standard_library/math/math.hvr already declares
+	// `nextafter(double from, double to)`, and two-terminal circuit code
+	// naming its nodes from/to is entirely natural. Checked before the switch
+	// because token.IDENT is also the entry point for physical primitives and
+	// assignments, which must still be reachable.
+	if p.isFromImportStart() {
+		return p.parseFromImportStatement()
+	}
+
 	switch p.currentTokenType() {
 	case token.MODULE, token.ANALOG, token.DIGITAL:
 		return p.parseModuleStatement()

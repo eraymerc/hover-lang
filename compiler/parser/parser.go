@@ -66,6 +66,22 @@ func (p *parser) currentToken() token.Token {
 }
 
 func (p *parser) currentTokenType() token.Type { return p.currentToken().Type }
+
+// peekTokenType returns the type of the token n positions ahead without
+// moving the cursor, clamped the same way currentToken is: past the end it
+// keeps reporting the final token (EOF). Used for the one place the grammar
+// needs lookahead — telling a `from ... import ...` statement apart from an
+// identifier spelled "from" (see parser/imports.go).
+func (p *parser) peekTokenType(n int) token.Type {
+	if len(p.tokens) == 0 {
+		return token.EOF
+	}
+	i := p.pos + n
+	if i >= len(p.tokens) {
+		return p.tokens[len(p.tokens)-1].Type
+	}
+	return p.tokens[i].Type
+}
 func (p *parser) hasTokens() bool {
 	return p.pos < len(p.tokens) && p.currentTokenType() != token.EOF
 }

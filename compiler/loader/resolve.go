@@ -35,21 +35,94 @@ func stdlibRoot() (string, error) {
 	return filepath.Join(dir, "standard_library"), nil
 }
 
-// resolveImportPath turns an import into an absolute file path.
+// PackageRoots maps a qualified package name to the directory its sources
+// were unpacked into. It is set once per compilation by Load(), from the
+// project's lockfile, and read by ResolveImportPath.
 //
-//	import <a/b.hvr>   ->  {binaryDir}/standard_library/a/b.hvr
-//	import "./a/b.hvr" ->  {importerDir}/a/b.hvr
+// A package-level variable rather than a parameter threaded through every
+// call site because path resolution happens in two places — here, and again
+// in the elaborator when it re-derives which loaded file an import statement
+// refers to — and those two MUST agree exactly or an import silently
+// resolves to a file that was never loaded. One compilation, one project,
+// one map; a caller that wants a different project calls Load again.
+var PackageRoots map[string]string
+
+// SetPackageRoots installs the package→directory table for this compilation.
+// Called by Load; exported so a host embedding the compiler can supply its
+// own resolution without going through a lockfile on disk.
+func SetPackageRoots(roots map[string]string) { PackageRoots = roots }
+
+// ResolveImportPath turns an import into an absolute file path.
+//
+//	import <a/b.hvr>       ->  {binaryDir}/standard_library/a/b.hvr
+//	import <@pkg/b.hvr>    ->  {package cache dir for "pkg"}/b.hvr
+//	import <@idx:pkg/b.hvr>->  {package cache dir for "idx:pkg"}/b.hvr
+//	import "./a/b.hvr"     ->  {importerDir}/a/b.hvr
 //
 // stdlibRoot: the standard_library dir shipped next to the hover binary
 // (Makefile copies it there), independent of cwd or source location.
-func resolveImportPath(currentFileDir, importPath string, isSystem bool) string {
+//
+// An unresolvable package returns a path under a sentinel directory rather
+// than an error, so the "could not read imported file" diagnostic — which
+// knows the importing file and line — is what the user sees, instead of a
+// second, worse error path here that does not.
+func ResolveImportPath(currentFileDir, importPath string, isSystem bool) string {
 	if isSystem {
+		if pkg, rest, ok := splitPackagePath(importPath); ok {
+			root, found := PackageRoots[pkg]
+			if !found {
+				root = filepath.Join(missingPackageRoot, filepath.FromSlash(pkg))
+			}
+			return filepath.Clean(filepath.Join(root, filepath.FromSlash(rest)))
+		}
 		if root, err := stdlibRoot(); err == nil {
 			return filepath.Clean(filepath.Join(root, filepath.FromSlash(strings.TrimLeft(importPath, "/"))))
 		}
 		// fall through to relative if the binary can't be located
 	}
 	return filepath.Clean(filepath.Join(currentFileDir, importPath))
+}
+
+// missingPackageRoot is the stand-in directory for a package that is named
+// in source but absent from the lockfile. It exists only so the resulting
+// path is obviously wrong in the error message a few frames later.
+const missingPackageRoot = "<package-not-installed>"
+
+// splitPackagePath recognises the package form of a system import and splits
+// it into the qualified package name and the path within that package:
+//
+//	"@foo/bar.hvr"       -> "foo",       "bar.hvr"
+//	"@idx:foo/bar.hvr"   -> "idx:foo",   "bar.hvr"
+//	"@foo/a/b.hvr"       -> "foo",       "a/b.hvr"
+//
+// The index qualifier travels with the package name because that pair is
+// what identifies a package: an added index may legitimately publish a name
+// the official index also uses, and they are different packages.
+func splitPackagePath(importPath string) (pkg, rest string, ok bool) {
+	s := strings.TrimLeft(importPath, "/")
+	if !strings.HasPrefix(s, "@") {
+		return "", "", false
+	}
+	s = s[1:]
+	slash := strings.IndexByte(s, '/')
+	if slash <= 0 || slash == len(s)-1 {
+		return "", "", false // "@foo" alone names no file
+	}
+	return s[:slash], s[slash+1:], true
+}
+
+// PackageOf returns the qualified package name a system import refers to, or
+// "" if it is a plain standard-library import. Used to report which packages
+// a source tree actually depends on.
+func PackageOf(importPath string, isSystem bool) string {
+	if !isSystem {
+		return ""
+	}
+	pkg, _, ok := splitPackagePath(importPath)
+	if !ok {
+		return ""
+	}
+	return pkg
 }
 
 func extractAnglePath(s string) (literal, rest string, ok bool) {
@@ -72,6 +145,13 @@ type scannedImport struct {
 	Alias       string // "" if no "as Name" clause
 	Line        int    // 1-based line number where the import appears
 	IsSystem    bool   // true for `import <...>` (standard library), false for `import "..."`
+
+	// Selective and Names describe `from <path> import a, b as c;`. The
+	// loader does not act on the names — which file to read is the same
+	// either way — but it carries them so callers that DO care (the
+	// entry-file semantic pass) don't have to re-scan the source.
+	Selective bool
+	Names     []SelectedSymbol
 }
 
 // scanSourceForImports performs a minimal lexical scan for `import "...";`
@@ -93,17 +173,18 @@ func scanSourceForImports(source string) []scannedImport {
 	for i, rawLine := range lines {
 		line := strings.TrimSpace(rawLine)
 
-		// Skip comments and non-import lines quickly.
-		if !strings.HasPrefix(line, "import") {
-			continue
-		}
-		// Ensure "import" is a whole word, not a prefix of an identifier
-		// like "importantThing".
-		rest := strings.TrimPrefix(line, "import")
-		if rest == line { // prefix not actually trimmed — shouldn't happen given HasPrefix
-			continue
-		}
-		if len(rest) > 0 && !isImportSeparator(rest[0]) {
+		selective := false
+		var rest string
+		switch {
+		case hasKeywordPrefix(line, "import"):
+			rest = line[len("import"):]
+		case hasKeywordPrefix(line, "from"):
+			// `from` is contextual in the grammar (see parser/imports.go), so
+			// it only counts here if a path really follows — a statement like
+			// `from = to;` must not be mistaken for an import.
+			rest = line[len("from"):]
+			selective = true
+		default:
 			continue
 		}
 
@@ -120,14 +201,25 @@ func scanSourceForImports(source string) []scannedImport {
 			continue
 		}
 
-		alias := ""
 		afterPath = strings.TrimSpace(afterPath)
-		if strings.HasPrefix(afterPath, "as") {
-			aliasRest := strings.TrimPrefix(afterPath, "as")
-			if len(aliasRest) > 0 && isImportSeparator(aliasRest[0]) {
-				aliasRest = strings.TrimSpace(aliasRest)
-				alias = extractIdentifier(aliasRest)
+
+		if selective {
+			if !hasKeywordPrefix(afterPath, "import") {
+				continue // not an import statement after all
 			}
+			found = append(found, scannedImport{
+				PathLiteral: pathLit,
+				Line:        i + 1,
+				IsSystem:    isSystem,
+				Selective:   true,
+				Names:       parseSelectedNames(afterPath[len("import"):]),
+			})
+			continue
+		}
+
+		alias := ""
+		if hasKeywordPrefix(afterPath, "as") {
+			alias = extractIdentifier(strings.TrimSpace(afterPath[len("as"):]))
 		}
 
 		found = append(found, scannedImport{
@@ -139,6 +231,43 @@ func scanSourceForImports(source string) []scannedImport {
 	}
 
 	return found
+}
+
+// hasKeywordPrefix reports whether s starts with kw as a WHOLE WORD — so
+// "importantThing" is not an `import`, and "fromage" is not a `from`. A bare
+// `kw` with nothing after it also fails, since every import form needs a path.
+func hasKeywordPrefix(s, kw string) bool {
+	if !strings.HasPrefix(s, kw) || len(s) == len(kw) {
+		return false
+	}
+	c := s[len(kw)]
+	return isImportSeparator(c) || c == '"' || c == '<'
+}
+
+// parseSelectedNames reads the `a, b as c` list of a selective import. It is
+// deliberately as forgiving as the rest of this scanner: the real parser runs
+// afterwards and reports syntax errors with proper positions, so anything
+// malformed here just yields fewer names rather than a failed load.
+func parseSelectedNames(s string) []SelectedSymbol {
+	var out []SelectedSymbol
+	s = strings.TrimSuffix(strings.TrimSpace(s), ";")
+	for _, part := range strings.Split(s, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		name := extractIdentifier(part)
+		if name == "" {
+			continue
+		}
+		sym := SelectedSymbol{Name: name}
+		after := strings.TrimSpace(part[len(name):])
+		if hasKeywordPrefix(after, "as") {
+			sym.Alias = extractIdentifier(strings.TrimSpace(after[len("as"):]))
+		}
+		out = append(out, sym)
+	}
+	return out
 }
 
 func isImportSeparator(b byte) bool {

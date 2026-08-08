@@ -152,7 +152,19 @@ $(1):
 	cp -r $(RUNTIME_DIR) $$(DIR_$(1))/runtime
 	rm -rf $$(DIR_$(1))/runtime/build
 	GOOS=$$($(1)_GOOS) GOARCH=$$($(1)_GOARCH) go build -ldflags "-X main.zigVersion=$$(ZIG_VERSION)" -o $$(DIR_$(1))/hover$$(EXE_EXT_$(1)) .
-	cd releases/$$(VERSION) && zip -r hover-$$(VERSION)-$(1).zip $$(notdir $$(DIR_$(1)))
+	# Attribution for the bundled third-party code (Eigen, klauspost/compress,
+	# and Zig in the Windows packages). BSD-3 and Apache-2.0 both require the
+	# notice to accompany a BINARY redistribution, which a release zip is.
+	cp LICENSE THIRD_PARTY_LICENSES.md $$(DIR_$(1))/
+	# `hpm` is the same binary, dispatched on argv[0] (see invokedAsHPM in
+	# main.go), so `hpm install foo` and `hover hpm install foo` are the same
+	# words in the same order. Windows gets a batch shim instead: symlinks
+	# there need either developer mode or elevation, and zip does not carry
+	# them portably anyway.
+	$$(if $$(filter windows,$$($(1)_GOOS)),\
+	  printf '@echo off\r\n"%%~dp0hover.exe" hpm %%*\r\n' > $$(DIR_$(1))/hpm.bat,\
+	  ln -sf hover $$(DIR_$(1))/hpm)
+	cd releases/$$(VERSION) && zip -r --symlinks hover-$$(VERSION)-$(1).zip $$(notdir $$(DIR_$(1)))
 	@echo "[$(1)] Release ready: releases/$$(VERSION)/hover-$$(VERSION)-$(1).zip"
 
 endef

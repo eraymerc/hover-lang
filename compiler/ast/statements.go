@@ -327,21 +327,75 @@ func (ds *DirectiveStatement) String() string {
 	return "." + ds.Name + "(...);"
 }
 
+// ImportedSymbol is one entry in a selective import's name list:
+// the name as the imported file declares it, plus the (optional) local
+// name it is bound to in the importing file.
+type ImportedSymbol struct {
+	Name  string // as declared in the imported file
+	Alias string // local binding; "" means bind under Name
+}
+
+// Local returns the name this symbol is reachable as in the importing file.
+func (s ImportedSymbol) Local() string {
+	if s.Alias != "" {
+		return s.Alias
+	}
+	return s.Name
+}
+
+// ImportStatement covers all four import forms. The first two bring in a
+// whole file, the last two bring in named declarations only:
+//
+//	import <math/math.hvr>;                     whole file, flat namespace
+//	import <math/math.hvr> as M;                whole file, behind M.
+//	from <math/math.hvr> import sin;            just sin
+//	from <math/math.hvr> import sin as s;       just sin, renamed
+//
+// Alias and Names are mutually exclusive: `as` after a whole-file import
+// namespaces it, `as` inside a selective list renames one symbol.
 type ImportStatement struct {
 	Token    token.Token
 	Path     string
 	Alias    string
 	IsSystem bool // true for `import <...>` (standard library), false for `import "..."`
+
+	// Selective marks the `from ... import ...` form. Names is non-empty
+	// exactly when it is set — the parser rejects an empty list — but the
+	// flag is kept explicit so consumers branch on intent rather than on a
+	// slice length that happens to be zero.
+	Selective bool
+	Names     []ImportedSymbol
 }
 
 func (is *ImportStatement) statementNode()       {}
 func (is *ImportStatement) TokenLiteral() string { return is.Token.Literal }
 func (is *ImportStatement) Line() int            { return is.Token.Line }
-func (is *ImportStatement) String() string {
-	if is.Alias != "" {
-		return "import \"" + is.Path + "\" as " + is.Alias + ";"
+
+// PathString renders the path back in the bracket form it was written with,
+// so error messages and AST dumps quote what the user actually typed.
+func (is *ImportStatement) PathString() string {
+	if is.IsSystem {
+		return "<" + is.Path + ">"
 	}
-	return "import \"" + is.Path + "\";"
+	return "\"" + is.Path + "\""
+}
+
+func (is *ImportStatement) String() string {
+	if is.Selective {
+		parts := make([]string, 0, len(is.Names))
+		for _, n := range is.Names {
+			if n.Alias != "" {
+				parts = append(parts, n.Name+" as "+n.Alias)
+			} else {
+				parts = append(parts, n.Name)
+			}
+		}
+		return "from " + is.PathString() + " import " + strings.Join(parts, ", ") + ";"
+	}
+	if is.Alias != "" {
+		return "import " + is.PathString() + " as " + is.Alias + ";"
+	}
+	return "import " + is.PathString() + ";"
 }
 
 // ImportCStatement is `importc "header.hpp";` / `importc "<cmath>";` — a direct

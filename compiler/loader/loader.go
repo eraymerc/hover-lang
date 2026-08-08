@@ -73,16 +73,26 @@ func loadFile(filePath string, result *LoadResult, visiting map[string]bool, vis
 
 	entries := make([]ImportEntry, 0, len(scanned))
 	for _, imp := range scanned {
-		resolved := resolveImportPath(fileDir, imp.PathLiteral, imp.IsSystem)
+		resolved := ResolveImportPath(fileDir, imp.PathLiteral, imp.IsSystem)
 		entries = append(entries, ImportEntry{
 			Alias:        imp.Alias,
 			ResolvedPath: resolved,
 			RawPath:      imp.PathLiteral,
 			Line:         imp.Line,
 			IsSystem:     imp.IsSystem,
+			Selective:    imp.Selective,
+			Selected:     imp.Names,
+			Package:      PackageOf(imp.PathLiteral, imp.IsSystem),
 		})
 
 		if err := loadFile(resolved, result, visiting, visited); err != nil {
+			if pkg := PackageOf(imp.PathLiteral, imp.IsSystem); pkg != "" && !filepath.IsAbs(resolved) {
+				// resolved is only relative when the package had no entry in
+				// PackageRoots, i.e. it is not installed for this project.
+				// Say that, rather than reporting a path nobody wrote.
+				return fmt.Errorf("in %s, line %d: package %q is not installed — run `hover hpm install %s`",
+					filePath, imp.Line, pkg, pkg)
+			}
 			return fmt.Errorf("in %s, line %d: %w", filePath, imp.Line, err)
 		}
 	}

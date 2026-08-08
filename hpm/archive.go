@@ -1,0 +1,321 @@
+package hpm
+
+import (
+	"archive/tar"
+	"compress/gzip"
+	"fmt"
+	"io"
+	"os"
+	"path"
+	"path/filepath"
+	"strings"
+
+	"github.com/klauspost/compress/zstd"
+)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ARCHIVE EXTRACTION
+//
+// This is the highest-risk code in hpm: it parses attacker-controllable bytes
+// pulled off the network and writes files to disk from them. Every rule below
+// exists because some package manager, somewhere, got it wrong.
+//
+// The codecs themselves are not ours — archive/tar and compress/gzip are
+// stdlib, and zstd is klauspost/compress. What IS ours is everything between
+// the archive reader and the filesystem, and that is where the checks live.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const (
+	// maxDecompressedBytes caps what one archive may expand to. Enforced on
+	// the DECOMPRESSED stream, not on the download, because that is the
+	// number an attacker controls cheaply: a decompression bomb is a few
+	// hundred kilobytes on the wire and gigabytes on disk. zstd reaches far
+	// higher ratios than gzip, so this matters more now than it would have
+	// with gzip alone.
+	maxDecompressedBytes = 256 << 20 // 256 MiB
+
+	// maxArchiveFiles caps entry count. The byte cap alone does not stop an
+	// archive of ten million empty files, which costs inodes and wall time
+	// rather than space.
+	maxArchiveFiles = 50000
+
+	// maxPathLength is a sanity bound on entry names.
+	maxPathLength = 4096
+
+	// zstdMaxWindow caps the decoder's memory. A zstd frame declares its own
+	// window size, and honouring an arbitrary one lets a small archive
+	// demand hundreds of megabytes of RAM before a single byte is written.
+	zstdMaxWindow = 64 << 20 // 64 MiB
+)
+
+// archiveFormat identifies a supported package archive encoding.
+type archiveFormat struct {
+	Name   string
+	Suffix string
+	// open wraps the raw HTTP body in a decompressing reader.
+	open func(io.Reader) (io.ReadCloser, error)
+}
+
+// archiveFormats is the dispatch table. Adding a format later is a row here
+// plus its decoder — deliberately a table rather than an if/else chain, so
+// the set of accepted formats is one readable list.
+//
+// Ordered longest-suffix-first so ".tar.gz" is never shadowed by a shorter
+// entry if one is ever added.
+//
+// A note for whoever benchmarks this later and finds gzip is fast enough at
+// these package sizes: that is true, and it is not why .tar.zst is here.
+// Compression ratio and decode speed are both irrelevant for a few hundred
+// KB of .hvr text. It is here so that hover binaries shipped TODAY can read
+// packages published years from now — adding an archive format after an
+// ecosystem exists strands every older binary, which is the same reason the
+// index schema reserves a signature field it does not yet check.
+var archiveFormats = []archiveFormat{
+	{
+		Name:   "tar.gz",
+		Suffix: ".tar.gz",
+		open:   openGzip,
+	},
+	{
+		Name:   "tgz",
+		Suffix: ".tgz",
+		open:   openGzip,
+	},
+	{
+		Name:   "tar.zst",
+		Suffix: ".tar.zst",
+		open:   openZstd,
+	},
+}
+
+func openGzip(r io.Reader) (io.ReadCloser, error) {
+	zr, err := gzip.NewReader(r)
+	if err != nil {
+		return nil, fmt.Errorf("not a valid gzip stream: %w", err)
+	}
+	return zr, nil
+}
+
+func openZstd(r io.Reader) (io.ReadCloser, error) {
+	zr, err := zstd.NewReader(r,
+		zstd.WithDecoderMaxMemory(maxDecompressedBytes),
+		zstd.WithDecoderMaxWindow(zstdMaxWindow),
+		// One decode goroutine. The parallelism that matters here is across
+		// packages, not within one small archive, and concurrent decoders
+		// each hold their own window buffer.
+		zstd.WithDecoderConcurrency(1),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("not a valid zstd stream: %w", err)
+	}
+	return zr.IOReadCloser(), nil
+}
+
+// FormatForURL picks the archive format from a URL's suffix.
+//
+// Suffix-based rather than content-sniffed on purpose: the index says what
+// the archive is, and a mismatch between the declared and actual format is a
+// signal something is wrong, not something to paper over by guessing.
+func FormatForURL(url string) (archiveFormat, error) {
+	clean := url
+	if i := strings.IndexAny(clean, "?#"); i >= 0 {
+		clean = clean[:i]
+	}
+	lower := strings.ToLower(clean)
+	for _, f := range archiveFormats {
+		if strings.HasSuffix(lower, f.Suffix) {
+			return f, nil
+		}
+	}
+	return archiveFormat{}, fmt.Errorf(
+		"%s does not end in a supported archive extension — hpm installs archives, not repositories (accepted: %s)",
+		url, acceptedSuffixes())
+}
+
+func acceptedSuffixes() string {
+	seen := map[string]bool{}
+	var out []string
+	for _, f := range archiveFormats {
+		if seen[f.Suffix] {
+			continue
+		}
+		seen[f.Suffix] = true
+		out = append(out, f.Suffix)
+	}
+	return strings.Join(out, ", ")
+}
+
+// ExtractArchive decompresses and unpacks src into destDir, which must
+// already exist and should be empty.
+//
+// Returns the directory the package's own files actually live in: archives
+// generated by GitHub, GitLab and `git archive` wrap everything in a single
+// top-level directory named after the repo and ref, and that name changes
+// between versions. Stripping it is what makes `import <@pkg/file.hvr>`
+// refer to a stable path rather than one containing a version number.
+func ExtractArchive(src io.Reader, format archiveFormat, destDir string) (root string, err error) {
+	zr, err := format.open(src)
+	if err != nil {
+		return "", err
+	}
+	defer zr.Close()
+
+	// The cap applies to the decompressed stream. LimitReader gives one extra
+	// byte so hitting the limit is distinguishable from a file that happens
+	// to be exactly the limit.
+	limited := io.LimitReader(zr, maxDecompressedBytes+1)
+	var written int64
+	files := 0
+
+	tr := tar.NewReader(limited)
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return "", fmt.Errorf("corrupt %s archive: %w", format.Name, err)
+		}
+
+		files++
+		if files > maxArchiveFiles {
+			return "", fmt.Errorf("archive contains more than %d entries — refusing to extract", maxArchiveFiles)
+		}
+
+		rel, err := safeEntryPath(hdr.Name)
+		if err != nil {
+			return "", err
+		}
+		if rel == "" {
+			continue // the archive's own root entry
+		}
+		target := filepath.Join(destDir, filepath.FromSlash(rel))
+
+		switch hdr.Typeflag {
+		case tar.TypeDir:
+			if err := os.MkdirAll(target, 0755); err != nil {
+				return "", err
+			}
+
+		case tar.TypeReg:
+			if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
+				return "", err
+			}
+			n, err := writeEntry(target, tr, hdr.FileInfo().Mode())
+			if err != nil {
+				return "", err
+			}
+			written += n
+			if written > maxDecompressedBytes {
+				return "", fmt.Errorf("archive expands to more than %d bytes — refusing to extract", int64(maxDecompressedBytes))
+			}
+
+		case tar.TypeSymlink, tar.TypeLink:
+			// Rejected outright rather than sanitized. A Hover package is
+			// plain .hvr source and has no legitimate need for a link, while
+			// a link is the classic way to make an extractor write outside
+			// its destination — either directly, or by creating a link and
+			// then writing "through" it with a later entry.
+			return "", fmt.Errorf("archive entry %q is a link — Hover packages may not contain symlinks or hard links", hdr.Name)
+
+		case tar.TypeChar, tar.TypeBlock, tar.TypeFifo:
+			return "", fmt.Errorf("archive entry %q is a device or fifo — Hover packages may contain only regular files and directories", hdr.Name)
+
+		case tar.TypeXGlobalHeader, tar.TypeXHeader:
+			continue // pax metadata, already applied by archive/tar
+
+		default:
+			return "", fmt.Errorf("archive entry %q has unsupported type %q", hdr.Name, string(hdr.Typeflag))
+		}
+	}
+
+	return stripWrapperDir(destDir)
+}
+
+// safeEntryPath validates one archive entry name and returns it as a clean
+// slash-separated relative path.
+//
+// The rules, and what each one stops:
+//
+//   - absolute paths        →  writing to /etc/... regardless of destDir
+//   - any ".." segment      →  the classic "zip slip" escape
+//   - a drive letter or "\" →  the same escapes on Windows, where
+//     filepath.Join would treat "C:\..." as absolute
+//   - NUL bytes             →  truncation mismatches between the check and
+//     the syscall
+func safeEntryPath(name string) (string, error) {
+	if len(name) > maxPathLength {
+		return "", fmt.Errorf("archive entry name is longer than %d characters", maxPathLength)
+	}
+	if strings.ContainsRune(name, 0) {
+		return "", fmt.Errorf("archive entry name contains a NUL byte")
+	}
+
+	// Normalise Windows separators before any check, so "..\\evil" cannot
+	// slip past a check that only understands "/".
+	n := strings.ReplaceAll(name, `\`, "/")
+	if strings.HasPrefix(n, "/") {
+		return "", fmt.Errorf("archive entry %q is an absolute path", name)
+	}
+	if len(n) >= 2 && n[1] == ':' {
+		return "", fmt.Errorf("archive entry %q names a drive", name)
+	}
+
+	clean := path.Clean(n)
+	if clean == "." || clean == "/" {
+		return "", nil
+	}
+	for _, seg := range strings.Split(clean, "/") {
+		if seg == ".." {
+			return "", fmt.Errorf("archive entry %q escapes the destination directory", name)
+		}
+	}
+	return clean, nil
+}
+
+// writeEntry writes one regular file, forcing a conservative permission set.
+//
+// The archive's mode is honoured only for the executable bit, and only for
+// the owner-execute flag; setuid, setgid and sticky bits are dropped
+// unconditionally. A downloaded dependency has no business shipping a setuid
+// file, and an extractor that faithfully reproduces one is a privilege
+// escalation waiting for a careless `sudo`.
+func writeEntry(target string, r io.Reader, mode os.FileMode) (int64, error) {
+	perm := os.FileMode(0644)
+	if mode&0100 != 0 {
+		perm = 0755
+	}
+	f, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC|os.O_EXCL, perm)
+	if err != nil {
+		if os.IsExist(err) {
+			return 0, fmt.Errorf("archive contains %q twice", filepath.Base(target))
+		}
+		return 0, err
+	}
+	n, err := io.Copy(f, r)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	return n, err
+}
+
+// stripWrapperDir returns the real package root: if dir contains exactly one
+// entry and that entry is a directory, that directory is the root.
+//
+// Done after extraction rather than by rewriting paths during it, because
+// the wrapper can only be identified once every entry has been seen — an
+// archive with two top-level directories has no wrapper to strip, and
+// guessing from the first entry alone would silently discard half of it.
+func stripWrapperDir(dir string) (string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return "", err
+	}
+	if len(entries) == 1 && entries[0].IsDir() {
+		return filepath.Join(dir, entries[0].Name()), nil
+	}
+	if len(entries) == 0 {
+		return "", fmt.Errorf("archive is empty")
+	}
+	return dir, nil
+}

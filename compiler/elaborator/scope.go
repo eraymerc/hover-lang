@@ -129,6 +129,27 @@ func (e *Elaborator) buildModuleScopes(files map[string]*ImportedFile) error {
 			}
 			imported := own[resolvedPath] // OWN decls only — imports are non-transitive
 
+			// `from <path> import A, B as C;` — only the listed names enter
+			// the flat namespace, each under its local spelling. A name that
+			// matches nothing here may still be a function, so being absent
+			// is not an error yet; buildFunctionScopes reports the names that
+			// matched neither (it is the pass that can see both).
+			if imp.Selective {
+				for _, sym := range imp.Names {
+					decl, ok := imported[sym.Name]
+					if !ok {
+						continue
+					}
+					local := sym.Local()
+					if existing, exists := sc.modules[local]; exists && existing != decl {
+						return fmt.Errorf("line %d: module '%s' from %s collides with an existing module '%s' (declared at line %d) — import it under a different name (`import %s as %s`)",
+							imp.Token.Line, local, imp.PathString(), existing.Name, existing.Line(), sym.Name, local+"2")
+					}
+					sc.modules[local] = decl
+				}
+				continue
+			}
+
 			if imp.Alias != "" {
 				if sc.aliased[imp.Alias] == nil {
 					sc.aliased[imp.Alias] = make(map[string]*ast.ModuleDeclStatement)
@@ -280,6 +301,35 @@ func (e *Elaborator) buildFunctionScopes(files map[string]*ImportedFile) error {
 				continue
 			}
 
+			// Selective import. This pass owns the "no such name" diagnostic
+			// because it is the only one that can see both namespaces: a
+			// selected name is valid if EITHER a module or a function answers
+			// to it, and buildModuleScopes ran without knowing about
+			// functions.
+			if imp.Selective {
+				for _, sym := range imp.Names {
+					info, ok := imported[sym.Name]
+					if !ok {
+						if declaresModule(files[resolvedPath], sym.Name) {
+							continue // handled by buildModuleScopes
+						}
+						return fmt.Errorf("line %d: %s declares no module or function named '%s'%s",
+							imp.Token.Line, imp.PathString(), sym.Name,
+							describeExports(files[resolvedPath]))
+					}
+					local := sym.Local()
+					if existing, exists := sc[local]; exists && existing != info {
+						if existing.Decl.IsExtern && info.Decl.IsExtern {
+							continue // two headers declaring the same C function — harmless
+						}
+						return fmt.Errorf("line %d: function '%s' from %s collides with an existing function '%s' (declared at line %d) — import it under a different name (`%s as ...`)",
+							imp.Token.Line, local, imp.PathString(), existing.Decl.Name, existing.Decl.Line(), sym.Name)
+					}
+					sc[local] = info
+				}
+				continue
+			}
+
 			if imp.Alias != "" {
 				// Aliased names always contain a dot, and a bare function name
 				// never can, so an alias can't collide with the flat namespace.
@@ -303,6 +353,47 @@ func (e *Elaborator) buildFunctionScopes(files map[string]*ImportedFile) error {
 	}
 
 	return nil
+}
+
+// declaresModule reports whether f declares a module by that name. Used on
+// the error path of a selective import, to tell "you asked for a name this
+// file doesn't have" apart from "you asked for a module, which the function
+// pass simply isn't the one that binds it".
+func declaresModule(f *ImportedFile, name string) bool {
+	if f == nil {
+		return false
+	}
+	for _, stmt := range f.Program.Statements {
+		if m, ok := stmt.(*ast.ModuleDeclStatement); ok && m.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+// describeExports lists what a file actually declares, for the error a
+// selective import produces when it names something absent. Without it the
+// message says only that the name is missing, leaving the user to open the
+// file and read it — and a typo'd or renamed declaration is by far the most
+// likely cause.
+func describeExports(f *ImportedFile) string {
+	if f == nil {
+		return ""
+	}
+	var names []string
+	for _, stmt := range f.Program.Statements {
+		switch d := stmt.(type) {
+		case *ast.ModuleDeclStatement:
+			names = append(names, d.Name)
+		case *ast.FuncDeclStatement:
+			names = append(names, d.Name)
+		}
+	}
+	if len(names) == 0 {
+		return " — that file declares no modules or functions at all"
+	}
+	sort.Strings(names)
+	return " — it declares: " + strings.Join(names, ", ")
 }
 
 // uniqueCName picks the C identifier a function will be emitted under,

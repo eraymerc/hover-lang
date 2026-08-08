@@ -2,7 +2,7 @@ package elaborator
 
 import (
 	"hover/compiler/ast"
-	"os"
+	"hover/compiler/loader"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -105,28 +105,16 @@ func splitQualifiedName(name string) (alias string, bare string, isQualified boo
 	return name[:idx], name[idx+1:], true
 }
 
-// resolveImportPathFor resolves an import path the same way the loader
-// package does — relative to the directory of the file that wrote the
-// import statement. Kept as a small local copy rather than importing the
-// loader package here, to avoid the elaborator depending on file-system
-// layout concerns beyond this one calculation; the loader remains the
-// single source of truth for the actual file discovery and cycle checks.
+// resolveImportPathFor resolves an import path to the absolute file the
+// loader would have loaded for it, by calling straight into the loader.
+//
+// This used to be a small local copy of the loader's logic, kept so the
+// elaborator wouldn't depend on filesystem layout. That stopped being
+// tenable once `import <@pkg/...>` existed: package resolution consults a
+// per-project table built from the lockfile, and two independent copies of
+// the rule would silently resolve the same import to two different files —
+// the elaborator would then report "import could not be resolved" for a file
+// the loader read successfully. There is exactly one rule now.
 func resolveImportPathFor(currentFilePath, importPath string, isSystem bool) string {
-	if isSystem {
-		if root, err := stdlibRoot(); err == nil {
-			return filepath.Clean(filepath.Join(root, filepath.FromSlash(strings.TrimLeft(importPath, "/"))))
-		}
-	}
-	return filepath.Clean(filepath.Join(filepath.Dir(currentFilePath), importPath))
-}
-
-func stdlibRoot() (string, error) {
-	exe, err := os.Executable()
-	if err != nil {
-		return "", err
-	}
-	if real, e := filepath.EvalSymlinks(exe); e == nil {
-		exe = real
-	}
-	return filepath.Join(filepath.Dir(exe), "standard_library"), nil
+	return loader.ResolveImportPath(filepath.Dir(currentFilePath), importPath, isSystem)
 }
