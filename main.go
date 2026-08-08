@@ -220,40 +220,15 @@ func main() {
 	// versions or touches the network — compiling must never install, or a
 	// build would silently differ from the one that was locked.
 	//
-	// Two lockfiles, in precedence order:
-	//
-	//   1. ~/.hover/stdlib.lock — the machine's standard library, put there
-	//      by `hover --setup`. Shared by every project on the machine.
-	//   2. <project>/hover.lock — this project's dependencies.
-	//
-	// The project wins on a name collision, and that is the point: the
-	// standard library is an ordinary set of packages, so a project that
-	// pins `math = "0.8.1"` in its own hover.toml gets that math, not the
-	// machine-wide one. Nothing in the compiler treats stdlib names as
-	// reserved.
-	//
-	// A file outside any project simply gets the standard library, and
-	// relative imports keep working with neither.
-	pkgRoots, err := hpm.StdlibRoots()
+	// Which lockfiles apply is decided in one place, hpm.PackageRootsForFile:
+	// inside a project, that project's hover.lock plus the machine's standard
+	// library; outside any project, everything installed machine-wide. See
+	// that function for why the two cases differ.
+	pkgRoots, err := hpm.PackageRootsForFile(entryFile)
 	if err != nil {
 		fmt.Printf("[hpm] Error: %v\n", err)
 		os.Exit(1)
 	}
-	projectRoots, err := hpm.ProjectPackagesForFile(entryFile)
-	if err != nil {
-		fmt.Printf("[hpm] Error: %v\n", err)
-		os.Exit(1)
-	}
-	if pkgRoots == nil {
-		pkgRoots = map[string]string{}
-	}
-	for name, dir := range projectRoots {
-		pkgRoots[name] = dir
-	}
-	// A project that pins the standard library itself gets the same
-	// expansion --setup's copy gets, or its `import <math>` would quietly
-	// keep resolving to the machine-wide one.
-	pkgRoots = hpm.ExpandStdlibRoots(pkgRoots)
 	loader.SetPackageRoots(pkgRoots)
 	loader.SetStdlibPackageNames(hpm.StdlibImportNames())
 

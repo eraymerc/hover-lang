@@ -269,8 +269,56 @@ func safeEntryPath(name string) (string, error) {
 		if seg == ".." {
 			return "", fmt.Errorf("archive entry %q escapes the destination directory", name)
 		}
+		if err := checkWindowsName(seg); err != nil {
+			return "", fmt.Errorf("archive entry %q: %w", name, err)
+		}
 	}
 	return clean, nil
+}
+
+// windowsReserved are the DOS device names, which cannot be used as a file
+// name component on Windows at any extension: "aux.hvr" is as impossible as
+// "aux".
+var windowsReserved = map[string]bool{
+	"con": true, "prn": true, "aux": true, "nul": true,
+	"com1": true, "com2": true, "com3": true, "com4": true, "com5": true,
+	"com6": true, "com7": true, "com8": true, "com9": true,
+	"lpt1": true, "lpt2": true, "lpt3": true, "lpt4": true, "lpt5": true,
+	"lpt6": true, "lpt7": true, "lpt8": true, "lpt9": true,
+}
+
+// checkWindowsName rejects path components no Windows filesystem can store.
+//
+// Enforced on EVERY platform, not just Windows, and that is the point: a
+// package containing math/aux.hvr would install fine on Linux, get published,
+// and then fail to extract for every Windows user with an error from deep
+// inside the extractor. Rejecting it everywhere means the author finds out
+// when they build the package, which is the only time the fix is cheap.
+func checkWindowsName(seg string) error {
+	if seg == "" {
+		return nil
+	}
+	// A trailing dot or space is silently stripped by the Win32 layer, so
+	// "foo." and "foo" become the same file — two entries in one archive
+	// would collide.
+	if last := seg[len(seg)-1]; last == '.' || last == ' ' {
+		return fmt.Errorf("component %q ends in a dot or space, which Windows cannot store", seg)
+	}
+	base := strings.ToLower(seg)
+	if i := strings.IndexByte(base, '.'); i >= 0 {
+		base = base[:i]
+	}
+	if windowsReserved[base] {
+		return fmt.Errorf("component %q is a reserved device name on Windows", seg)
+	}
+	// The characters Win32 forbids outright. ':' also matters because
+	// "name:stream" addresses an NTFS alternate data stream rather than a
+	// file — but ':' is already rejected as a drive letter above for the
+	// leading component, and here it is rejected everywhere.
+	if i := strings.IndexAny(seg, `<>:"|?*`); i >= 0 {
+		return fmt.Errorf("component %q contains %q, which Windows cannot store", seg, seg[i])
+	}
+	return nil
 }
 
 // writeEntry writes one regular file, forcing a conservative permission set.

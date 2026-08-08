@@ -49,20 +49,45 @@ var StdlibPackages = []string{
 	"semiconductors",
 }
 
-// StdlibLockName is the machine-wide lock recording which stdlib is
-// installed. Deliberately NOT called hover.lock: $HOVER_HOME can point at a
-// directory that is also a project, and two files with the same name meaning
-// different things is how a project lock ends up silently governing the
-// standard library.
-const StdlibLockName = "stdlib.lock"
+// ─────────────────────────────────────────────────────────────────────────────
+// THE MACHINE-WIDE PROJECT
+//
+// ~/.hover is itself a project: an ordinary hover.toml and hover.lock, read
+// and written by exactly the code that handles any other. It holds the
+// standard library, plus anything installed while not standing in a project
+// of your own.
+//
+// Making it a real project rather than a special store is what removes the
+// init step: `hpm install foo` outside a project resolves, locks and reports
+// through the same path as inside one, and `hpm list`, `hpm remove` and
+// `hpm update` work there with no new code. The stdlib is then not a special
+// case at all — it is one dependency in that manifest.
+// ─────────────────────────────────────────────────────────────────────────────
 
-// StdlibLockPath is ~/.hover/stdlib.lock.
-func StdlibLockPath() (string, error) {
+// machineProjectDir returns ~/.hover, creating its manifest on first use.
+func machineProjectDir() (string, error) {
+	home, err := HoverHome()
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(home, 0o755); err != nil {
+		return "", fmt.Errorf("could not create %s: %w", home, err)
+	}
+	if !fileExists(filepath.Join(home, ManifestName)) {
+		if _, err := InitManifest(home, "hover-machine"); err != nil {
+			return "", err
+		}
+	}
+	return home, nil
+}
+
+// MachineLockPath is ~/.hover/hover.lock.
+func MachineLockPath() (string, error) {
 	h, err := HoverHome()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(h, StdlibLockName), nil
+	return filepath.Join(h, LockName), nil
 }
 
 // StdlibRequirement turns a compiler version into the requirement used to
@@ -81,84 +106,93 @@ func StdlibRequirement(compilerVersion string) string {
 	return fmt.Sprintf("^%s.%s.0", parts[0], parts[1])
 }
 
-// stdlibManifest builds the synthetic project the resolver walks. There is no
-// hover.toml on disk for it — the standard library's dependency set is a
-// property of the compiler build, not something a user edits.
-func stdlibManifest(compilerVersion string) (*Manifest, error) {
-	home, err := HoverHome()
-	if err != nil {
-		return nil, err
-	}
-	req := StdlibRequirement(compilerVersion)
-
-	return &Manifest{
-		Dir:     home,
-		Path:    "<standard library>",
-		Name:    "hover-stdlib",
-		Version: compilerVersion,
-		Deps:    []Dependency{{Name: StdlibPackageName, Version: req}},
-	}, nil
-}
-
-// InstallStdlib resolves and installs the standard library for this compiler
-// version, writing ~/.hover/stdlib.lock.
+// InstallStdlib makes sure the machine-wide project declares the standard
+// library for this compiler version, then installs it.
+//
+// It resolves the WHOLE machine project, not just the stdlib: anything else
+// installed there gets re-checked at the same time, which is what makes
+// `hover --setup` a repair step for a broken ~/.hover rather than a
+// stdlib-only one.
 //
 // Update is forced: `hover --setup` is an explicit user action, and the point
 // of publishing the stdlib is that a patch reaches people without waiting for
-// a compiler release. If the network is unavailable but the existing lock is
-// complete and cached, that is reported and kept rather than failed — a
+// a compiler release. If the network is unavailable but what is already
+// installed is complete, that is reported and kept rather than failed — a
 // working install must not be broken by a transient outage.
 func InstallStdlib(ctx context.Context, compilerVersion string, out io.Writer) error {
 	if out == nil {
 		out = os.Stdout
 	}
-	m, err := stdlibManifest(compilerVersion)
+	dir, err := machineProjectDir()
 	if err != nil {
 		return err
 	}
-	lockPath, err := StdlibLockPath()
+	m, err := LoadManifest(dir)
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(lockPath), 0o755); err != nil {
-		return fmt.Errorf("could not create %s: %w", filepath.Dir(lockPath), err)
+	req := StdlibRequirement(compilerVersion)
+
+	// Record the requirement in ~/.hover/hover.toml, so the standard library
+	// is visible as an ordinary dependency — `hpm list` shows it, and it is
+	// editable by anyone who wants a different one.
+	if cur, found := m.Dep(StdlibPackageName); !found || cur.Version != req {
+		m.AddIndexedDep(StdlibPackageName, req)
+		if err := m.Save(); err != nil {
+			return err
+		}
 	}
 
-	lock, _, err := LoadLockfileAt(lockPath)
+	lock, _, err := LoadLockfile(dir)
 	if err != nil {
 		return err
 	}
 
-	fmt.Fprintf(out, "[Setup] Installing the standard library (%s)...\n", StdlibRequirement(compilerVersion))
+	fmt.Fprintf(out, "[Setup] Installing the standard library (%s)...\n", req)
 
-	packages, err := resolveStdlib(ctx, m, lock, Options{Update: true, Out: out})
+	packages, err := resolveMachine(ctx, m, lock, Options{Update: true, Out: out})
 	if err != nil {
 		// Fall back to whatever is already installed, but only if it is
 		// complete — a partial stdlib that fails later at compile time is
 		// worse than a setup that says what went wrong now.
-		if kept, keptErr := resolveStdlib(ctx, m, lock, Options{Offline: true, Out: io.Discard}); keptErr == nil && len(kept) > 0 {
+		if kept, keptErr := resolveMachine(ctx, m, lock, Options{Offline: true, Out: io.Discard}); keptErr == nil && len(kept) > 0 {
 			fmt.Fprintf(out, "[Setup] Could not reach the package index: %v\n", err)
-			fmt.Fprintf(out, "[Setup] Keeping the standard library already installed (%s).\n", describeVersions(kept))
+			fmt.Fprintf(out, "[Setup] Keeping what is already installed (%s).\n", describeVersions(onlyStdlib(kept)))
 			return nil
 		}
 		return fmt.Errorf("could not install the standard library: %w", err)
 	}
 
-	lock.Path = lockPath
 	lock.Packages = packages
 	if err := lock.Save(); err != nil {
 		return err
 	}
 
-	fmt.Fprintf(out, "[Setup] Standard library ready: %s\n", describeVersions(packages))
+	fmt.Fprintf(out, "[Setup] Standard library ready: %s\n", describeVersions(onlyStdlib(packages)))
+	if extra := len(packages) - 1; extra > 0 {
+		fmt.Fprintf(out, "[Setup] %d other machine-wide package(s) checked.\n", extra)
+	}
 	return nil
 }
 
-func resolveStdlib(ctx context.Context, m *Manifest, lock *Lockfile, opts Options) ([]LockedPackage, error) {
+func resolveMachine(ctx context.Context, m *Manifest, lock *Lockfile, opts Options) ([]LockedPackage, error) {
 	// A fresh lock view per attempt: Resolve mutates nothing, but the
 	// fallback pass must see the ON-DISK lock, not one a failed run touched.
 	view := &Lockfile{Path: lock.Path, Packages: append([]LockedPackage(nil), lock.Packages...)}
 	return NewResolver(m, view, opts).Resolve(ctx)
+}
+
+// onlyStdlib narrows a resolution result to the standard library, so
+// --setup reports on what it claims to be doing. The machine project may
+// hold anything the user installed there, and listing those under "standard
+// library ready" would be a lie in the one message people read.
+func onlyStdlib(packages []LockedPackage) []LockedPackage {
+	for _, p := range packages {
+		if p.Name == StdlibPackageName {
+			return []LockedPackage{p}
+		}
+	}
+	return nil
 }
 
 func describeVersions(packages []LockedPackage) string {
@@ -182,7 +216,16 @@ func describeVersions(packages []LockedPackage) string {
 // needs one, so a file importing nothing still compiles on a machine that has
 // never run --setup.
 func StdlibRoots() (map[string]string, error) {
-	lockPath, err := StdlibLockPath()
+	return machineRoots(true)
+}
+
+// MachineRoots is every package installed machine-wide, expanded.
+func MachineRoots() (map[string]string, error) {
+	return machineRoots(false)
+}
+
+func machineRoots(stdlibOnly bool) (map[string]string, error) {
+	lockPath, err := MachineLockPath()
 	if err != nil {
 		return nil, err
 	}
@@ -196,6 +239,9 @@ func StdlibRoots() (map[string]string, error) {
 
 	out := map[string]string{}
 	for _, p := range lock.Packages {
+		if stdlibOnly && p.Name != StdlibPackageName {
+			continue
+		}
 		dir, err := CacheDir(p.Hash)
 		if err != nil {
 			return nil, err
@@ -203,11 +249,64 @@ func StdlibRoots() (map[string]string, error) {
 		if !dirExists(dir) {
 			continue
 		}
-		for name, d := range stdlibRootsIn(dir) {
-			out[name] = d
+		if p.Name == StdlibPackageName {
+			for name, d := range stdlibRootsIn(dir) {
+				out[name] = d
+			}
+			continue
 		}
+		out[p.Name] = dir
 	}
 	return out, nil
+}
+
+// PackageRootsForFile is the compiler's single entry point for "what packages
+// can this file see?", and the one place the policy lives.
+//
+//	inside a project:  the project's hover.lock, plus the machine's STANDARD
+//	                   LIBRARY — and nothing else machine-wide
+//	outside any:       everything installed machine-wide
+//
+// The asymmetry is the important part. A project declares its dependencies,
+// so a build of it must not silently pick up whatever happens to be installed
+// on this particular machine — that is precisely the failure where a project
+// compiles for its author and not for anyone else, and it cannot be diagnosed
+// from the project's own files. Outside a project there is nothing to be
+// reproducible against and nothing to break, so the convenience is free.
+//
+// The standard library crosses that line because it is the language's own
+// library: every file may assume it, and a project that wants a specific one
+// pins `stdlib` in its manifest, which then wins here by name.
+func PackageRootsForFile(entryFile string) (map[string]string, error) {
+	abs, err := filepath.Abs(entryFile)
+	if err != nil {
+		return nil, err
+	}
+	dir := filepath.Dir(abs)
+
+	inProject := true
+	if _, err := FindProjectRoot(dir); err != nil {
+		inProject = false
+	}
+
+	roots, err := machineRoots(inProject)
+	if err != nil {
+		return nil, err
+	}
+	if roots == nil {
+		roots = map[string]string{}
+	}
+
+	if inProject {
+		project, err := ProjectPackages(dir)
+		if err != nil {
+			return nil, err
+		}
+		for name, d := range project {
+			roots[name] = d
+		}
+	}
+	return ExpandStdlibRoots(roots), nil
 }
 
 // stdlibRootsIn expands one installed standard-library tree into the package
@@ -260,12 +359,12 @@ func ExpandStdlibRoots(roots map[string]string) map[string]string {
 	return roots
 }
 
-// StdlibCacheDirs returns the cache directory names the standard library
-// occupies, so `hpm clean` does not delete it. Keyed by base name, matching
-// how clean enumerates the cache.
-func StdlibCacheDirs() map[string]bool {
+// MachineCacheDirs returns the cache directory names the machine-wide
+// project occupies, so `hpm clean` in some unrelated project does not delete
+// them. Keyed by base name, matching how clean enumerates the cache.
+func MachineCacheDirs() map[string]bool {
 	keep := map[string]bool{}
-	lockPath, err := StdlibLockPath()
+	lockPath, err := MachineLockPath()
 	if err != nil {
 		return keep
 	}

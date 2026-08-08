@@ -21,6 +21,8 @@ Commands:
   install <package>        Add a package from an index, then install it.
   install <archive-url>    Add an unindexed package by archive URL.
   update [package...]      Move to newer versions and rewrite the lockfile.
+  update --latest [pkg...] Also widen the requirements in hover.toml, so a
+                           pinned package can move to today's newest.
   remove <package>         Drop a dependency.
   list                     Show what this project depends on.
   verify                   Re-check every locked package against its hash.
@@ -38,7 +40,18 @@ Options:
   --git                    With "install <url>", use the git transport (private repos).
   --rev <ref>              With --git, the tag, branch or commit to check out.
   --manifest <path>        Use this hover.toml instead of searching upwards.
+  -g, --global             Operate on the machine-wide project in ~/.hover,
+                           even when standing inside a project.
+  --latest                 With "update", raise requirements to the newest
+                           published version instead of staying within them.
   -j <n>                   Maximum simultaneous downloads.
+
+With no hover.toml in the current directory or any parent, commands operate
+on the machine-wide project in ~/.hover — no init step needed. Packages
+installed there are visible to loose .hvr files anywhere, but NOT inside a
+project: a project declares its own dependencies so that it builds the same
+way on someone else's machine. The standard library is the exception, and is
+always visible.
 
 Packages are archives (.tar.gz or .tar.zst) verified against a content hash.
 hover-lang.org hosts an index of pointers, never package bytes; see
@@ -112,6 +125,15 @@ type cliFlags struct {
 	Rev      string
 	Manifest string
 	Jobs     int
+
+	// Global forces the machine-wide project in ~/.hover even when standing
+	// inside one. Without it, being inside a project means the project wins,
+	// which is what you want almost always.
+	Global bool
+
+	// Latest widens version requirements to today's newest before updating.
+	// Only `update` reads it.
+	Latest bool
 }
 
 // parseFlags separates flags from positional arguments, in any order. An
@@ -139,6 +161,10 @@ func parseFlags(args []string) (cliFlags, []string, error) {
 			f.Locked = true
 		case arg == "--git":
 			f.Git = true
+		case arg == "--global", arg == "-g":
+			f.Global = true
+		case arg == "--latest":
+			f.Latest = true
 		case arg == "--name":
 			f.Name, i, err = need(i, "--name")
 		case strings.HasPrefix(arg, "--name="):
@@ -197,9 +223,25 @@ func (f cliFlags) options() Options {
 }
 
 // project locates and loads the manifest for the current command.
+//
+// With no project anywhere above the working directory, this falls back to
+// the MACHINE-WIDE one in ~/.hover, creating it on demand. `hpm install foo`
+// therefore works from anywhere, with no init step — the same way `pacman
+// -S` does not ask you to declare a project first.
+//
+// `hpm init` still exists, and is still what you want for anything you
+// intend to share: a project's dependencies belong in a file next to its
+// source, committed, so the build is the same on someone else's machine.
+// The machine-wide set is for loose files and experiments.
 func (f cliFlags) project() (*Manifest, *Lockfile, error) {
 	dir := ""
-	if f.Manifest != "" {
+	switch {
+	case f.Global:
+		var err error
+		if dir, err = machineProjectDir(); err != nil {
+			return nil, nil, err
+		}
+	case f.Manifest != "":
 		abs, err := filepath.Abs(f.Manifest)
 		if err != nil {
 			return nil, nil, err
@@ -209,14 +251,16 @@ func (f cliFlags) project() (*Manifest, *Lockfile, error) {
 		} else {
 			dir = filepath.Dir(abs)
 		}
-	} else {
+	default:
 		cwd, err := os.Getwd()
 		if err != nil {
 			return nil, nil, err
 		}
 		dir, err = FindProjectRoot(cwd)
 		if err != nil {
-			return nil, nil, err
+			if dir, err = machineProjectDir(); err != nil {
+				return nil, nil, err
+			}
 		}
 	}
 
@@ -229,6 +273,22 @@ func (f cliFlags) project() (*Manifest, *Lockfile, error) {
 		return nil, nil, err
 	}
 	return m, lock, nil
+}
+
+// reportScope says where a command is operating when that is not the
+// obvious answer.
+//
+// Silent when standing in a project — the manifest is right there. Loud for
+// the machine-wide one, because "installed into ~/.hover, not here" is
+// exactly the surprise worth spending a line on: the package will not be
+// visible from inside a project, and nothing else on screen would say so.
+func reportScope(m *Manifest) {
+	home, err := HoverHome()
+	if err != nil || m.Dir != home {
+		return
+	}
+	fmt.Printf("Installing machine-wide into %s (no %s here).\n", m.Path, ManifestName)
+	fmt.Printf("Run `hover hpm init` first to make this a project instead.\n")
 }
 
 func fail(err error) int {
@@ -271,6 +331,7 @@ func cmdInstall(ctx context.Context, f cliFlags, args []string) int {
 	if err != nil {
 		return fail(err)
 	}
+	reportScope(m)
 
 	// The manifest is restored if resolution fails. Adding a dependency and
 	// installing it is one action from the user's point of view, so a failed
@@ -370,10 +431,127 @@ func cmdUpdate(ctx context.Context, f cliFlags, args []string) int {
 			return fail(fmt.Errorf("%q is not a dependency of this project", name))
 		}
 	}
+	if f.Latest {
+		if err := widenToLatest(ctx, m, args); err != nil {
+			return fail(err)
+		}
+		// Re-read, so resolution runs against the bytes on disk rather than
+		// an in-memory model that could differ from them.
+		if m, lock, err = f.project(); err != nil {
+			return fail(err)
+		}
+	}
+
 	opts := f.options()
 	opts.Update = true
 	opts.UpdateOnly = args
 	return resolveAndLock(ctx, m, lock, opts)
+}
+
+// widenToLatest rewrites version requirements to admit the newest published
+// version, for `hpm update --latest`.
+//
+// Plain `update` moves within what the manifest allows, which is the whole
+// point of writing a requirement down — `^0.8.0` refusing 0.9.0 is semver
+// working, not failing. But nothing else could ever WIDEN a requirement, so
+// a package pinned once stayed pinned until the user happened to know that
+// re-running `install pkg@<newspec>` was the way out. That is tolerable in a
+// project, where the pin is the deliverable, and wrong for the machine-wide
+// set, where the pin is just whatever you typed the first time.
+//
+// Requirements are rewritten to `^<newest>` rather than `*`: the user asked
+// to move to today's newest, not to accept every future breaking change
+// unattended. An already-unbounded `*` is left alone, since narrowing it
+// would be the opposite of what was asked.
+func widenToLatest(ctx context.Context, m *Manifest, only []string) error {
+	targets := only
+	if len(targets) == 0 {
+		for _, d := range m.Deps {
+			targets = append(targets, d.Name)
+		}
+	}
+
+	indexes := map[string]*Index{}
+	changed := false
+
+	for _, name := range targets {
+		d, ok := m.Dep(name)
+		if !ok {
+			return fmt.Errorf("%q is not a dependency of this project", name)
+		}
+		if !d.Indexed() {
+			// A URL or git dependency names one exact artifact; there is no
+			// version list to consult and nothing to widen.
+			if len(only) > 0 {
+				fmt.Printf("  %s is pinned to %s — nothing to widen.\n", name, d.Source())
+			}
+			continue
+		}
+		if strings.TrimSpace(d.Version) == "*" {
+			continue // already accepts anything
+		}
+
+		ix, err := openIndexFor(ctx, m, d.IndexName(), indexes)
+		if err != nil {
+			return err
+		}
+		entry, err := ix.Lookup(d.BareName())
+		if err != nil {
+			return err
+		}
+		newest := newestVersion(entry)
+		if newest == "" {
+			return fmt.Errorf("%q has no published versions to move to", name)
+		}
+		req := "^" + newest
+		if req == d.Version {
+			continue
+		}
+		fmt.Printf("  %s %s -> %s\n", name, d.Version, req)
+		m.AddIndexedDep(name, req)
+		changed = true
+	}
+
+	if !changed {
+		return nil
+	}
+	return m.Save()
+}
+
+// openIndexFor resolves and syncs one index, memoized for this command.
+func openIndexFor(ctx context.Context, m *Manifest, name string, cache map[string]*Index) (*Index, error) {
+	if ix, ok := cache[name]; ok {
+		return ix, nil
+	}
+	url, ok := m.IndexURL(name)
+	if !ok {
+		return nil, fmt.Errorf("index %q is not declared in %s", name, ManifestName)
+	}
+	ix, err := OpenIndex(name, url)
+	if err != nil {
+		return nil, err
+	}
+	if err := ix.Sync(ctx); err != nil && !ix.Synced() {
+		return nil, err
+	}
+	cache[name] = ix
+	return ix, nil
+}
+
+// newestVersion is the highest non-yanked version in an index entry. Yanked
+// versions are skipped: --latest is a request to move forward, and moving
+// onto something its author withdrew is never what was meant.
+func newestVersion(entry *IndexEntry) string {
+	best := ""
+	for _, v := range entry.Versions {
+		if v.Yanked {
+			continue
+		}
+		if best == "" || compareVersions(v.Version, best) > 0 {
+			best = v.Version
+		}
+	}
+	return best
 }
 
 func cmdRemove(ctx context.Context, f cliFlags, args []string) int {
@@ -578,11 +756,11 @@ func cmdClean(f cliFlags) int {
 	if err != nil {
 		return fail(err)
 	}
-	// The standard library lives in the same cache and is kept
-	// unconditionally: it belongs to no project, so a project-scoped clean
-	// would otherwise leave the machine unable to compile `import <math>`
-	// until the next `hover --setup`.
-	keep := StdlibCacheDirs()
+	// The machine-wide project's packages live in the same cache and are
+	// kept unconditionally: they belong to no project, so a project-scoped
+	// clean would otherwise leave the machine unable to compile
+	// `import <math>` until the next `hover --setup`.
+	keep := MachineCacheDirs()
 	for _, p := range lock.Packages {
 		if dir, err := CacheDir(p.Hash); err == nil {
 			keep[filepath.Base(dir)] = true

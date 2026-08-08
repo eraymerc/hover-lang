@@ -6,8 +6,8 @@ rule Go uses for packages and Python uses for packages.
 
 Two things to choose independently:
 
-- **Which directory** — the standard library, a path relative to the
-  importing file, or an installed package.
+- **Which directory** — the standard library, an installed package, or a
+  path relative to the importing file.
 - **How the names arrive** — behind a qualifier (the default), or bound
   directly.
 
@@ -42,14 +42,14 @@ could not tell where a name came from without checking every import in the
 file. Nothing an import brings in can shadow anything, so there is no
 collision to resolve.
 
-Hyphens become underscores, since a package directory may be called anything:
-`import <hvr-rc>;` binds `hvr_rc`. If the automatic name is ugly or illegal,
-`as` overrides it — and a name that could never be an identifier is an error
-naming the import, not a syntax error at the first use:
+Hyphens and dots become underscores, since a package directory may be called
+anything: `import <hvr-rc>;` binds `hvr_rc`. If the automatic name is ugly or
+illegal, `as` overrides it — and a name that could never be an identifier is
+an error naming the import, not a syntax error at the first use:
 
 ```
-line 1: "./3d-parts" would be imported as '3d_parts', which starts with a
-digit — add `as <name>`
+in main.hvr, line 1: "./3d-parts" would be imported as '3d_parts', which
+starts with a digit — add `as <name>`
 ```
 
 ### 2. Whole directory, renamed
@@ -135,22 +135,35 @@ import <myindex:vendor-parts>;        // from an index you added
 ```
 
 There is no `@` or other marker separating a package from the standard
-library, and that is the point: **the standard library is meant to become an
-ordinary installable package too.** `import <math>` should keep working
-whether `math` is the copy bundled next to the binary or a version pinned in
-your lockfile.
+library, and that is the point: **the standard library is an ordinary
+installable package.** `hover --setup` installs it into the machine-wide
+project in `~/.hover`, and `import <math>` resolves through exactly the same
+package table as `import <hvr-rc>`. It ships as one package called `stdlib`
+whose top-level directories (`math`, `semiconductors`, `optoelectronics`,
+`electromechanical`) each become an importable root of their own — so
+`<math>` and `<stdlib/math>` name the same directory and both work.
 
 Resolution order:
 
-1. **The project's lockfile.** If `hover.lock` has a package by that name, it
-   wins.
-2. **The bundled `stdlib/`**, in the directory next to the hover
-   executable — not the current directory, which is what makes
-   `hover foo.hvr` work from anywhere once hover is on `PATH`.
+1. **The package table built from lockfiles.** What goes into it depends on
+   where the entry file lives:
 
-So installing a package named `math` overrides the bundled one. That is how
-you pin a standard-library version, and it is auditable rather than silent —
-everything consulted comes from a committed `hover.lock`.
+   | Compiling | The table contains |
+   |---|---|
+   | A file inside a project | That project's `hover.lock`, **plus the machine's standard library** |
+   | A loose `.hvr` file, no project | Everything installed machine-wide in `~/.hover` |
+
+   Inside a project, other machine-wide packages are ignored on purpose: a
+   project declares its dependencies, so a build must not silently pick up
+   whatever happens to be installed on this particular machine.
+2. **The bundled `stdlib/`**, in the directory next to the hover
+   executable — the fallback for a source tree built from the repository,
+   where the standard library ships beside the binary.
+
+So a project that pins a package named `math` overrides the standard one.
+That is how you pin a standard-library version (`stdlib = "0.8.1"` in
+`hover.toml`), and it is auditable rather than silent — everything consulted
+comes from a committed `hover.lock`.
 
 > **Worth knowing:** a *transitive* dependency named `math` also lands in
 > that lockfile and would override it project-wide. It is visible in
@@ -163,8 +176,9 @@ an import meant for stdlib. It is also a *different package* from an
 unqualified one with the same name: the qualifier is part of the identity,
 which is why a third-party index can never shadow an official name.
 
-**Compiling never installs anything.** If a package is named in source but
-missing:
+**Compiling never installs anything.** Package paths resolve through
+`hover.lock` only; a build never touches the network. If a package is named
+in source but missing, the message depends on what you meant:
 
 ```
 in /path/to/main.hvr, line 4: package "hvr-rc" is not installed —
@@ -172,9 +186,18 @@ run `hover hpm install hvr-rc` (or check the path, if you meant a standard
 library directory)
 ```
 
-See [package-manager-design.md](package-manager-design.md) for how packages
-get there, and [../examples/package/](../examples/package/) for one you can
-build and install.
+```
+the standard library is not installed, so "math" cannot be found —
+run `hover --setup` (it downloads the standard library; this needs network
+access)
+```
+
+The second form is how a fresh install that never ran `--setup` finds out.
+Releases do not bundle the standard library.
+
+See [packages.md](packages.md) for how packages get installed, and
+[../examples/package/](../examples/package/) for one you can build and
+install.
 
 ## Files in one directory share a namespace
 
@@ -211,8 +234,8 @@ Importing your own directory is likewise an error, not a cycle — the names
 are already there:
 
 ```
-line 1: "./" is this file's own directory — files in the same directory
-already share a namespace, so remove the import
+in x.hvr, line 1: "./" is this file's own directory — files in the same
+directory already share a namespace, so remove the import
 ```
 
 **Subdirectories are separate units.** `import <semiconductors>;` gives you
@@ -223,6 +246,10 @@ in an entire tree.
 **The entry file is not merged with its siblings.** You compile a *file*, and
 that file is its own scope — so a directory of independent testbenches, each
 declaring `main`, keeps working.
+
+**An imported directory must contain at least one `.hvr` file** — an empty
+one is an error naming the directory that was found, which catches a misspelt
+path that happens to exist.
 
 ## Imports are not transitive
 
@@ -279,6 +306,7 @@ header is linked automatically.
 | `import <a> as N;` | same directory, as `N.x` |
 | `import <a/b>;` | subdirectory `b`, as `b.x` |
 | `import <idx:a>;` | package `a` from index `idx` — never stdlib |
+| `import <stdlib/a>;` | the standard library's `a`, by its package name |
 | `import "./b";` | directory `b` next to this file, as `b.x` |
 | `from <a> import X;` | just `X`, unqualified |
 | `from <a> import X as Y;` | just `X`, called `Y` |

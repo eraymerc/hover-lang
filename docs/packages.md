@@ -56,8 +56,8 @@ analog module Diode<double Is, double n, double Vt>() [wire a, wire c] {
 }
 ```
 
-The qualifier defaults to the last path segment, with hyphens turned into
-underscores (`<hvr-rc>` binds `hvr_rc`). Use `as` to pick something else.
+The qualifier defaults to the last path segment, with hyphens and dots turned
+into underscores (`<hvr-rc>` binds `hvr_rc`). Use `as` to pick something else.
 
 ### Where a directory comes from
 
@@ -74,11 +74,14 @@ standard library *is* an installable package. `hover --setup` downloads it
 into `~/.hover`, and `import <math>` finds it through exactly the same
 package table `import <hvr-rc>` goes through.
 
-The standard library ships as one package called `stdlib`, whose four
-top-level directories each become a package root of their own. So `<math>`
+The standard library ships as one package called `stdlib`, whose top-level
+directories (`math`, `semiconductors`, `optoelectronics`,
+`electromechanical`) each become a package root of their own. So `<math>`
 and `<stdlib/math>` name the same directory and both work. Releases do not
 bundle it: a fresh install must run `hover --setup` once, with network
-access, before any `import <...>` resolves.
+access, before any `import <...>` resolves. The version installed is the one
+built for your compiler — hover 0.8.x asks the index for `^0.8.0`, so stdlib
+patch releases reach you without a new compiler.
 
 A project may pin its own:
 
@@ -105,7 +108,49 @@ the old file-based imports, are in [imports.md](imports.md).
 
 ---
 
-## 3. Starting a project
+## 3. Two places packages can live
+
+**You do not need a project to install anything.** With no `hover.toml` in
+the current directory or any parent, `hpm` operates on the machine-wide
+project in `~/.hover`, creating it on first use:
+
+```sh
+cd ~/scratch
+hover hpm install hvr-rc
+```
+```
+Installing machine-wide into /home/you/.hover/hover.toml (no hover.toml here).
+Run `hover hpm init` first to make this a project instead.
+  installed hvr-rc 0.1.0 from https://...
+```
+
+`~/.hover/hover.toml` is a completely ordinary manifest — `hpm list`,
+`hpm remove` and `hpm update` all work on it, and the standard library is
+just one of its dependencies. Use `-g` / `--global` to reach it from inside
+a project.
+
+(One boundary: the upward search for a `hover.toml` stops at your home
+directory, so a stray manifest in `$HOME` does not silently claim every
+project underneath it.)
+
+### What each scope can see
+
+| Compiling | Sees |
+|---|---|
+| A loose `.hvr` file, no project | Everything installed machine-wide |
+| A file inside a project | That project's `hover.lock`, **plus the standard library** |
+
+The asymmetry is deliberate. Inside a project, machine-wide packages are
+ignored — if they weren't, a project would compile for its author and fail
+for everyone else, and nothing in the project's own files would explain why.
+A project says what it needs; that is what makes `hover hpm install` on a
+fresh clone enough.
+
+The standard library crosses the line because it is the language's own
+library. A project that needs a specific one pins `stdlib` in its manifest,
+which then wins by name.
+
+### Starting a project
 
 ```sh
 mkdir my-circuit && cd my-circuit
@@ -159,9 +204,27 @@ git = "git@github.internal:eng/models.git"
 rev = "v0.3.0"
 ```
 
-Version requirements: an exact version (`"1.2.0"`), `^1.2.0` (compatible),
-`~1.2.0` (patch only), `>=1.2.0`, or `*`. Anything else is rejected by name
-rather than silently reinterpreted.
+Version requirements: an exact version (`"1.2.0"` or `"=1.2.0"`), `^1.2.0`
+(compatible), `~1.2.0` (patch only), `>=1.2.0`, or `*` (also spelled
+`"latest"`). Anything else is rejected by name rather than silently
+reinterpreted.
+
+Installing without naming a version records `*`, so `hpm update` keeps you on
+the newest. Naming one (`hvr-rc@^0.1.0`) is a **pin**, and below 1.0 semver
+puts breaking changes in the minor position — so `^0.1.0` accepts `0.1.9` and
+refuses `0.2.0`. That is the requirement working, not failing.
+
+To move past a pin, widen it:
+
+```sh
+hover hpm update --latest hvr-rc     # ^0.1.0 -> ^0.2.0, then installs it
+hover hpm update --latest            # every pinned dependency
+```
+
+It rewrites `hover.toml` to `^<newest published>` rather than `*`: you asked
+to move to today's newest, not to accept every future breaking release
+unattended. Yanked versions are skipped, and URL or git dependencies are left
+alone — they already name one exact artifact.
 
 ### Then use it
 
@@ -219,30 +282,33 @@ Everything lives under `hover hpm`. Releases also ship an `hpm` symlink to
 the same binary (`hpm.bat` on Windows), so `hpm install foo` and
 `hover hpm install foo` are the same words in the same order.
 
-| Command | What it does |
-|---|---|
-| `hpm init [name]` | Create a `hover.toml`. |
-| `hpm install` | Restore from manifest + lockfile. No resolution, no index sync, no network if everything is cached. |
-| `hpm install <pkg>` | Add an indexed package. `pkg@^1.2` pins a requirement. |
-| `hpm install <url>` | Add an unindexed package by archive URL. |
-| `hpm install <repo> --git` | Add via the optional git transport. |
-| `hpm update [pkg...]` | Sync indexes, move to newer versions, rewrite the lockfile. |
-| `hpm remove <pkg>` | Drop a dependency, then re-resolve so anything it alone pulled in goes too. |
-| `hpm list` | Direct dependencies, then what they pulled in. |
-| `hpm verify` | Re-check every locked package (see below). |
-| `hpm index add <url>` | Trust an additional index. Prompts. |
-| `hpm index list` | Configured indexes and how stale each is. |
-| `hpm index remove <name>` | Stop using an index. |
-| `hpm clean` | Delete cached packages this project no longer references. Never the standard library. |
-| `hpm hash <dir>` | Print a directory's content hash, for pasting into an index entry. |
+| Command | Aliases | What it does |
+|---|---|---|
+| `hpm init [name]` | | Create a `hover.toml`. Not required — without one, commands act machine-wide. |
+| `hpm install` | `i`, `add` | Restore from manifest + lockfile. No resolution, no index sync, no network if everything is cached. |
+| `hpm install <pkg>` | | Add an indexed package. `pkg@^1.2` pins a requirement. |
+| `hpm install <url>` | | Add an unindexed package by archive URL. |
+| `hpm install <repo> --git` | | Add via the optional git transport. |
+| `hpm update [pkg...]` | `upgrade` | Sync indexes, move to newer versions **within what `hover.toml` allows**, rewrite the lockfile. |
+| `hpm update --latest [pkg...]` | | Also widen the requirements themselves to `^<newest published>`. The way out of a pin. |
+| `hpm remove <pkg>` | `rm`, `uninstall` | Drop a dependency, then re-resolve so anything it alone pulled in goes too. |
+| `hpm list` | `ls` | Direct dependencies, then what they pulled in. |
+| `hpm verify` | | Re-check every locked package (see below). |
+| `hpm index add <url>` | | Trust an additional index. Prompts. |
+| `hpm index list` | | Configured indexes and how stale each is. |
+| `hpm index remove <name>` | | Stop using an index; also drops the dependencies that came from it. |
+| `hpm clean` | | Delete cached packages this project no longer references. Never the standard library. |
+| `hpm hash <dir>` | | Print a directory's content hash, for pasting into an index entry. |
 
 Flags:
 
 | Flag | Meaning |
 |---|---|
+| `-g`, `--global` | Act on the machine-wide project in `~/.hover`, even inside a project. |
+| `--latest` | With `update`: raise requirements instead of staying inside them. |
 | `--offline` | Never touch the network; fail if something is missing. |
-| `--locked` | Fail rather than change `hover.lock`. Use in CI. |
-| `--name <n>` | With `install <url>`, the name to install it as. |
+| `--locked` (`--frozen`) | Fail rather than change `hover.lock`. Use in CI. |
+| `--name <n>` | With `install <url>` or `index add <url>`, the name to use. |
 | `--git` | With `install <url>`, use the git transport. |
 | `--rev <ref>` | With `--git`, the tag/branch/commit. |
 | `--manifest <p>` | Use this `hover.toml` instead of searching upward. |
@@ -254,14 +320,18 @@ Flags:
 hover hpm verify
 ```
 
-Three checks per package, which is why it is its own command rather than a
-flag on install (install must stay fast and offline-capable; verify
-deliberately reaches the network for everything):
+Checks per package, which is why it is its own command rather than a flag on
+install (install must stay fast and offline-capable; verify deliberately
+reaches the network for everything):
 
-1. The archive is still reachable — catches link rot.
-2. It still hashes to the locked value — catches a re-uploaded release asset
+1. The **cached copy** hasn't been modified since install.
+2. The archive is still reachable — catches link rot.
+3. It still hashes to the locked value — catches a re-uploaded release asset
    or tampering.
-3. The **cached copy** hasn't been modified since install.
+
+With `--offline`, only the first check runs. A package fetched through the
+git transport likewise skips the upstream check — there is no archive URL to
+re-download.
 
 ```
   FAIL  hvr-rc    UPSTREAM CHANGED
@@ -328,6 +398,10 @@ Two things to get right:
 - **Don't reuse a name across files in the same directory.** It is an error,
   reported with both source locations.
 
+Package and index names may contain letters, digits, `-` and `_` (64
+characters at most) — never a path separator, since the name becomes both a
+directory in the cache and a file in an index.
+
 ### The optional manifest
 
 Only needed if your package has dependencies of its own:
@@ -343,7 +417,7 @@ some-other-package = "^2.0"
 
 A transitive dependency may name the official index or a URL, but **not an
 added index** — that would let your package pull in an index the consuming
-project never agreed to trust.
+project never agreed to trust, and it is an error that says so.
 
 ### Test it locally before publishing
 
@@ -380,9 +454,9 @@ url = "https://github.com/you/hvr-rc/archive/refs/tags/v0.1.0.tar.gz"
 
 Nothing was uploaded to anyone. This step alone is a published package.
 
-Accepted formats are `.tar.gz` and `.tar.zst`. Not `.zip` — `.tar.gz` is
-always available from the same hosts, and a second extractor is more
-attack surface for no gain.
+Accepted formats are `.tar.gz`, `.tgz` and `.tar.zst`. Not `.zip` —
+`.tar.gz` is always available from the same hosts, and a second archive
+layout is more attack surface for no gain.
 
 ### Step 2 — get a short name (optional)
 
@@ -400,13 +474,17 @@ url = "https://github.com/you/hvr-rc/archive/refs/tags/v0.1.0.tar.gz"
 hash = "sha256:183d452a336d96eef4bb13c212b313f09e915d543a8d14b3fbbe93892219e8b0"
 ```
 
-Get the hash by installing it once by URL and reading `hover.lock`.
+The hash is over the **unpacked tree**, not the archive — two archives of
+identical sources differ over timestamps and compression level, so
+`sha256sum` on the file would be useless as a pin. Get it with
+`hover hpm hash hvr-rc/`, or by installing once by URL and reading
+`hover.lock`.
 
 Publishing a new version appends a `[[version]]` block. To retire one, set
 `yanked = true` rather than deleting it — a yanked version is skipped for new
-resolutions but still resolves for anyone who already locked it. Deleting a
-version outright is npm's unpublish, which is how left-pad broke thousands of
-builds.
+resolutions but still resolves for anyone who already locked it (or asked
+for that exact version). Deleting a version outright is npm's unpublish,
+which is how left-pad broke thousands of builds.
 
 > The official index does not exist yet. Until it is created and publishing
 > an `index.tar.gz`, URL and git dependencies are the way to share packages.
@@ -418,7 +496,8 @@ builds.
 An index is an archive containing a `packages/` directory of those TOML
 files, downloaded and unpacked into `~/.hover/index/<name>/`. Once synced,
 resolution works with the network down — an index outage costs you discovery
-of *new* packages, not your build.
+of *new* packages, not your build. (A failed refresh during `install` is a
+warning against the existing copy, never an error.)
 
 There is a complete, runnable one at [../examples/index/](../examples/index/),
 including a script that builds the archive and a walkthrough that installs
@@ -447,7 +526,11 @@ url = "https://example.com/my-index.tar.gz"
 **Names from an added index are always qualified.** `myindex:vendor-parts` in
 the manifest, `<myindex:vendor-parts>` in an import. An added index can
 therefore never shadow an official package name — the 2021 dependency-
-confusion attack class simply has nowhere to land here.
+confusion attack class simply has nowhere to land here. The name `official`
+is reserved: it cannot be added, removed, or redeclared.
+
+Removing an index also removes the dependencies that came from it, since a
+manifest naming an index it no longer declares would no longer validate.
 
 ---
 
@@ -459,14 +542,15 @@ confusion attack class simply has nowhere to land here.
 | `hover.lock` | Generated, committed. Pins version, URL and content hash. |
 | `~/.hover/index/<name>/` | Unpacked index archives. |
 | `~/.hover/hpm/<hash>/` | Content-addressed package cache, shared across every project on the machine. |
-| `~/.hover/stdlib.lock` | Which standard library `hover --setup` installed. Machine-wide, not per project. |
+| `~/.hover/hover.toml` | The machine-wide project. Holds the standard library, plus anything installed outside a project. |
+| `~/.hover/hover.lock` | Its lockfile. |
 
 Everything is user-scoped. Nothing is written next to the hover binary, which
 may live in a root-owned directory — an install that only worked under `sudo`
 would leave files the user could not later replace. `hpm clean` never removes
-the standard library, even though it shares the same cache: it belongs to no
-project, so a project-scoped clean would otherwise break every other project
-on the machine.
+machine-wide packages, even though they share the same cache: they belong to
+no project, so a project-scoped clean would otherwise break `import <math>`
+for every loose file on the machine.
 
 | Variable | Effect |
 |---|---|
@@ -482,6 +566,10 @@ on the machine.
 it, or you cloned a project and haven't run `hover hpm install` yet. If you
 meant a standard library directory, check the spelling.
 
+**`the standard library is not installed, so "math" cannot be found`** — a
+fresh release that has never run `hover --setup`. Run it once, with network
+access.
+
 **`an import names a directory, not a file`** — the old `<math/math.hvr>`
 spelling. The message names the replacement. See the migration checklist in
 [imports.md](imports.md).
@@ -496,6 +584,9 @@ declare the same name. They share a namespace, so one has to change.
 **`this file's own directory`** — a leftover import of a sibling. Delete it;
 the names are already there.
 
+**`"<dir>" contains no .hvr files`** — the directory exists but holds nothing
+importable. Usually a misspelt path that happens to exist.
+
 **`content ... does not match the expected hash`** — upstream changed after
 the version was recorded. Nothing was installed. If the change is legitimate,
 `hover hpm update` re-resolves and re-records it.
@@ -504,5 +595,16 @@ the version was recorded. Nothing was installed. If the change is legitimate,
 lockfile disagree. Run `hover hpm update <pkg>` locally and commit the
 lockfile.
 
+**`version conflict on "..." — no published version satisfies every
+requirement`** — two dependencies ask for incompatible ranges of the same
+package. The error lists who required what, and everything published.
+
 **`would be imported as '3d_parts', which starts with a digit`** — the
 directory name doesn't make a legal identifier. Add `as <name>`.
+
+**`refusing to download over plain http`** — real package URLs must be
+`https`. For a local test server, set `HOVER_ALLOW_INSECURE_HTTP=1`.
+
+**`uses the git transport, but git was not found on PATH`** — one dependency
+needs git (for its credential handling). Install git, or point that
+dependency at an archive URL; everything else installs without it.

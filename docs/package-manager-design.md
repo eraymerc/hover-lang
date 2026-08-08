@@ -443,7 +443,7 @@ package. Nothing in the compiler knows that `math` arrived inside something
 called `stdlib`.
 
 Resolution order is: the project's `hover.lock`, then the machine-wide
-`~/.hover/stdlib.lock`. A project that pins `stdlib = "0.8.1"` gets its own
+`~/.hover/hover.lock`. A project that pins `stdlib = "0.8.1"` gets its own
 standard library expanded the same way, so every `import <math>` in it
 resolves there — pinning a stdlib version still means editing no imports,
 which was the whole point of dropping the sigil.
@@ -458,6 +458,38 @@ standard library.
 The cost of not bundling: a fresh install needs network access once, and the
 trust anchor for every user becomes the index URL rather than the binary they
 already downloaded. Both were accepted deliberately.
+
+### Resolved: no init step, and two scopes
+
+`hpm install foo` outside a project used to fail with "run `hover hpm init`
+first". That was wrong for the common case it hit hardest — a single `.hvr`
+file in a scratch directory, which is how most people meet the language.
+
+`~/.hover` is now itself a project: an ordinary `hover.toml` and
+`hover.lock`, handled by exactly the code that handles any other, created on
+first use. `install`, `list`, `remove` and `update` all work there with no
+new code paths, and the standard library is simply one of its dependencies —
+which is the strongest possible statement that the stdlib is not special.
+
+What a compile can see differs by scope, and the asymmetry is the whole
+design:
+
+| Compiling | Sees |
+|---|---|
+| a loose file, no project | everything installed machine-wide |
+| a file inside a project | that project's `hover.lock`, plus the standard library |
+
+A project ignoring machine-wide packages is the important half. The failure
+it prevents is the one that cannot be debugged from the project's own files:
+code that compiles for its author because of something installed on their
+machine years ago, and fails for everyone else. This is why `pip install`
+outside a virtualenv is a known hazard and why Cargo has no global library
+store at all. The convenience is free precisely where there is nothing to be
+reproducible against.
+
+The standard library is exempt because every file may assume it. A project
+that needs a specific one pins `stdlib` in its own manifest, which then wins
+by name — no special case, just ordinary shadowing.
 
 The index qualifier travels with the package name because that pair *is* the
 identity — two indexes may legitimately publish the same name, and they are
