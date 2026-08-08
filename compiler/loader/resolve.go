@@ -49,6 +49,27 @@ func stdlibRoot() (string, error) {
 // one map; a caller that wants a different project calls Load again.
 var PackageRoots map[string]string
 
+// StdlibPackageNames is the set of package names that belong to the standard
+// library, used only to phrase a better error when one of them is missing.
+//
+// Injected by main rather than defined here, because which packages make up
+// the standard library is the package manager's business, and the compiler
+// importing hpm to ask would invert the layering for the sake of four
+// strings. Empty is fine: the diagnostic just falls back to the generic
+// "not installed" wording.
+var StdlibPackageNames map[string]bool
+
+// SetStdlibPackageNames records the standard library's package names.
+func SetStdlibPackageNames(names []string) {
+	m := make(map[string]bool, len(names))
+	for _, n := range names {
+		m[n] = true
+	}
+	StdlibPackageNames = m
+}
+
+func isStdlibPackage(name string) bool { return StdlibPackageNames[name] }
+
 // SetPackageRoots installs the package→directory table for this compilation.
 // Called by Load; exported so a host embedding the compiler can supply its
 // own resolution without going through a lockfile on disk.
@@ -210,6 +231,15 @@ func missingPackageHint(importPath string, isSystem bool) string {
 		if info, statErr := os.Stat(filepath.Join(root, filepath.FromSlash(pkg))); statErr == nil && info.IsDir() {
 			return "" // a real stdlib directory; the missing thing is inside it
 		}
+	}
+	// Standard-library names get their own message. Releases ship no
+	// stdlib, so the overwhelmingly likely cause of `import <math>` failing
+	// is a fresh install that has never run --setup — and telling that user
+	// to `hover hpm install math` would send them to configure a project
+	// when nothing is wrong with their project.
+	if isStdlibPackage(pkg) {
+		return fmt.Sprintf("the standard library is not installed, so %q cannot be found — "+
+			"run `hover --setup` (it downloads the standard library; this needs network access)", pkg)
 	}
 	return fmt.Sprintf("package %q is not installed — run `hover hpm install %s` "+
 		"(or check the path, if you meant a standard library directory)", pkg, pkg)

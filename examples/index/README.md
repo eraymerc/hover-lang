@@ -10,16 +10,16 @@ examples/index/
     packages/
         hvr-rc.toml         real — installable, points at ../package/hvr-rc/
         example-parts.toml  illustrative — every supported field
-        math.toml           illustrative — the standard library as a package
+        stdlib.toml         illustrative — the standard library as a package
     make-index.sh           builds index.tar.gz from packages/
 ```
 
-`math.toml` is worth reading even though it is not installable yet: the
-standard library is meant to be published exactly like any other package, and
-it is **four** of them — `math`, `semiconductors`, `optoelectronics` and
-`electromechanical` — because the first segment of an angle import is the
-package name. Their manifests are in the source tree at
-`stdlib/<name>/hover.toml`.
+`stdlib.toml` is worth reading: the standard library is not bundled with
+releases, so an entry exactly like it is what makes `import <math>` work at
+all. It is **one** package whose four top-level directories each become an
+importable package root — its manifest is in the source tree at
+`stdlib/hover.toml`, and `make stdlib-archives` generates the real archive,
+hash and index entry.
 
 See [../../docs/packages.md](../../docs/packages.md) for the whole workflow
 and [../../docs/package-manager-design.md](../../docs/package-manager-design.md)

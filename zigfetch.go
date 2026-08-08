@@ -18,9 +18,11 @@ package main
 
 import (
 	"archive/zip"
+	"context"
 	"encoding/json"
 	"fmt"
 	"hover/compiler/loader"
+	"hover/hpm"
 	"io"
 	"net/http"
 	"os"
@@ -138,6 +140,17 @@ func runSetup() {
 		fmt.Printf("[Setup] %v\n", err)
 		os.Exit(1)
 	}
+
+	// The standard library is downloaded, not bundled: releases ship no
+	// stdlib/ directory, so this step is what makes `import <math>` work.
+	// It runs last because it is the only part that needs the network, and
+	// a failure here leaves a hover that still compiles anything importing
+	// only relative files.
+	if err := hpm.InstallStdlib(context.Background(), Version, os.Stdout); err != nil {
+		fmt.Printf("[Setup] %v\n", err)
+		os.Exit(1)
+	}
+
 	fmt.Println("[Setup] Done — hover is ready to use.")
 }
 

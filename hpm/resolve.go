@@ -122,10 +122,17 @@ type Resolver struct {
 	lock     *Lockfile
 	opts     Options
 
-	mu      sync.Mutex // guards indexes, synced, done and printing
-	indexes map[string]*Index
-	synced  map[string]bool
+	mu      sync.Mutex // guards indexes, done and printing
+	indexes map[string]*indexState
 	done    map[string]*resolved
+}
+
+// indexState is one index plus its once-only sync outcome. The sync.Once is
+// the whole point: see (*Resolver).index.
+type indexState struct {
+	ix   *Index
+	once sync.Once
+	err  error
 }
 
 // NewResolver prepares a resolver for a project.
@@ -134,8 +141,7 @@ func NewResolver(m *Manifest, lock *Lockfile, opts Options) *Resolver {
 		manifest: m,
 		lock:     lock,
 		opts:     opts,
-		indexes:  map[string]*Index{},
-		synced:   map[string]bool{},
+		indexes:  map[string]*indexState{},
 		done:     map[string]*resolved{},
 	}
 }
@@ -227,6 +233,12 @@ func (r *Resolver) runWave(ctx context.Context, wave []pending) ([]pending, erro
 
 	if len(errs) > 0 {
 		sort.Strings(errs)
+		// One cause, many victims: an unreachable index fails every package
+		// in the wave with the identical message, and printing "4
+		// dependencies failed" above four copies of one sentence describes
+		// the blast radius instead of the problem. Deduplicated, the
+		// network-down case reads as the single failure it is.
+		errs = dedupe(errs)
 		if len(errs) == 1 {
 			return nil, fmt.Errorf("%s", errs[0])
 		}
@@ -236,6 +248,17 @@ func (r *Resolver) runWave(ctx context.Context, wave []pending) ([]pending, erro
 
 	sort.Slice(next, func(i, j int) bool { return next[i].dep.Name < next[j].dep.Name })
 	return next, nil
+}
+
+// dedupe removes repeated strings from a sorted slice, preserving order.
+func dedupe(sorted []string) []string {
+	out := sorted[:0]
+	for i, s := range sorted {
+		if i == 0 || s != sorted[i-1] {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 // resolveOne resolves a single dependency, returning nil when the existing
@@ -481,39 +504,50 @@ func (r *Resolver) cachedDir(name, hash string) (string, error) {
 // back to and does fail.
 func (r *Resolver) index(ctx context.Context, name string) (*Index, error) {
 	r.mu.Lock()
-	ix, have := r.indexes[name]
+	st, have := r.indexes[name]
 	if !have {
 		url, ok := r.manifest.IndexURL(name)
 		if !ok {
 			r.mu.Unlock()
 			return nil, fmt.Errorf("index %q is not declared in %s", name, ManifestName)
 		}
-		var err error
-		ix, err = OpenIndex(name, url)
+		ix, err := OpenIndex(name, url)
 		if err != nil {
 			r.mu.Unlock()
 			return nil, err
 		}
-		r.indexes[name] = ix
-	}
-	needSync := !r.opts.Offline && !r.synced[name]
-	if needSync {
-		r.synced[name] = true
+		st = &indexState{ix: ix}
+		r.indexes[name] = st
 	}
 	r.mu.Unlock()
 
-	if !needSync {
-		return ix, nil
+	if r.opts.Offline {
+		return st.ix, nil
 	}
-	if err := ix.Sync(ctx); err != nil {
-		if !ix.Synced() {
-			return nil, err
+
+	// Sync exactly once per index, with everyone else WAITING for it rather
+	// than proceeding. A wave resolves several packages from one index
+	// concurrently, and an earlier version marked the index synced before
+	// the sync had actually run — so the other goroutines raced ahead and
+	// looked up names in an index that was still empty, failing with
+	// "index has never been synced" while the sync was in flight beside
+	// them. sync.Once is what makes "first caller does the work, the rest
+	// block until it is done" the only possible ordering.
+	st.once.Do(func() {
+		if err := st.ix.Sync(ctx); err != nil {
+			if !st.ix.Synced() {
+				st.err = err
+				return
+			}
+			r.mu.Lock()
+			fmt.Fprintf(r.opts.out(), "  warning: could not refresh index %q (%v) — using the local copy\n", name, err)
+			r.mu.Unlock()
 		}
-		r.mu.Lock()
-		fmt.Fprintf(r.opts.out(), "  warning: could not refresh index %q (%v) — using the local copy\n", name, err)
-		r.mu.Unlock()
+	})
+	if st.err != nil {
+		return nil, st.err
 	}
-	return ix, nil
+	return st.ix, nil
 }
 
 // selectForAll picks the highest version satisfying every accumulated

@@ -68,11 +68,28 @@ import <semiconductors/bjt>;     // a subdirectory of either
 import <myindex:vendor-parts>;   // a package from an index you added
 ```
 
-For angle imports, **the first segment is a package name**, resolved
-lockfile-first and bundled-`stdlib/`-second. There is no sigil
-separating "package" from "standard library" — deliberately, because the
-standard library is meant to become an installable package itself, and
-`import <math>` should keep working either way.
+For angle imports, **the first segment is a package name**. There is no sigil
+separating "package" from "standard library", deliberately — because the
+standard library *is* an installable package. `hover --setup` downloads it
+into `~/.hover`, and `import <math>` finds it through exactly the same
+package table `import <hvr-rc>` goes through.
+
+The standard library ships as one package called `stdlib`, whose four
+top-level directories each become a package root of their own. So `<math>`
+and `<stdlib/math>` name the same directory and both work. Releases do not
+bundle it: a fresh install must run `hover --setup` once, with network
+access, before any `import <...>` resolves.
+
+A project may pin its own:
+
+```toml
+[dependencies]
+stdlib = "0.8.1"
+```
+
+Then every `import <math>` in that project resolves to *that* standard
+library, and the machine-wide one is ignored. This works because nothing in
+the compiler treats stdlib names as reserved.
 
 ### Three rules that follow
 
@@ -216,7 +233,8 @@ the same binary (`hpm.bat` on Windows), so `hpm install foo` and
 | `hpm index add <url>` | Trust an additional index. Prompts. |
 | `hpm index list` | Configured indexes and how stale each is. |
 | `hpm index remove <name>` | Stop using an index. |
-| `hpm clean` | Delete cached packages this project no longer references. |
+| `hpm clean` | Delete cached packages this project no longer references. Never the standard library. |
+| `hpm hash <dir>` | Print a directory's content hash, for pasting into an index entry. |
 
 Flags:
 
@@ -441,10 +459,14 @@ confusion attack class simply has nowhere to land here.
 | `hover.lock` | Generated, committed. Pins version, URL and content hash. |
 | `~/.hover/index/<name>/` | Unpacked index archives. |
 | `~/.hover/hpm/<hash>/` | Content-addressed package cache, shared across every project on the machine. |
+| `~/.hover/stdlib.lock` | Which standard library `hover --setup` installed. Machine-wide, not per project. |
 
-The cache is user-scoped, unlike `stdlib/`, which lives next to the
-hover binary. Dependencies must never land in a possibly root-owned install
-directory.
+Everything is user-scoped. Nothing is written next to the hover binary, which
+may live in a root-owned directory — an install that only worked under `sudo`
+would leave files the user could not later replace. `hpm clean` never removes
+the standard library, even though it shares the same cache: it belongs to no
+project, so a project-scoped clean would otherwise break every other project
+on the machine.
 
 | Variable | Effect |
 |---|---|

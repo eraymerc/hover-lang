@@ -28,6 +28,8 @@ Commands:
   index list               Show configured indexes.
   index remove <name>      Stop using an index.
   clean                    Remove cached packages no longer referenced.
+  hash <directory>         Print the content hash of a package directory,
+                           for pasting into an index entry.
 
 Options:
   --offline                Never touch the network; fail if something is missing.
@@ -90,6 +92,8 @@ func Run(args []string) int {
 		return cmdIndex(ctx, flags, positional)
 	case "clean":
 		return cmdClean(flags)
+	case "hash":
+		return cmdHash(positional)
 	default:
 		fmt.Fprintf(os.Stderr, "hpm: unknown command %q\n\n%s\n", cmd, Usage)
 		return 1
@@ -574,7 +578,11 @@ func cmdClean(f cliFlags) int {
 	if err != nil {
 		return fail(err)
 	}
-	keep := map[string]bool{}
+	// The standard library lives in the same cache and is kept
+	// unconditionally: it belongs to no project, so a project-scoped clean
+	// would otherwise leave the machine unable to compile `import <math>`
+	// until the next `hover --setup`.
+	keep := StdlibCacheDirs()
 	for _, p := range lock.Packages {
 		if dir, err := CacheDir(p.Hash); err == nil {
 			keep[filepath.Base(dir)] = true
@@ -604,6 +612,30 @@ func cmdClean(f cliFlags) int {
 		}
 	}
 	fmt.Printf("Removed %d cached package(s).\n", removed)
+	return 0
+}
+
+// cmdHash prints the content hash of a directory as an index entry would
+// record it.
+//
+// The hash is taken over the UNPACKED TREE, not the archive, which is why
+// this cannot be done with sha256sum: two archives of identical sources
+// differ byte-for-byte over timestamps, ordering and compression level, and
+// a hash that changed when you re-ran tar would be useless as a pin. Publish
+// with this; `hpm install` recomputes it after extraction and compares.
+func cmdHash(args []string) int {
+	if len(args) != 1 {
+		return fail(fmt.Errorf("usage: hpm hash <directory>"))
+	}
+	dir := args[0]
+	if !dirExists(dir) {
+		return fail(fmt.Errorf("%s is not a directory", dir))
+	}
+	h, err := HashTree(dir)
+	if err != nil {
+		return fail(err)
+	}
+	fmt.Println(h)
 	return 0
 }
 

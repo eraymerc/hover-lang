@@ -1,0 +1,37 @@
+# The standard library, published as an ordinary index entry.
+#
+# This is the point of having no sigil for packages: `import <math>` resolves
+# through the same package table as any other import, so an entry like this
+# is the ONLY way a standard library reaches a user. Releases bundle none —
+# `hover --setup` installs this package into ~/.hover.
+#
+# One package, four import roots. The archive's root holds math/,
+# semiconductors/, optoelectronics/ and electromechanical/, and hpm binds
+# each as its own package root, so `import <math>` and `import <stdlib/math>`
+# name the same directory. See stdlib/hover.toml in the source tree.
+#
+# A project pins its own standard library by depending on this package
+# directly:
+#
+#   [dependencies]
+#   stdlib = "0.8.1"
+#
+# ILLUSTRATIVE: the URL below is a placeholder. Generate the real entry —
+# archive, hash and all — with:
+#
+#   make stdlib-archives VERSION=v0.8.0 STDLIB_BASE_URL=https://your.host/path
+#
+# which writes both the .tar.gz to upload and the packages/stdlib.toml to
+# merge here.
+
+name = "stdlib"
+description = "The Hover standard library"
+repository = "https://github.com/hover-lang/hover"
+
+# Versions track the hover release they shipped with, so `^0.8.0` means "the
+# 0.8 standard library". A stdlib patch can still ship as 0.8.1 with no
+# compiler release, which is the reason for publishing it this way at all.
+[[version]]
+version = "0.8.0"
+url = "https://example.invalid/hover/releases/stdlib-0.8.0.tar.gz"
+hash = "sha256:0000000000000000000000000000000000000000000000000000000000000010"

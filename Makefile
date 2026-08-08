@@ -147,7 +147,10 @@ $(1):
 	@echo "\n[$(1)] Assembling Hover Standalone..."
 	@rm -rf $$(DIR_$(1))
 	@mkdir -p $$(DIR_$(1))
-	cp -r $(STANDARD_LIB) $$(DIR_$(1))/stdlib
+	# NO stdlib here — it is published to the web and downloaded by
+	# `hover --setup` (see stdlib-archives below, and hpm/stdlib.go). This is
+	# what lets a stdlib fix reach users without a compiler release; the cost
+	# is that a fresh install needs network access once.
 	# Runtime ships complete, sources included — `hover --setup` compiles it.
 	cp -r $(RUNTIME_DIR) $$(DIR_$(1))/runtime
 	rm -rf $$(DIR_$(1))/runtime/build
@@ -170,6 +173,61 @@ $(1):
 endef
 
 $(foreach p,$(PLATFORMS),$(eval $(call PLATFORM_TEMPLATE,$(p))))
+
+# ── STANDARD LIBRARY PUBLISHING ───────────────────────────────────────────────
+# The stdlib is not bundled in releases; it is ONE ordinary package served
+# over HTTP and installed by `hover --setup`. This target builds the archive
+# to upload and the index entry that points at it.
+#
+# STDLIB_VERSION is deliberately separate from VERSION. Releases are tagged
+# v0.8.0 while packages are semver 0.8.0, and — more importantly — a stdlib
+# patch can ship as 0.8.1 with no compiler release at all, which is the whole
+# reason for publishing it this way. `hover --setup` asks for ^0.8.0 and takes
+# the newest matching.
+STDLIB_VERSION ?= $(patsubst v%,%,$(VERSION))
+STDLIB_OUT     := releases/stdlib/$(STDLIB_VERSION)
+
+# Where the archives will be reachable once uploaded. Baked into the
+# generated index entries, so set it to match your hosting.
+STDLIB_BASE_URL ?= https://hover-lang.org/packages/stdlib/$(STDLIB_VERSION)
+
+.PHONY: stdlib-archives
+stdlib-archives:
+	@echo "\n[stdlib] Packaging $(STDLIB_VERSION) from $(STANDARD_LIB)/"
+	@rm -rf $(STDLIB_OUT)
+	@mkdir -p $(STDLIB_OUT)/packages
+	@go build -o $(STDLIB_OUT)/.hover-tool . || exit 1
+	@test -f $(STANDARD_LIB)/hover.toml || { echo "  ! $(STANDARD_LIB)/hover.toml missing"; exit 1; }
+	@# One archive, wrapped in a single stdlib/ directory. hpm strips exactly
+	@# one wrapper on extraction, so the cache ends up holding math/,
+	@# semiconductors/ ... directly — which is what the expansion in
+	@# hpm/stdlib.go binds as one package root each.
+	@#
+	@# --sort/--owner/--group/--mtime make the tarball reproducible: without
+	@# them the same sources produce a different archive every run. The
+	@# content hash is taken over the unpacked tree so it would not change
+	@# either way, but a byte-identical archive is what lets anyone rebuild
+	@# this and check it against what was published.
+	@tar --sort=name --owner=0 --group=0 --numeric-owner \
+	     --mtime='UTC 2020-01-01' \
+	     -C $(dir $(STANDARD_LIB)) -czf $(STDLIB_OUT)/stdlib-$(STDLIB_VERSION).tar.gz $(notdir $(STANDARD_LIB))
+	@h=$$($(STDLIB_OUT)/.hover-tool hpm hash $(STANDARD_LIB)) || exit 1; \
+	 printf 'name = "stdlib"\ndescription = "The Hover standard library"\nrepository = "https://github.com/hover-lang/hover"\n\n[[version]]\nversion = "%s"\nurl = "%s/stdlib-%s.tar.gz"\nhash = "%s"\n' \
+	   "$(STDLIB_VERSION)" "$(STDLIB_BASE_URL)" "$(STDLIB_VERSION)" "$$h" \
+	   > $(STDLIB_OUT)/packages/stdlib.toml; \
+	 echo "  stdlib $(STDLIB_VERSION)  $$h"
+	@rm -f $(STDLIB_OUT)/.hover-tool
+	@# Ready-to-publish index archive. Wrapped in one top-level directory,
+	@# matching what a tag archive from a repository host produces — hpm
+	@# strips exactly one wrapper, so an unwrapped packages/ at the root would
+	@# be stripped instead and the index would look empty.
+	@rm -rf $(STDLIB_OUT)/.stage && mkdir -p $(STDLIB_OUT)/.stage/hover-index
+	@cp -r $(STDLIB_OUT)/packages $(STDLIB_OUT)/.stage/hover-index/packages
+	@tar -C $(STDLIB_OUT)/.stage -czf $(STDLIB_OUT)/index.tar.gz hover-index
+	@rm -rf $(STDLIB_OUT)/.stage
+	@echo "[stdlib] Archives + index entries in $(STDLIB_OUT)/"
+	@echo "[stdlib] Upload the .tar.gz files under $(STDLIB_BASE_URL)/"
+	@echo "[stdlib] Merge packages/*.toml into the index repo, then republish index.tar.gz"
 
 # ── RUNTIME VERIFICATION (CI) ─────────────────────────────────────────────────
 # Mirrors what `hover --setup` does on a user's machine, but with warnings
@@ -204,6 +262,8 @@ help:
 	@echo "  make <platform>    - Package one platform:"
 	@echo "                       $(PLATFORMS)"
 	@echo "  make all           - Package every platform into releases/\$$(VERSION)/"
+	@echo "  make stdlib-archives - Package the standard library for the web"
+	@echo "                       (releases do NOT bundle it; --setup downloads it)"
 	@echo "  make check-runtime - Compile the C++ runtime locally (CI check)"
 	@echo "  make clean         - Remove build artifacts"
 	@echo ""

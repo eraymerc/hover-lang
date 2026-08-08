@@ -1,0 +1,43 @@
+# The Hover standard library, as an ordinary package.
+#
+# One package, four import roots. This directory is archived whole and
+# published as a single entry called "stdlib"; extracting it yields the four
+# top-level directories below, and hpm binds each of them as its own package
+# root. So the import spelling is unchanged by the packaging:
+#
+#     from <math> import exp;            # the usual spelling
+#     import <semiconductors/bjt>;
+#     from <stdlib/math> import exp;     # equally valid, same directory
+#
+# Nothing in the compiler treats these names as reserved. `import <math>`
+# goes through exactly the same package table as `import <hvr-rc>` — which is
+# why a project can pin its own standard library in its hover.toml and have
+# every import in it resolve there instead.
+#
+# Contents:
+#
+#   math/                libm bindings, limexp, pnjlim
+#   semiconductors/      diode, plus bjt/ and mosfet/ subdirectories
+#   electromechanical/   pmsm (uses math)
+#   optoelectronics/     leds/ only — no .hvr files at its own root, so
+#                        `import <optoelectronics>` is an error and you write
+#                        `import <optoelectronics/leds>`
+#
+# Dependencies BETWEEN these directories are internal and need no declaration:
+# they ship in one archive, so there is nothing to resolve. semiconductors
+# and electromechanical both `from <math> import ...`, and that works because
+# math is installed beside them, always at the same version.
+#
+# Releases do NOT bundle this directory — `hover --setup` downloads it. See
+# hpm/stdlib.go, and `make stdlib-archives` for how it is published.
+#
+# Declarative only; hover never executes this file.
+
+[package]
+name = "stdlib"
+version = "0.8.0"
+
+[dependencies]
+# None. The standard library depends on nothing outside itself, which is what
+# makes it installable on a machine that has nothing else — the one package
+# every install must be able to fetch cannot have a dependency that might fail.

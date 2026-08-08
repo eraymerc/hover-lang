@@ -407,26 +407,57 @@ With a sigil, `import <math>` and `import <@math>` would be two spellings of
 the same thing depending on where math happened to come from, and pinning a
 stdlib version would mean editing every import in a project.
 
-So the first segment of an angle import is simply a package name, and the
-bundled standard library is the fallback when no installed package claims it:
+So the first segment of an angle import is simply a package name:
 
 ```
-import <math>;               "math" — bundled stdlib, or a pinned package
+import <math>;               "math" — from the standard library, or a pinned package
 import <foo>;                "foo" — an installed package
 import <myindex:foo>;        "foo" from index "myindex" — never stdlib
 from <foo> import Thing;     works with every form
 ```
 
-Resolution is lockfile first, bundled `stdlib/` second. Installing
-a package named `math` therefore overrides the bundled one — deliberately,
-since that is the mechanism for pinning a standard-library version, and it is
-auditable because everything consulted comes from a committed `hover.lock`.
+### Resolved: the standard library is a package, and there is only one of it
+
+The intention above is now the implementation. Releases bundle no `stdlib/`
+at all; `hover --setup` downloads it, and the compiler reaches it through the
+ordinary package table.
+
+It ships as **one** package named `stdlib`, not four. Four was the more
+literal reading of "the first segment is the package name" — `import <math>`
+naming a package called `math` — and it was the first implementation. One
+package won on the things that decide it in practice:
+
+- The four directories are versioned, released and tested as one artifact
+  built from one source tree. Four independent versions could only ever be in
+  lockstep or wrong.
+- `--setup` makes one request instead of four, on the one code path every
+  new install has to survive.
+- Internal dependencies stop needing declaration. `semiconductors` uses
+  `math`; shipping them together makes that a fact rather than a constraint
+  to resolve.
+
+The import spelling is unaffected, because the installed tree is **expanded**
+into one package root per top-level directory. `<math>`, `<semiconductors>`
+and `<stdlib/math>` all name real directories inside the single cached
+package. Nothing in the compiler knows that `math` arrived inside something
+called `stdlib`.
+
+Resolution order is: the project's `hover.lock`, then the machine-wide
+`~/.hover/stdlib.lock`. A project that pins `stdlib = "0.8.1"` gets its own
+standard library expanded the same way, so every `import <math>` in it
+resolves there — pinning a stdlib version still means editing no imports,
+which was the whole point of dropping the sigil.
 
 The hazard this accepts: a *transitive* dependency named `math` also lands in
-that lockfile and overrides project-wide. It is visible in `hover.lock` and
-`hover hpm list`, which is the mitigation, and it is the price of the uniform
-spelling. Index-qualified names are exempt — they never fall back to stdlib,
-so an added index cannot satisfy an import meant for the standard library.
+the project lockfile and overrides project-wide. It is visible in
+`hover.lock` and `hover hpm list`, which is the mitigation, and it is the
+price of the uniform spelling. Index-qualified names are exempt — they never
+fall back to stdlib, so an added index cannot satisfy an import meant for the
+standard library.
+
+The cost of not bundling: a fresh install needs network access once, and the
+trust anchor for every user becomes the index URL rather than the binary they
+already downloaded. Both were accepted deliberately.
 
 The index qualifier travels with the package name because that pair *is* the
 identity — two indexes may legitimately publish the same name, and they are

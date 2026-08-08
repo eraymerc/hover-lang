@@ -39,7 +39,7 @@ const (
 // air-gapped mirrors — not as a supported way to replace the official index
 // with a different one (add a named index for that, so it shows up in a
 // diff and its packages stay qualified).
-const DefaultOfficialIndexURL = "https://github.com/hover-lang/hover-index"
+const DefaultOfficialIndexURL = "https://hover-lang.org/packages/index.tar.gz"
 
 // officialIndexURL resolves the official index location for this process.
 func officialIndexURL() string {

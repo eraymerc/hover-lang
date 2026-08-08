@@ -18,6 +18,12 @@ import (
 	"strings"
 )
 
+// Version is this compiler's release. It is also what decides which standard
+// library `--setup` installs: hover 0.8.x asks the index for "^0.8.0", so the
+// stdlib you get is always the one built for your compiler, while still
+// picking up stdlib patch releases without a new compiler.
+const Version = "0.8.0"
+
 const usage = `Usage: ./hover <filename.hvr> [options]
        ./hover hpm <command> [arguments]
        ./hover --setup
@@ -31,11 +37,15 @@ Options:
   --hovercraft    Emit a reusable HVR_* C-ABI shared library instead of a
                   one-shot simulation binary (see examples/hovercraft/).
   --dump-ast      Print the entry file's AST and exit without compiling.
-  --setup         Check for a usable Zig toolchain and fix it up if not:
-                  on Windows, downloads one into ./toolchain/zig; on Linux,
-                  reports whether one is already on PATH. Run this once
-                  after extracting a release, or any time a compile fails
-                  with a "Zig not found" error. Takes no other arguments.
+  --setup         Prepare this install. Three steps: find a usable Zig
+                  toolchain (on Windows, downloads one into ./toolchain/zig;
+                  on Linux, expects one on PATH), build the C++ runtime from
+                  the shipped sources, and download the standard library into
+                  ~/.hover. Releases do not bundle the standard library, so
+                  this step needs network access and must be run once after
+                  extracting a release. Re-run it any time a compile fails
+                  with a "Zig not found" error, or to pick up a standard
+                  library patch release. Takes no other arguments.
 
 Package management:
   hpm <command>   Manage this project's dependencies (install, update,
@@ -176,7 +186,7 @@ func main() {
 		os.Exit(hpm.Run(os.Args[2:]))
 	}
 
-	fmt.Println("Hover v0.8.0")
+	fmt.Println("Hover v" + Version)
 
 	if len(os.Args) > 1 && os.Args[1] == "--setup" {
 		if len(os.Args) > 2 {
@@ -205,19 +215,47 @@ func main() {
 	libraryMode := opts.libraryMode
 
 	// ── 0. Load — discover entry file + every (non-transitive) import ────────
-	// Package roots come from the LOCKFILE of whatever project contains the
-	// entry file, before anything is read: `import <@pkg/x.hvr>` has to
-	// resolve to exactly what `hover hpm install` put in the cache. Nothing
-	// here resolves versions or touches the network — compiling must never
-	// install, or a build would silently differ from the one that was
-	// locked. A file outside any project simply gets no packages, and
-	// stdlib plus relative imports keep working as before.
-	pkgRoots, err := hpm.ProjectPackagesForFile(entryFile)
+	// Package roots come from LOCKFILES, before anything is read: an import
+	// has to resolve to exactly what was installed. Nothing here resolves
+	// versions or touches the network — compiling must never install, or a
+	// build would silently differ from the one that was locked.
+	//
+	// Two lockfiles, in precedence order:
+	//
+	//   1. ~/.hover/stdlib.lock — the machine's standard library, put there
+	//      by `hover --setup`. Shared by every project on the machine.
+	//   2. <project>/hover.lock — this project's dependencies.
+	//
+	// The project wins on a name collision, and that is the point: the
+	// standard library is an ordinary set of packages, so a project that
+	// pins `math = "0.8.1"` in its own hover.toml gets that math, not the
+	// machine-wide one. Nothing in the compiler treats stdlib names as
+	// reserved.
+	//
+	// A file outside any project simply gets the standard library, and
+	// relative imports keep working with neither.
+	pkgRoots, err := hpm.StdlibRoots()
 	if err != nil {
 		fmt.Printf("[hpm] Error: %v\n", err)
 		os.Exit(1)
 	}
+	projectRoots, err := hpm.ProjectPackagesForFile(entryFile)
+	if err != nil {
+		fmt.Printf("[hpm] Error: %v\n", err)
+		os.Exit(1)
+	}
+	if pkgRoots == nil {
+		pkgRoots = map[string]string{}
+	}
+	for name, dir := range projectRoots {
+		pkgRoots[name] = dir
+	}
+	// A project that pins the standard library itself gets the same
+	// expansion --setup's copy gets, or its `import <math>` would quietly
+	// keep resolving to the machine-wide one.
+	pkgRoots = hpm.ExpandStdlibRoots(pkgRoots)
 	loader.SetPackageRoots(pkgRoots)
+	loader.SetStdlibPackageNames(hpm.StdlibImportNames())
 
 	loadResult, err := loader.Load(entryFile)
 	if err != nil {

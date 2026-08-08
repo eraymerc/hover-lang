@@ -275,7 +275,7 @@ header is linked automatically.
 
 | Written | Means |
 |---|---|
-| `import <a>;` | package `a` if installed, else stdlib; as `a.x` |
+| `import <a>;` | package `a` — installed, or from the standard library; as `a.x` |
 | `import <a> as N;` | same directory, as `N.x` |
 | `import <a/b>;` | subdirectory `b`, as `b.x` |
 | `import <idx:a>;` | package `a` from index `idx` — never stdlib |

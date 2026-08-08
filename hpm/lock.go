@@ -43,7 +43,13 @@ type Lockfile struct {
 // project that has never installed anything simply has no lock yet — so the
 // caller gets an empty lockfile and a false.
 func LoadLockfile(dir string) (*Lockfile, bool, error) {
-	path := filepath.Join(dir, LockName)
+	return LoadLockfileAt(filepath.Join(dir, LockName))
+}
+
+// LoadLockfileAt reads a lockfile from an explicit path. The standard
+// library's machine-wide lock does not live in a project directory and is not
+// called hover.lock, so it cannot go through LoadLockfile.
+func LoadLockfileAt(path string) (*Lockfile, bool, error) {
 	src, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		return &Lockfile{Path: path}, false, nil
