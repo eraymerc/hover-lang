@@ -141,6 +141,14 @@ func InstallStdlib(ctx context.Context, compilerVersion string, out io.Writer) e
 		if err := m.Save(); err != nil {
 			return err
 		}
+		// Re-read, so resolution runs against the bytes on disk rather than
+		// an in-memory model that could differ from them: the edit above
+		// touches the TOML document, not the parsed dependency list, so
+		// resolving `m` as it stands would see no stdlib dependency at all
+		// and install nothing.
+		if m, err = LoadManifest(dir); err != nil {
+			return err
+		}
 	}
 
 	lock, _, err := LoadLockfile(dir)
