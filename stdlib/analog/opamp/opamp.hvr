@@ -1,0 +1,14 @@
+// opamp.hvr
+
+analog module OpAmp
+<double Rin, double gain, double Ro>
+()
+[wire minus, wire plus, wire out]
+{
+    
+    wire plus, minus, out, mid;    
+
+    R<Rin>()[plus, minus];
+    VCVS<gain>()[mid, gnd, plus, minus];
+    R<Ro>()[mid, out];
+}

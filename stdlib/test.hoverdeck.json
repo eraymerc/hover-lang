@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "sheets": {
+    "OpAmp": {
+      "blocks": {},
+      "nets": {}
+    },
+    "main": {
+      "blocks": {
+        "R1": {
+          "x": 168,
+          "y": -72,
+          "rot": 270
+        },
+        "R2": {
+          "x": 352,
+          "y": 56,
+          "rot": 180
+        },
+        "R3": {
+          "x": 616,
+          "y": 384,
+          "rot": 90
+        },
+        "V1": {
+          "x": -168,
+          "y": 104,
+          "rot": 180
+        },
+        "opamp": {
+          "x": 264,
+          "y": 176
+        }
+      },
+      "nets": {
+        "minus": {
+          "trunkX": 240,
+          "trunkDY": 0
+        },
+        "out": {
+          "trunkX": 688,
+          "trunkDY": 0
+        },
+        "pos": {
+          "trunkX": 104,
+          "trunkDY": 0,
+          "legs": {
+            "V1:0": 0,
+            "opamp:1": -72
+          }
+        }
+      },
+      "chips": {
+        "sig": {
+          "x": -144,
+          "y": 0
+        }
+      }
+    },
+    "test": {
+      "blocks": {},
+      "nets": {}
+    }
+  }
+}
