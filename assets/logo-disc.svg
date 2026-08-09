@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="310" height="310" viewBox="0 0 360 360" role="img" aria-label="Hover disc mark">
+          <circle cx="180" cy="180" r="176" fill="#0d1745"></circle>
+          <circle cx="180" cy="180" r="176" fill="none" stroke="#000" stroke-width="6"></circle>
+          
+            <circle cx="70" cy="80" r="2.6" fill="#f2ead2"></circle>
+            <circle cx="104" cy="60" r="1.7" fill="#f2ead2"></circle>
+            <circle cx="132" cy="96" r="1.7" fill="#f2ead2"></circle>
+            <circle cx="62" cy="132" r="2.6" fill="#f2ead2"></circle>
+            <circle cx="92" cy="116" r="1.7" fill="#f2ead2"></circle>
+            <circle cx="268" cy="262" r="1.7" fill="#f2ead2"></circle>
+            <circle cx="296" cy="232" r="2.6" fill="#f2ead2"></circle>
+            <circle cx="244" cy="290" r="1.7" fill="#f2ead2"></circle>
+            <circle cx="300" cy="180" r="1.7" fill="#f2ead2"></circle>
+            <circle cx="276" cy="120" r="2.6" fill="#f2ead2"></circle>
+            <circle cx="86" cy="236" r="1.7" fill="#f2ead2"></circle>
+            <circle cx="118" cy="268" r="1.7" fill="#f2ead2"></circle>
+            <circle cx="52" cy="190" r="2.6" fill="#f2ead2"></circle>
+            <circle cx="236" cy="64" r="1.7" fill="#f2ead2"></circle>
+            <circle cx="160" cy="54" r="1.7" fill="#f2ead2"></circle>
+            <circle cx="210" cy="300" r="2.6" fill="#f2ead2"></circle>
+            <circle cx="150" cy="308" r="1.7" fill="#f2ead2"></circle>
+            <circle cx="318" cy="142" r="1.7" fill="#f2ead2"></circle>
+            <path d="M 40.0,270.0 L 44.4,267.1 L 48.1,263.7 L 51.7,260.3 L 55.2,256.9 L 58.7,253.6 L 62.2,250.2 L 65.6,246.8 L 69.1,243.4 L 72.5,240.1 L 76.0,236.8 L 79.4,233.5 L 82.9,230.2 L 86.3,226.9 L 89.8,223.7 L 93.3,220.5 L 96.8,217.3 L 100.3,214.1 L 103.8,211.0 L 107.3,207.9 L 110.9,204.8 L 114.4,201.7 L 118.0,198.7 L 121.5,195.6 L 125.1,192.6 L 128.7,189.6 L 132.3,186.7 L 135.9,183.7 L 139.5,180.8 L 143.2,177.9 L 146.8,175.0 L 150.5,172.2 L 154.2,169.3 L 157.9,166.5 L 161.6,163.7 L 165.3,160.9 L 169.0,158.2 L 172.8,155.4 L 176.5,152.7 L 180.3,150.0 L 184.1,147.3 L 187.9,144.6 L 191.7,142.0 L 195.5,139.3 L 199.4,136.7 L 203.2,134.1 L 207.1,131.5 L 211.0,129.0 L 214.9,126.4 L 218.9,123.9 L 222.8,121.4 L 226.8,118.9 L 230.8,116.4 L 234.8,113.9 L 238.8,111.5 L 242.8,109.1 L 246.9,106.7 L 250.9,104.3 L 255.0,101.9 L 259.2,99.5 L 263.3,97.2 L 267.4,94.8 L 271.6,92.5 L 275.8,90.2 L 280.0,87.9 L 284.2,85.6 L 288.5,83.3 L 292.8,81.0 L 297.0,78.7 L 301.3,76.3 L 305.6,73.9 L 309.9,71.3 L 314.0,68.0 L 314.0,68.0 L 308.8,67.2 L 303.7,67.3 L 298.7,67.6 L 293.7,68.0 L 288.8,68.6 L 283.8,69.3 L 278.9,70.1 L 274.0,71.0 L 269.1,72.0 L 264.2,73.1 L 259.4,74.2 L 254.5,75.5 L 249.7,76.8 L 244.9,78.2 L 240.1,79.7 L 235.3,81.3 L 230.6,82.9 L 225.9,84.6 L 221.2,86.4 L 216.5,88.3 L 211.9,90.2 L 207.3,92.2 L 202.7,94.3 L 198.2,96.4 L 193.6,98.6 L 189.2,100.9 L 184.7,103.3 L 180.3,105.7 L 175.9,108.2 L 171.6,110.8 L 167.3,113.4 L 163.1,116.1 L 158.8,118.9 L 154.7,121.7 L 150.5,124.6 L 146.5,127.6 L 142.4,130.6 L 138.4,133.7 L 134.5,136.8 L 130.6,140.0 L 126.8,143.3 L 123.0,146.6 L 119.3,150.0 L 115.6,153.4 L 112.0,156.9 L 108.4,160.5 L 104.9,164.1 L 101.4,167.8 L 98.0,171.5 L 94.7,175.2 L 91.4,179.0 L 88.2,182.9 L 85.0,186.8 L 81.9,190.7 L 78.9,194.7 L 75.9,198.8 L 73.0,202.9 L 70.2,207.0 L 67.4,211.2 L 64.7,215.4 L 62.1,219.7 L 59.6,224.0 L 57.1,228.3 L 54.7,232.7 L 52.4,237.1 L 50.2,241.6 L 48.0,246.1 L 46.0,250.6 L 44.1,255.3 L 42.3,260.0 L 40.8,264.8 L 40.0,270.0 Z" fill="#e8202a"></path>
+            <ellipse cx="180" cy="176" rx="62" ry="132" fill="none" stroke="#f2ead2" stroke-width="4" transform="rotate(-30 180 176)" style="transform: translate(-93px, 156px) rotate(-37deg) scale(1.12, 0.99)"></ellipse>
+            <circle cx="114" cy="62" r="9" fill="#e8202a" stroke="#f2ead2" stroke-width="2.5" style="transform: translate(19px, 2px) scale(0.96)"></circle>
+            <g transform="translate(180,136) rotate(-13) scale(0.92) translate(-100,-56)">
+              <path d="M 50,58 a 50,44 0 0 1 100,0 Z" fill="#ffd21e" stroke="#f2ead2" stroke-width="12" stroke-linejoin="round"></path>
+              <ellipse cx="84" cy="34" rx="14" ry="9" fill="#fff" opacity="0.55" transform="rotate(-20 84 34)"></ellipse>
+              <ellipse cx="100" cy="60" rx="94" ry="21" fill="#22409c" stroke="#f2ead2" stroke-width="12"></ellipse>
+              <ellipse cx="100" cy="72" rx="52" ry="14" fill="#0d1745" stroke="#f2ead2" stroke-width="12"></ellipse>
+              <circle cx="46" cy="62" r="7" fill="#ffd21e" stroke="#f2ead2" stroke-width="7"></circle>
+              <circle cx="100" cy="65" r="7" fill="#ffd21e" stroke="#f2ead2" stroke-width="7"></circle>
+              <circle cx="154" cy="62" r="7" fill="#ffd21e" stroke="#f2ead2" stroke-width="7"></circle>
+            
+            </g>
+            <g transform="translate(180,136) rotate(-13) scale(0.92) translate(-100,-56)">
+              <path d="M 50,58 a 50,44 0 0 1 100,0 Z" fill="#ffd21e" stroke="#000" stroke-width="7" stroke-linejoin="round"></path>
+              <ellipse cx="84" cy="34" rx="14" ry="9" fill="#fff" opacity="0.55" transform="rotate(-20 84 34)"></ellipse>
+              <ellipse cx="100" cy="60" rx="94" ry="21" fill="#22409c" stroke="#000" stroke-width="7"></ellipse>
+              <ellipse cx="100" cy="72" rx="52" ry="14" fill="#0d1745" stroke="#000" stroke-width="6"></ellipse>
+              <circle cx="46" cy="62" r="7" fill="#ffd21e" stroke="#000" stroke-width="4"></circle>
+              <circle cx="100" cy="65" r="7" fill="#ffd21e" stroke="#000" stroke-width="4"></circle>
+              <circle cx="154" cy="62" r="7" fill="#ffd21e" stroke="#000" stroke-width="4"></circle>
+            </g>
+            <text x="180" y="238" text-anchor="middle" font-family="&#39;Archivo Black&#39;, sans-serif" font-size="66" fill="#f2ead2" stroke="#0d1745" stroke-width="9" stroke-linejoin="round" paint-order="stroke" transform="skewX(-9) translate(42,0)">HOVER</text>
+            <text x="180" y="278" text-anchor="middle" font-family="&#39;Space Mono&#39;, monospace" font-weight="700" font-size="34" letter-spacing="10" fill="#ffd21e" stroke="#0d1745" stroke-width="2" stroke-linejoin="round" paint-order="stroke" style="font-weight: 800; font-size: 34px; overflow: visible">v0.7.0</text>
+        </svg>

@@ -45,6 +45,19 @@ VERSION ?= v0.0.0-dev
 STANDARD_LIB := stdlib
 RUNTIME_DIR  := runtime
 
+# ── ICON TOOLING ──────────────────────────────────────────────────────────────
+# The disc logo (assets/logo-disc.svg) has the version baked in as text, so it
+# is stamped with $(VERSION) at build time — see the icon rules below. Windows
+# binaries get the result embedded as their .exe icon; every package also gets
+# the versioned PNG next to the binary. ELF/Mach-O have no embedded-icon
+# concept, so the PNG is all non-Windows platforms can carry.
+#
+# Packaging therefore needs rsvg-convert and ImageMagick on PATH, plus
+# llvm-windres when building Windows targets.
+RSVG_CONVERT ?= rsvg-convert
+MAGICK       ?= magick
+LLVM_WINDRES ?= llvm-windres
+
 # ── PLATFORM MATRIX ────────────────────────────────────────────────────────────
 # Only GOOS/GOARCH: the C++ side is built on the user's machine, natively.
 #
@@ -92,6 +105,14 @@ windows-aarch64_GOARCH := arm64
 windows-x86_GOOS       := windows
 windows-x86_GOARCH     := 386
 
+# llvm-windres COFF targets for embedding the icon into Windows .exe files.
+# Named after the Go arch because that is what the .syso must match — Go links
+# any .syso in the package dir into whatever it builds, so a machine-type
+# mismatch (or a stray file during a non-Windows build) breaks the link.
+windows-x86_64_WINDRES  := x86_64-w64-windows-gnu
+windows-aarch64_WINDRES := aarch64-w64-windows-gnu
+windows-x86_WINDRES     := i686-w64-windows-gnu
+
 freebsd-x86_64_GOOS    := freebsd
 freebsd-x86_64_GOARCH  := amd64
 
@@ -135,6 +156,42 @@ all: $(PLATFORMS)
 linux: linux-x86_64
 windows: windows-x86_64
 
+# ── ICON (versioned disc logo) ────────────────────────────────────────────────
+# Stamps $(VERSION) into the disc logo SVG and rasterizes it. The version in
+# the SVG is just placeholder text; the stamp replaces whatever string the
+# version <text> element (anchored by its x="180" y="278" position) currently
+# holds, so the artwork can be updated without touching this Makefile.
+ICON_DIR  := build/icon
+ICON_SVG  := assets/logo-disc.svg
+ICON_VSVG := $(ICON_DIR)/logo-disc-versioned.svg
+ICON_ICO  := $(ICON_DIR)/hover.ico
+ICON_PNG  := $(ICON_DIR)/hover.png
+ICON_RC   := $(ICON_DIR)/hover.rc
+ICON_SYSO := icon.syso
+
+$(ICON_VSVG): $(ICON_SVG) FORCE
+	@mkdir -p $(ICON_DIR)
+	sed -E 's/(<text x="180" y="278"[^>]*>)[^<]*/\1$(VERSION)/' $(ICON_SVG) > $@
+	@grep -qF '>$(VERSION)<' $@ || { echo "  ! could not stamp VERSION into $(ICON_SVG)"; exit 1; }
+
+$(ICON_ICO): $(ICON_VSVG) FORCE
+	for s in 16 32 48 256; do \
+		$(RSVG_CONVERT) -w $$s -h $$s $(ICON_VSVG) -o $(ICON_DIR)/icon-$$s.png || exit 1; \
+	done
+	$(MAGICK) $(ICON_DIR)/icon-16.png $(ICON_DIR)/icon-32.png \
+		$(ICON_DIR)/icon-48.png $(ICON_DIR)/icon-256.png $@
+	cp $(ICON_DIR)/icon-256.png $(ICON_PNG)
+	@# llvm-windres resolves the icon path relative to this file, so the bare
+	@# filename here is correct as long as hover.rc and hover.ico sit together.
+	printf '1 ICON "hover.ico"\n' > $(ICON_RC)
+
+.PHONY: icon
+icon: $(ICON_ICO)
+	@echo "[icon] $(ICON_ICO) + $(ICON_PNG) stamped with $(VERSION)"
+
+.PHONY: FORCE
+FORCE:
+
 # ── PER-PLATFORM PACKAGE TEMPLATE ─────────────────────────────────────────────
 
 define PLATFORM_TEMPLATE
@@ -143,10 +200,14 @@ EXE_EXT_$(1) := $$(if $$(filter windows,$$($(1)_GOOS)),.exe,)
 DIR_$(1)     := releases/$$(VERSION)/hover_$$(subst -,_,$$(VERSION))_$$(subst -,_,$(1))
 
 .PHONY: $(1)
-$(1):
+$(1): $(ICON_ICO)
 	@echo "\n[$(1)] Assembling Hover Standalone..."
 	@rm -rf $$(DIR_$(1))
 	@mkdir -p $$(DIR_$(1))
+	# Go links EVERY .syso in the package dir regardless of GOOS, so a leftover
+	# Windows icon resource would break a Linux link. Clear it up front and
+	# again right after the Windows build below.
+	@rm -f $(ICON_SYSO)
 	# NO stdlib here — it is published to the web and downloaded by
 	# `hover --setup` (see stdlib-archives below, and hpm/stdlib.go). This is
 	# what lets a stdlib fix reach users without a compiler release; the cost
@@ -154,7 +215,13 @@ $(1):
 	# Runtime ships complete, sources included — `hover --setup` compiles it.
 	cp -r $(RUNTIME_DIR) $$(DIR_$(1))/runtime
 	rm -rf $$(DIR_$(1))/runtime/build
+	$$(if $$(filter windows,$$($(1)_GOOS)),\
+	  $(LLVM_WINDRES) --target=$$($(1)_WINDRES) $(ICON_RC) -O coff -o $(ICON_SYSO))
 	GOOS=$$($(1)_GOOS) GOARCH=$$($(1)_GOARCH) go build -ldflags "-X main.zigVersion=$$(ZIG_VERSION)" -o $$(DIR_$(1))/hover$$(EXE_EXT_$(1)) .
+	@rm -f $(ICON_SYSO)
+	# Versioned logo next to the binary — the icon itself is already inside
+	# the .exe on Windows; on ELF/Mach-O this file is the icon.
+	cp $(ICON_PNG) $$(DIR_$(1))/hover.png
 	# Attribution for the bundled third-party code (Eigen, klauspost/compress,
 	# and Zig in the Windows packages). BSD-3 and Apache-2.0 both require the
 	# notice to accompany a BINARY redistribution, which a release zip is.
@@ -253,6 +320,8 @@ check-runtime: $(CHECK_OBJS)
 clean:
 	@echo "Cleaning build artifacts..."
 	rm -rf $(RUNTIME_DIR)/build
+	rm -rf build
+	rm -f $(ICON_SYSO)
 	rm -rf releases
 	rm -rf hover_linux hover_win
 	rm -f hover-linux-x64.zip hover-windows-x64.zip
@@ -262,6 +331,7 @@ help:
 	@echo "  make <platform>    - Package one platform:"
 	@echo "                       $(PLATFORMS)"
 	@echo "  make all           - Package every platform into releases/\$$(VERSION)/"
+	@echo "  make icon          - Stamp \$$VERSION into the logo and build hover.ico/png"
 	@echo "  make stdlib-archives - Package the standard library for the web"
 	@echo "                       (releases do NOT bundle it; --setup downloads it)"
 	@echo "  make check-runtime - Compile the C++ runtime locally (CI check)"
@@ -269,4 +339,5 @@ help:
 	@echo ""
 	@echo "  VERSION=$(VERSION) (override with VERSION=v1.2.3)"
 	@echo "  Releases ship runtime SOURCE; users run 'hover --setup' to build"
-	@echo "  it with their own Zig. Packaging needs Go only, not Zig."
+	@echo "  it with their own Zig. Packaging needs Go, rsvg-convert and"
+	@echo "  ImageMagick (plus llvm-windres for Windows icons), not Zig."
