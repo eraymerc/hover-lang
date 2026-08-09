@@ -1,0 +1,43 @@
+import <semiconductors/bjt> as dev;
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  2N3906 — 40 V / 200 mA general-purpose PNP (TO-92)
+//
+//  The complement of the 2N3904 and the default small-signal PNP. Standard
+//  PSpice/Berkeley card, verbatim:
+//
+//    Is=1.41f   Bf=180.7  Br=4.977  Vaf=18.7  Ikf=80m   Ise=0
+//    Ne=1.5     Nc=2      Rb=10     Rc=2.5    Cje=8.063p Mje=.3677
+//    Vje=.75    Cjc=9.728p Mjc=.5776 Vjc=.75  Fc=.5     Tf=179.3p
+//    Tr=33.42n
+//
+//  Parameters are entered with their normal positive SPICE signs — the PNP
+//  model handles polarity internally, so a card transcribes directly with no
+//  sign flipping.
+//
+//  Same deviations as the NPN parts: Re = 1 mOhm (card says none), Cjs = 2p,
+//  Var/Rbm/Irb = 0, Vt fixed at 0.026 V, and the card's Itf=.4 Vtf=4 Xtf=6
+//  transit-time modulation not modelled.
+//
+//  Two things worth noticing against the 2N3904. Vaf is 18.7 V, a quarter of
+//  the NPN's 74 V, so output resistance is far lower and a PNP stage's gain
+//  is much more sensitive to collector loading. And Ise = 0, so there is no
+//  low-current beta roll-off in this card at all — the Gummel plot's low end
+//  will look more ideal than the real part.
+// ─────────────────────────────────────────────────────────────────────────────
+
+analog module Q2N3906<>()[wire base, wire collector, wire emitter] {
+    module q = dev.PNP<1.41f, 1.0, 1.0,         // Is, Nf, Nr
+                       180.7, 4.977,            // Bf, Br
+                       18.7, 0.0,               // Vaf, Var
+                       80m, 0.0,                // Ikf, Ikr
+                       0.0, 1.5,                // Ise, Ne
+                       0.0, 2.0,                // Isc, Nc
+                       10.0, 0.0, 0.0,          // Rb, Rbm, Irb
+                       1m, 2.5,                 // Re, Rc
+                       8.063p, 0.75, 0.3677,    // Cje, Vje, Mje
+                       9.728p, 0.75, 0.5776,    // Cjc, Vjc, Mjc
+                       0.5, 179.3p, 33.42n,     // Fc, Tf, Tr
+                       2p, 0.026>()             // Cjs, Vt
+                      [base, collector, emitter];
+}

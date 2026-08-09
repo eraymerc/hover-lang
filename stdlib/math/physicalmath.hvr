@@ -42,42 +42,54 @@ func double limexp(double x) {
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// pnjlim() - Newton-Raphson Junction Voltage Limiter
+// pnjlim() — Newton-Raphson junction voltage limiter (Berkeley formulation)
 //
-// Limits the proposed voltage step across a semiconductor junction to prevent
-// numerical overflow in exponential device models during iteration.
+// Bounds how far a junction voltage may move in one Newton iteration, so an
+// iterate that wants to leap several decades of exponential current advances
+// by a bounded amount instead. It limits the STEP, not the device: the
+// converged solution still lies on the true exponential I-V, because at
+// convergence the step is small and the limiter is in pass-through.
 //
 // Parameters:
-//   v_new  : The proposed junction voltage for the current iteration
-//   v_old  : The settled junction voltage from the previous iteration
-//   vt     : Thermal voltage (kT/q, approx 0.02585V at 300K)
-//   v_crit : Critical voltage where exp() dominates (typically ~0.6V - 0.8V)
+//   v_new  : proposed junction voltage for this iteration
+//   v_old  : the previous iteration's voltage. Obtain it with nr_prev(), e.g.
+//              pnjlim(V(a) - V(b), nr_prev(V(a) - V(b)), nvt, vcrit)
+//            nr_prev() and NOT a plain read: this needs the previous ITERATE,
+//            which is exactly what nr_prev() reports.
+//   nvt    : thermal voltage times the junction's emission coefficient
+//   v_crit : voltage at which the exponential's curvature starts to dominate,
+//            nvt*log(nvt/(sqrt(2)*Is)). Below it no limiting is applied.
+//
+// Two guards mean it does nothing in the common case: anything below v_crit
+// passes through, and so does any step smaller than 2*nvt. Past both, the step
+// is compressed logarithmically.
+//
+// The v_old > 0 branches are mirror images of each other. That symmetry is the
+// property the previous implementation of this function lacked: it computed
+// arg = 1 + dv/vt and fell back to v_crit whenever arg went non-positive —
+// which happens precisely on a large DOWNWARD step, so a junction retreating
+// from a bad guess was answered with a jump UP to v_crit, large and in the
+// wrong direction. It also never engaged at all while v_new <= v_crit, however
+// violent the step.
 // ─────────────────────────────────────────────────────────────────────────────
-func double pnjlim(double v_new, double v_old, double vt, double v_crit) {
-    double result = v_new;
+func double pnjlim(double v_new, double v_old, double nvt, double v_crit) {
+    if (v_new <= v_crit) { return v_new; }
 
-    // Only apply active logarithmic damping in the forward-biased exponential region
-    if (v_new > v_crit && v_new > 0.0) {
-        
-        double dv = v_new - v_old;
-        
-        // Limit only if the step size is dangerously large (> 2Vt)
-        if (dv > 2.0 * vt || dv < -2.0 * vt) {
-            if (v_old > 0.0) {
-                double arg = 1.0 + (dv / vt);
-                if (arg > 0.0) {
-                    result = v_old + vt * log(arg);
-                } else {
-                    result = v_crit;
-                }
-            } else {
-                result = vt * log(v_new / vt);
-            }
+    double dv = v_new - v_old;
+    if (dv < 2.0 * nvt && dv > -2.0 * nvt) { return v_new; }
+
+    if (v_old > 0.0) {
+        double arg = dv / nvt;
+        if (arg > 2.0) {
+            return v_old + nvt * (2.0 + log(arg - 2.0));
         }
+        // arg < -2 here, so -2 - arg > 0 and the log is always defined.
+        return v_old - nvt * (2.0 + log(-2.0 - arg));
     }
-    
-    // Optional: hard reverse breakdown clamping could go here if desired,
-    // though typically SPICE handles reverse limits separately.
-    
-    return result;
+
+    // No usable forward history (previous iterate at or below zero). Re-enter
+    // the exponential region from its own scale rather than from wherever the
+    // solver's guess landed. v_new > v_crit > 0 from the first branch, so the
+    // log argument is positive.
+    return nvt * log(v_new / nvt);
 }

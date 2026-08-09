@@ -1,0 +1,36 @@
+import <semiconductors/bjt> as dev;
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  2N3904 — 40 V / 200 mA general-purpose NPN (TO-92)
+//
+//  The default small-signal NPN. Standard PSpice/Berkeley card, verbatim:
+//
+//    Is=6.734f  Bf=416.4  Br=.7371  Vaf=74.03  Ikf=66.78m  Ise=6.734f
+//    Ne=1.259   Nc=2      Rb=10     Rc=1       Cje=4.493p  Mje=.2593
+//    Vje=.75    Cjc=3.638p Mjc=.3085 Vjc=.75   Fc=.5       Tf=301.2p
+//    Tr=239.5n
+//
+//  Same deviations as 2N2222.hvr — see that file's header for the reasoning:
+//  Re = 1 mOhm (card says none, R<0> is a short), Cjs = 2p, Var/Rbm/Irb = 0,
+//  Vt fixed at 0.026 V, and the card's Itf/Vtf/Xtf transit-time modulation
+//  not modelled.
+//
+//  Note Br = 0.7371, i.e. reverse beta below unity. Reverse-active operation
+//  is genuinely poor on this part, and saturation is correspondingly deep.
+// ─────────────────────────────────────────────────────────────────────────────
+
+analog module Q2N3904<>()[wire base, wire collector, wire emitter] {
+    module q = dev.NPN<6.734f, 1.0, 1.0,        // Is, Nf, Nr
+                       416.4, 0.7371,           // Bf, Br
+                       74.03, 0.0,              // Vaf, Var
+                       66.78m, 0.0,             // Ikf, Ikr
+                       6.734f, 1.259,           // Ise, Ne
+                       0.0, 2.0,                // Isc, Nc
+                       10.0, 0.0, 0.0,          // Rb, Rbm, Irb
+                       1m, 1.0,                 // Re, Rc
+                       4.493p, 0.75, 0.2593,    // Cje, Vje, Mje
+                       3.638p, 0.75, 0.3085,    // Cjc, Vjc, Mjc
+                       0.5, 301.2p, 239.5n,     // Fc, Tf, Tr
+                       2p, 0.026>()             // Cjs, Vt
+                      [base, collector, emitter];
+}

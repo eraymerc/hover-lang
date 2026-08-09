@@ -70,6 +70,36 @@ func SetStdlibPackageNames(names []string) {
 
 func isStdlibPackage(name string) bool { return StdlibPackageNames[name] }
 
+// MachineInstalledPackages reports every package installed machine-wide, and
+// exists purely to phrase one diagnostic: a package that IS installed on this
+// machine but is invisible here because the file sits inside a project, which
+// sees only its own dependencies. Without it that case reads "package %q is
+// not installed — run `hover hpm install %q`" at someone who just did exactly
+// that, and the real problem — which project the file belongs to — is never
+// mentioned.
+//
+// A function rather than a set because it is consulted only on the failure
+// path: the machine lockfile should not be read on every successful compile
+// for a message that is almost never printed. Injected by main for the same
+// layering reason as StdlibPackageNames; nil is fine and falls back to the
+// generic wording.
+var MachineInstalledPackages func() []string
+
+// SetMachineInstalledPackages installs the machine-wide package lookup.
+func SetMachineInstalledPackages(fn func() []string) { MachineInstalledPackages = fn }
+
+func isMachineInstalled(name string) bool {
+	if MachineInstalledPackages == nil {
+		return false
+	}
+	for _, n := range MachineInstalledPackages() {
+		if n == name {
+			return true
+		}
+	}
+	return false
+}
+
 // SetPackageRoots installs the package→directory table for this compilation.
 // Called by Load; exported so a host embedding the compiler can supply its
 // own resolution without going through a lockfile on disk.
@@ -240,6 +270,16 @@ func missingPackageHint(importPath string, isSystem bool) string {
 	if isStdlibPackage(pkg) {
 		return fmt.Sprintf("the standard library is not installed, so %q cannot be found — "+
 			"run `hover --setup` (it downloads the standard library; this needs network access)", pkg)
+	}
+	// Installed, yet not visible: this file is inside a project, and a project
+	// sees only what its own hover.toml declares. Sending this user to install
+	// it again would not change anything — the fix is to declare it, from the
+	// project directory.
+	if isMachineInstalled(pkg) {
+		return fmt.Sprintf("package %q is installed on this machine but is not a dependency of the "+
+			"project this file belongs to, so it is not visible here — run `hover hpm install %s` "+
+			"from the project directory to declare it (a project sees only its own dependencies, "+
+			"so that a build of it works the same on any machine)", pkg, pkg)
 	}
 	return fmt.Sprintf("package %q is not installed — run `hover hpm install %s` "+
 		"(or check the path, if you meant a standard library directory)", pkg, pkg)

@@ -1,48 +1,127 @@
-from <math> import exp;
+from <math> import sqrt, pnjlim;
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  PNP Ebers-Moll Bipolar Junction Transistor
+//  PNP Gummel-Poon Bipolar Junction Transistor
 //
-//  Polarity: 
-//  Inverted relative to the NPN. Forward active operation requires the 
-//  emitter to be at a higher potential than the base (V_eb > 0).
+//  The complementary device to npn.hvr, and deliberately the same model: it
+//  shares every helper in gp_core.hvr and every equation below is character
+//  for character the NPN's. Only two things are inverted, and they are the
+//  only two things that CAN differ between the polarities:
 //
-//  Like the NPN model, this relies on Hover's trust-region solver for 
-//  numerical stability and uses the pure `exp()` function for the junction
-//  physics. The physical clamps bound the V_eb and V_cb voltages to 
-//  realistic forward and reverse breakdown limits.
+//    1. Junction voltages are measured the other way round. Forward active
+//       for a PNP means the emitter is ABOVE the base, so the junction
+//       variables are veb = V(ei) - V(bi) and vcb = V(ci) - V(bi), where the
+//       NPN uses vbe = V(bi) - V(ei) and vbc = V(bi) - V(ci).
+//
+//    2. Every current source points the other way. Base current flows OUT of
+//       the base terminal and the transport current runs emitter to
+//       collector, so the terminal pairs are [ei, bi], [ci, bi] and [ei, ci]
+//       against the NPN's [bi, ei], [bi, ci] and [ci, ei].
+//
+//  With those two substitutions all the parameters keep their normal positive
+//  SPICE signs — Is, Vaf, Cje and the rest are entered exactly as they appear
+//  on a PNP model card, with no sign flipping by the caller. That is the
+//  whole point of doing it this way: a 2N3906 card transcribes directly.
+//
+//  Everything else — what Gummel-Poon buys over Ebers-Moll, why math's
+//  pnjlim() is fed from nr_prev(), why the solver's numerical Jacobian means
+//  this model must keep its derivatives alive and carry no voltage clamps,
+//  how the charges reach the matrix through ddt(), and why Rb is synthesized
+//  from a voltage source instead of being an R<> primitive — is identical to
+//  the NPN and documented at length in npn.hvr. Read that file for the
+//  reasoning; this one is the mirror image.
 // ─────────────────────────────────────────────────────────────────────────────
 
-analog module PNP<double Is, double Bf, double Br, double Vt>()
+
+analog module PNP<double Is,  double Nf,  double Nr,
+                  double Bf,  double Br,
+                  double Vaf, double Var,
+                  double Ikf, double Ikr,
+                  double Ise, double Ne,
+                  double Isc, double Nc,
+                  double Rb,  double Rbm, double Irb,
+                  double Re,  double Rc,
+                  double Cje, double Vje, double Mje,
+                  double Cjc, double Vjc, double Mjc,
+                  double Fc,  double Tf,  double Tr,
+                  double Cjs, double Vt>()
     [wire base, wire collector, wire emitter]
 {
-    double v_b = V(base);
-    double v_e = V(emitter);
-    double v_c = V(collector);
+    // Internal (intrinsic) nodes, same as the NPN: the equations are written
+    // at the junction, and the ohmic drop from terminal to junction is carried
+    // by the resistances.
+    wire bi, ci, ei;
 
-    // Reversed polarities for PNP: Emitter-Base and Collector-Base
-    double veb = v_e - v_b;
-    double vcb = v_c - v_b;
+    R<Rc>() [collector, ci];
+    R<Re>() [emitter,   ei];
 
-    // Physical bounds clamping
-    if (veb > 0.75) { veb = 0.75; }
-    if (vcb > 0.75) { vcb = 0.75; }
-    if (veb < -5.0) { veb = -5.0; }
-    if (vcb < -5.0) { vcb = -5.0; }
+    double nvt_f = Nf * Vt;
+    double nvt_r = Nr * Vt;
 
-    // Pure Ebers-Moll physics equations using standard exp()
-    double i_eb = (Is / Bf) * (exp(veb / Vt) - 1.0);
-    double i_cb = (Is / Br) * (exp(vcb / Vt) - 1.0);
-    double i_ec = Is * (exp(veb / Vt) - exp(vcb / Vt));
+    // Per-iteration junction limiting. Note the subtraction order — emitter
+    // and collector above base — which is the whole of the polarity change on
+    // the voltage side. Everything downstream then treats veb/vcb exactly as
+    // the NPN treats vbe/vbc.
+    double veb = pnjlim(V(ei) - V(bi), nr_prev(V(ei) - V(bi)),
+                      nvt_f, vcrit_of(Is, nvt_f));
+    double vcb = pnjlim(V(ci) - V(bi), nr_prev(V(ci) - V(bi)),
+                      nvt_r, vcrit_of(Is, nvt_r));
 
-    // Stamp currents into the MNA matrix
-    // Note the reversed directional flow compared to NPN
-    current_source<>(i_eb)[emitter, base];
-    current_source<>(i_cb)[collector, base];
-    current_source<>(i_ec)[emitter, collector];
 
-    // Fixed parasitic junction capacitances
-    C<10p>() [emitter,   base];
-    C<4p>()  [collector, base];
-    C<2p>()  [emitter,   collector];
+    // ── Ideal transport currents ────────────────────────────────────────────
+    double i_f = Is * (jexp(veb, nvt_f) - 1.0);
+    double i_r = Is * (jexp(vcb, nvt_r) - 1.0);
+
+    // ── Base charge factor qb ───────────────────────────────────────────────
+    double inv_vaf = 0.0;
+    double inv_var = 0.0;
+    if (Vaf > 0.0) { inv_vaf = 1.0 / Vaf; }
+    if (Var > 0.0) { inv_var = 1.0 / Var; }
+
+    // Forward Early effect is modulation by the collector junction, so vcb
+    // pairs with Vaf and veb with Var.
+    double denom = 1.0 - vcb * inv_vaf - veb * inv_var;
+    if (denom < 0.1) { denom = 0.1; }
+    double q1 = 1.0 / denom;
+
+    double q2 = 0.0;
+    if (Ikf > 0.0) { q2 = q2 + i_f / Ikf; }
+    if (Ikr > 0.0) { q2 = q2 + i_r / Ikr; }
+    if (q2 < 0.0)  { q2 = 0.0; }
+
+    double qb = 0.5 * q1 * (1.0 + sqrt(1.0 + 4.0 * q2));
+
+    // ── Terminal currents ───────────────────────────────────────────────────
+    double i_ec = (i_f - i_r) / qb;
+
+    double i_eb = i_f / Bf + Ise * (jexp(veb, Ne * Vt) - 1.0);
+    double i_cb = i_r / Br + Isc * (jexp(vcb, Nc * Vt) - 1.0);
+
+    // Reversed relative to the NPN: current leaves the emitter and collector
+    // into the base, and the transport current runs emitter to collector.
+    current_source<>(i_eb) [ei, bi];
+    current_source<>(i_cb) [ci, bi];
+    current_source<>(i_ec) [ei, ci];
+
+    // ── Base resistance, synthesized ────────────────────────────────────────
+    // V = R*I is polarity-agnostic — the branch current simply comes out
+    // negative for a PNP — so this construction is unchanged from the NPN.
+    double ib_tot = i_eb + i_cb;
+    double rb_eff = rb_of(Rb, Rbm, Irb, ib_tot, qb);
+    double v_rb   = rb_eff * I(rbx);
+    voltage_source rbx<>(v_rb) [base, bi];
+
+    // ── Charge storage ──────────────────────────────────────────────────────
+    // Charges are built from the PNP-signed junction voltages, so q_dep sees a
+    // positive forward bias exactly as it does for the NPN. The current
+    // sources carrying ddt(Q) point the same way as the conduction currents.
+    double q_eb  = Tf * i_f + q_dep(veb, Cje, Vje, Mje, Fc);
+    double q_cb  = Tr * i_r + q_dep(vcb, Cjc, Vjc, Mjc, Fc);
+    double i_ceb = ddt(q_eb);
+    double i_ccb = ddt(q_cb);
+
+    current_source<>(i_ceb) [ei, bi];
+    current_source<>(i_ccb) [ci, bi];
+
+    C<Cjs>() [ei, ci];
 }

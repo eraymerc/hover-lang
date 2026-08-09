@@ -7,10 +7,10 @@
 .tran(0, 30m, 1u, 10u); // 5 ms run, 1 µs timesteps (1 kHz sine will show 5 full cycles)
 .solver(bdf2);
 
-import <parts/bjt/npn>;
+import <parts/bjt/npn> as npn;
 from <math> import sin;
 // ═══════════════════════════════════════════════════════════════
-//  TOP-LEVEL CIRCUIT
+//  TOPLEVEL CIRCUIT
 // ═══════════════════════════════════════════════════════════════
 
 analog module AC_Source<double dc_bias, double ac_amp, double freq>()[wire out, wire gnd] {

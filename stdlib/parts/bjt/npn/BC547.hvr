@@ -1,0 +1,41 @@
+import <semiconductors/bjt> as dev;
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  BC547B — 45 V / 100 mA low-noise NPN (TO-92)
+//
+//  The European jellybean, and the usual choice for low-noise audio input
+//  stages. Standard Philips/NXP card, verbatim:
+//
+//    Is=7.049f  Bf=374.6  Br=1.02  Vaf=62.79  Ikf=.08157  Ise=68.09f
+//    Ne=1.5     Nc=2      Rb=10    Rc=.9      Cje=13.28p  Mje=.3552
+//    Vje=.75    Cjc=6.5p  Mjc=.3416 Vjc=.75   Fc=.5       Tf=411.1p
+//    Tr=33.42n
+//
+//  This is the B grade (hFE 200-450). The A grade is lower gain and the C
+//  grade higher; if you need one of those, scale Bf and leave everything else
+//  alone. BC546 and BC548 are the same die at 65 V and 30 V Vceo — identical
+//  small-signal behaviour, and this model does not represent breakdown, so
+//  it stands in for those too.
+//
+//  Same deviations as 2N2222.hvr: Re = 1 mOhm, Cjs = 2p, Var/Rbm/Irb = 0,
+//  Vt fixed at 0.026 V, no Itf/Vtf/Xtf.
+//
+//  Note the low Ikf (82 mA): high-injection roll-off starts early on this
+//  part, which is exactly why it is a small-signal device and not a switch.
+// ─────────────────────────────────────────────────────────────────────────────
+
+analog module QBC547<>()[wire base, wire collector, wire emitter] {
+    module q = dev.NPN<7.049f, 1.0, 1.0,        // Is, Nf, Nr
+                       374.6, 1.02,             // Bf, Br
+                       62.79, 0.0,              // Vaf, Var
+                       0.08157, 0.0,            // Ikf, Ikr
+                       68.09f, 1.5,             // Ise, Ne
+                       0.0, 2.0,                // Isc, Nc
+                       10.0, 0.0, 0.0,          // Rb, Rbm, Irb
+                       1m, 0.9,                 // Re, Rc
+                       13.28p, 0.75, 0.3552,    // Cje, Vje, Mje
+                       6.5p, 0.75, 0.3416,      // Cjc, Vjc, Mjc
+                       0.5, 411.1p, 33.42n,     // Fc, Tf, Tr
+                       2p, 0.026>()             // Cjs, Vt
+                      [base, collector, emitter];
+}

@@ -1,0 +1,40 @@
+import <semiconductors/bjt> as dev;
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  BC557B — 45 V / 100 mA low-noise PNP (TO-92)
+//
+//  The complement of the BC547, and the other half of the European jellybean
+//  pair. Standard Philips/NXP card, verbatim:
+//
+//    Is=1.079f  Bf=245.1  Br=8.098  Vaf=27.87  Ikf=.1256  Ise=0
+//    Ne=1.5     Nc=2      Rb=10     Rc=1.007   Cje=15.7p  Mje=.3777
+//    Vje=.75    Cjc=12.4p Mjc=.3763 Vjc=.75    Fc=.5      Tf=608.9p
+//    Tr=54.68n
+//
+//  B grade (hFE 200-450), as with BC547.hvr. BC556 and BC558 are the same die
+//  at different Vceo grades and this model does not represent breakdown, so
+//  it stands in for those as well.
+//
+//  Same deviations as the other parts: Re = 1 mOhm, Cjs = 2p, Var/Rbm/Irb = 0,
+//  Vt fixed at 0.026 V, no Itf/Vtf/Xtf.
+//
+//  Note Tf = 608.9p against the BC547's 411.1p — the PNP is the slower of the
+//  pair, as PNPs generally are, so a complementary output stage built from
+//  these two is not symmetric in bandwidth.
+// ─────────────────────────────────────────────────────────────────────────────
+
+analog module QBC557<>()[wire base, wire collector, wire emitter] {
+    module q = dev.PNP<1.079f, 1.0, 1.0,        // Is, Nf, Nr
+                       245.1, 8.098,            // Bf, Br
+                       27.87, 0.0,              // Vaf, Var
+                       0.1256, 0.0,             // Ikf, Ikr
+                       0.0, 1.5,                // Ise, Ne
+                       0.0, 2.0,                // Isc, Nc
+                       10.0, 0.0, 0.0,          // Rb, Rbm, Irb
+                       1m, 1.007,               // Re, Rc
+                       15.7p, 0.75, 0.3777,     // Cje, Vje, Mje
+                       12.4p, 0.75, 0.3763,     // Cjc, Vjc, Mjc
+                       0.5, 608.9p, 54.68n,     // Fc, Tf, Tr
+                       2p, 0.026>()             // Cjs, Vt
+                      [base, collector, emitter];
+}

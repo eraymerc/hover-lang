@@ -1,53 +1,260 @@
-from <math> import exp, limexp;
+from <math> import sqrt, pnjlim;
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  NPN Ebers-Moll Bipolar Junction Transistor
+//  NPN Gummel-Poon Bipolar Junction Transistor
 //
-//  This model uses the pure standard `exp()` function for mathematically 
-//  accurate physical equations. 
+//  Replaces the previous Ebers-Moll model. Ebers-Moll is the special case of
+//  this one: set Vaf = Var = 0 (infinite Early voltage), Ikf = Ikr = 0 (no
+//  high-injection knee), Ise = Isc = 0 (no non-ideal base current), Nf = Nr =
+//  1, and Rb = Re = Rc -> 0, and the equations below collapse term by term
+//  into Is/Bf*(e^(vbe/Vt) - 1) and friends. Everything GP adds is an
+//  enhancement on top of that skeleton, which is why the terminal topology —
+//  two base junction sources plus one transport source — is unchanged.
 //
-//  Numerical Stability:
-//  Unlike legacy SPICE simulators, Hover does not require artificial step
-//  limiters (like `pnjlim` or `limexp`) inside the device model to prevent 
-//  exponential overflow. Hover's implicit solvers utilize diagonally-scaled 
-//  trust-region damping, which dynamically shrinks the Newton-Raphson step size 
-//  based on the local gradient. The solver natively catches and suppresses 
-//  explosive exponential growth.
+//  What GP buys over Ebers-Moll, in rough order of how much it changes a
+//  simulation:
 //
-//  Physical Clamps:
-//  The explicit if-clamps (+0.75V / -5.0V) are retained purely to define the 
-//  valid physical operating bounds of the device (forward voltage drop limits 
-//  and reverse breakdown limits), ensuring the equations model a realistic
-//  transistor rather than an idealized infinite diode.
+//    Vaf/Var   Early effect. Ebers-Moll has ro = infinity, so a common-emitter
+//              stage reports gain of exactly -Rc/(re + Re) with no ro||Rc
+//              correction and an ideal current-source collector. This is the
+//              term most likely to change an answer you already have.
+//    Ikf/Ikr   High-injection roll-off. Beta falls at high Ic instead of
+//              staying flat forever, so a saturating or hard-driven stage
+//              stops reporting impossible currents.
+//    Ise/Ne    Non-ideal (recombination) base current. Beta falls at LOW Ic
+//    Isc/Nc    too — the low end of the Gummel plot, which Ebers-Moll misses
+//              entirely and which sets the noise floor of a small-signal stage.
+//    Rb/Re/Rc  Ohmic terminal resistance. Re in particular is local series
+//              feedback that shows up directly in gain, and Rb sets the input
+//              impedance a base drive actually sees.
+//    Rbm/Irb   Base-resistance modulation. Current crowds toward the emitter
+//              edge as injection rises, so Rb falls from RB toward RBM. Only
+//              matters once the base current approaches IRB, which for a
+//              small-signal device is well into its switching range.
+//    Tf/Tr     Diffusion charge. Tf sets fT and so the small-signal bandwidth;
+//              Tr is the saturation storage charge, which is what makes a
+//              hard-driven switch slow to turn OFF. With the previous model's
+//              fixed 10p/4p caps a saturated stage came out of saturation in
+//              tens of ns; with Tr it takes hundreds, which is the difference
+//              between a switching-loss figure that is believable and one that
+//              is off by a decade.
+//    Cj*/Vj*/  Bias-dependent depletion charge, replacing fixed capacitors.
+//    Mj*/Fc    A B-C capacitance that falls from 22p to 8p as the collector
+//              swings out to -10 V is the difference between a Miller pole
+//              that moves with the operating point and one that does not.
+//
+//  ── Per-iteration limiting (manual 13.1) ────────────────────────────────────
+//
+//  Junction limiting is math's pnjlim(), fed from nr_prev(). pnjlim() takes
+//  the previous iterate as an ordinary argument — it cannot see iteration
+//  history by itself — and nr_prev() is exactly the thing that reports it:
+//
+//      pnjlim(V(bi) - V(ei), nr_prev(V(bi) - V(ei)), nvt_f, vcrit)
+//
+//  It bounds the STEP, not the device. At convergence the step is small and
+//  the limiter is in pass-through, so the answer sits on the true exponential
+//  I-V. Each junction is limited once, on its ideal Is/nvt, and the resulting
+//  voltage feeds both the ideal and the leakage (Ise/Isc) term — the leakage
+//  diode is the softer of the two, so the stiffer one sets the bound.
+//
+//  (pnjlim() itself was rewritten to the Berkeley formulation; the previous
+//  implementation turned a large downward step into an upward jump to vcrit.
+//  See its own header in math/physicalmath.hvr.)
+//
+//  ── Convergence: the solver is real Newton, so keep derivatives alive ───────
+//
+//  It is easy to look at stamp_current_source (runtime/mna/matrices.cpp),
+//  see that it writes only B_static and nothing into G, and conclude there is
+//  no device Jacobian and hence no true Newton. That conclusion is wrong, and
+//  getting it wrong costs a great deal.
+//
+//  vm_compute_jacobian (runtime/vm/vm.cpp) builds a FULL numerical Jacobian:
+//  it perturbs every node voltage by sqrt(eps)*max(|v|,1), re-runs the analog
+//  blocks, and measures the resulting change in B_static. Every dI/dV this
+//  model produces is therefore captured, whether or not anything was stamped
+//  into G. The solvers (bdf2, ndf2, trapezoidal) consume it with Jacobian
+//  reuse and Newton damping modelled on MATLAB's ode15s.
+//
+//  The practical consequence governs how this model is written: the Jacobian
+//  is measured from THIS SOURCE, so anything here with zero slope becomes a
+//  zero column in the Jacobian, and a zero column is a singular direction
+//  Newton cannot step along. A hard clamp is precisely that. An earlier
+//  version of this file carried a derived backstop clamp on vbe/vbc; it did
+//  not aid convergence, it caused it to fail — with the clamp removed, cases
+//  that had been diagnosed as "physically marginal" converge immediately, and
+//  the Gummel plot extends a further decade (beta rolls off to 106 at 317 mA
+//  instead of the curve freezing at 199 mA where the clamp bound).
+//
+//  So: no clamps on the junction voltages. The only bound left is inside
+//  jexp(), on the exponential's ARGUMENT, purely to stop a wild first-
+//  iteration guess reaching inf. It is deliberately set far outside any
+//  physical bias, and everything below it is smooth.
+//
+//  Rb/Re/Rc remain worth having for physical reasons — Re is series feedback,
+//  Rb sets the input impedance a base drive sees — and they do condition the
+//  internal nodes. But they are not load-bearing for convergence the way an
+//  earlier version of this comment claimed. Do not pass zero for them all the
+//  same: R<0> is a literal short, and for Rb a zero-valued synthesized
+//  resistor is the same thing, collapsing the internal node onto its terminal.
+//
+//  ── Charge storage: real, via ddt() ─────────────────────────────────────────
+//
+//  The B-E and B-C charges are the full Gummel-Poon ones — depletion charge
+//  with the (1 - v/Vj)^-Mj law and Fc forward-bias linearization, plus Tf/Tr
+//  diffusion charge — differentiated with ddt() and injected as current.
+//  This is the Verilog-A idiom (I = ddt(Q)) and it works here because ddt()
+//  is not numerical differentiation: the elaborator rewrites ddt(x) into a
+//  1 H inductor fed by a current source carrying x, so KCL forces the
+//  inductor's current to x and its terminal voltage to L*dx/dt = dx/dt. The
+//  derivative therefore comes out of the MNA solve itself and inherits
+//  whatever order and stability the active solver has (macros.go,
+//  processAnalogDdt).
+//
+//  Two consequences worth knowing:
+//
+//  ddt() is a top-level construct. processAnalogDdt walks only expression,
+//  assignment and local-declaration statements in the module body — it does
+//  not descend into if-blocks — so a ddt() call must sit at the body's top
+//  level. That is why the branchy part of the charge (the Fc seam) lives
+//  inside q_dep() and only the finished charge is handed to ddt().
+//
+//  Nothing about the charge current lands in G, since it arrives as a current
+//  source. That would matter for convergence if the capacitive conductance
+//  were comparable to the node's, but at Cje ~ 22p and dt ~ 1u it is C/dt ~
+//  2e-5 S against the internal base's 1/Rb = 0.1 S — four orders down, so the
+//  ohmic resistances dominate here exactly as they do for the DC currents.
+//  Cjs stays a plain linear C<> because a substrate capacitance has no bias
+//  dependence modelled anyway, and a linear cap in G costs nothing.
+//
+//  Not modelled: the Xtf/Itf/Vtf transit-time modulation (Tf is taken
+//  constant, so fT does not fall off at high current the way a real device's
+//  does) and the excess-phase parameter Ptf.
 // ─────────────────────────────────────────────────────────────────────────────
 
 
-analog module NPN<double Is, double Bf, double Br, double Vt>()
+analog module NPN<double Is,  double Nf,  double Nr,
+                  double Bf,  double Br,
+                  double Vaf, double Var,
+                  double Ikf, double Ikr,
+                  double Ise, double Ne,
+                  double Isc, double Nc,
+                  double Rb,  double Rbm, double Irb,
+                  double Re,  double Rc,
+                  double Cje, double Vje, double Mje,
+                  double Cjc, double Vjc, double Mjc,
+                  double Fc,  double Tf,  double Tr,
+                  double Cjs, double Vt>()
     [wire base, wire collector, wire emitter]
 {
-    double v_b = V(base);
-    double v_e = V(emitter);
-    double v_c = V(collector);
+    // Internal (intrinsic) nodes. The GP equations are written at the junction
+    // itself, so every V() read below is an internal node — the ohmic drop
+    // between terminal and junction is carried by the three resistors, which
+    // is exactly what makes Re series feedback rather than a fitting fudge.
+    wire bi, ci, ei;
 
-    double vbe = v_b - v_e;
-    double vbc = v_b - v_c;
+    // Rc and Re are genuinely constant, so they stay ordinary resistors and
+    // their conductance lands in G. Rb is current-dependent and is synthesized
+    // further down, once the base current it depends on has been computed.
+    R<Rc>() [collector, ci];
+    R<Re>() [emitter,   ei];
 
-    if (vbe > 0.75) { vbe = 0.75; }
-    if (vbc > 0.75) { vbc = 0.75; }
-    if (vbe < -5.0) { vbe = -5.0; }
-    if (vbc < -5.0) { vbc = -5.0; }
+    double nvt_f = Nf * Vt;
+    double nvt_r = Nr * Vt;
 
-    // Direct mathematical calculation. No states! limexp() in place of
-    // exp() — see header comment for why.
-    double i_be = (Is / Bf) * (exp(vbe / Vt) - 1.0);
-    double i_bc = (Is / Br) * (exp(vbc / Vt) - 1.0);
-    double i_ce = Is * (exp(vbe / Vt) - exp(vbc / Vt));
+    // Per-iteration junction limiting (manual 13.1). nr_prev() supplies the
+    // previous NR iterate; on the first iteration of a timestep it returns
+    // that step's starting guess, so no limiting is applied and the cold start
+    // behaves as an unlimited evaluation — intended.
+    //
+    // Each junction is limited ONCE, on its ideal Is/nvt, and the resulting
+    // voltage feeds both the ideal and the leakage (Ise/Isc) term. The leakage
+    // diode is the softer of the two, so the stiffer one sets the bound.
+    double vbe = pnjlim(V(bi) - V(ei), nr_prev(V(bi) - V(ei)),
+                      nvt_f, vcrit_of(Is, nvt_f));
+    double vbc = pnjlim(V(bi) - V(ci), nr_prev(V(bi) - V(ci)),
+                      nvt_r, vcrit_of(Is, nvt_r));
 
-    current_source<>(i_be)[base, emitter];
-    current_source<>(i_bc)[base, collector];
-    current_source<>(i_ce)[collector, emitter];
 
-    C<10p>() [base,      emitter];
-    C<4p>()  [base,      collector];
-    C<2p>()  [collector, emitter];
+    // ── Ideal transport currents ────────────────────────────────────────────
+    double i_f = Is * (jexp(vbe, nvt_f) - 1.0);
+    double i_r = Is * (jexp(vbc, nvt_r) - 1.0);
+
+    // ── Base charge factor qb ───────────────────────────────────────────────
+    // q1 is the Early (base-width modulation) term, q2 the high-injection one.
+    // Vaf/Var/Ikf/Ikr = 0 means "infinite" in SPICE convention, i.e. effect
+    // disabled, which is how the Ebers-Moll degenerate case is selected.
+    double inv_vaf = 0.0;
+    double inv_var = 0.0;
+    if (Vaf > 0.0) { inv_vaf = 1.0 / Vaf; }
+    if (Var > 0.0) { inv_var = 1.0 / Var; }
+
+    // Forward Early effect is modulation by the COLLECTOR-base voltage, so vbc
+    // pairs with Vaf and vbe with Var — not the other way round.
+    double denom = 1.0 - vbc * inv_vaf - vbe * inv_var;
+    if (denom < 0.1) { denom = 0.1; }   // caps q1 at 10; deep reverse only
+    double q1 = 1.0 / denom;
+
+    double q2 = 0.0;
+    if (Ikf > 0.0) { q2 = q2 + i_f / Ikf; }
+    if (Ikr > 0.0) { q2 = q2 + i_r / Ikr; }
+    if (q2 < 0.0)  { q2 = 0.0; }        // i_f, i_r reach -Is in reverse bias
+
+    double qb = 0.5 * q1 * (1.0 + sqrt(1.0 + 4.0 * q2));
+
+    // ── Terminal currents ───────────────────────────────────────────────────
+    // Transport current, thinned by the base charge: this single division is
+    // where both the Early effect and high-injection roll-off enter Ic.
+    double i_ct = (i_f - i_r) / qb;
+
+    // Base current: ideal component (transport/beta, unaffected by qb) plus
+    // the non-ideal recombination component that dominates at low bias.
+    double i_be = i_f / Bf + Ise * (jexp(vbe, Ne * Vt) - 1.0);
+    double i_bc = i_r / Br + Isc * (jexp(vbc, Nc * Vt) - 1.0);
+
+    current_source<>(i_be) [bi, ei];
+    current_source<>(i_bc) [bi, ci];
+    current_source<>(i_ct) [ci, ei];
+
+    // ── Base resistance, synthesized ────────────────────────────────────────
+    // R<> takes a compile-time constant, so a current-dependent Rb cannot be a
+    // resistor primitive. It is built instead from a voltage source carrying
+    // its own branch current times the wanted resistance — V = R*I is the
+    // defining equation of a resistor, so the solver reproduces one exactly
+    // (verified against a real R<> to nine digits).
+    //
+    // I(rbx) and not nr_prev(I(rbx)): I() already returns the latest solved
+    // iterate, which is what a fixed point wants. nr_prev() would reach one
+    // iteration further back, and that extra lag is purely destabilizing here
+    // — with it, this construction fails to converge outright once the
+    // synthesized resistance approaches the rest of the loop in size.
+    double ib_tot = i_be + i_bc;
+    double rb_eff = rb_of(Rb, Rbm, Irb, ib_tot, qb);
+    double v_rb   = rb_eff * I(rbx);
+    voltage_source rbx<>(v_rb) [base, bi];
+
+    // ── Charge storage ──────────────────────────────────────────────────────
+    // Total junction charge: diffusion (carriers in transit, proportional to
+    // the transport current) plus depletion (the space-charge layer). The
+    // diffusion term is what makes fT finite; the depletion term dominates in
+    // cutoff and sets Miller feedthrough.
+    //
+    // These two statements must stay at the module body's top level — see the
+    // header on processAnalogDdt's walk. The charges are deliberately built
+    // from the LIMITED vbe/vbc and from i_f/i_r, so charge and conduction are
+    // always evaluated at the same operating point.
+    // The ddt() results are bound to locals rather than written inline into
+    // the current_source port lists: a primitive's () argument must be a plain
+    // signal name, and processAnalogDdt only rewrites expression, assignment
+    // and local-declaration statements anyway.
+    double q_be  = Tf * i_f + q_dep(vbe, Cje, Vje, Mje, Fc);
+    double q_bc  = Tr * i_r + q_dep(vbc, Cjc, Vjc, Mjc, Fc);
+    double i_cbe = ddt(q_be);
+    double i_cbc = ddt(q_bc);
+
+    current_source<>(i_cbe) [bi, ei];
+    current_source<>(i_cbc) [bi, ci];
+
+    // Substrate capacitance stays linear: no bias dependence is modelled for
+    // it, and a constant cap costs nothing to stamp straight into G.
+    C<Cjs>() [ci, ei];
 }

@@ -176,6 +176,23 @@ func invokedAsHPM() bool {
 	return base == "hpm"
 }
 
+// machineInstalledPackageNames lists what is installed machine-wide, for the
+// loader's "installed, but not a dependency of this project" diagnostic. Only
+// ever called when an import has already failed, so an unreadable machine
+// lockfile just means the generic message — a broken ~/.hover must not turn a
+// missing-import error into a different, less relevant one.
+func machineInstalledPackageNames() []string {
+	roots, err := hpm.MachineRoots()
+	if err != nil {
+		return nil
+	}
+	names := make([]string, 0, len(roots))
+	for name := range roots {
+		names = append(names, name)
+	}
+	return names
+}
+
 func main() {
 	// Dispatched before the version banner: hpm has its own output, and a
 	// stray "Hover v0.8.0" on stdout would land in anything parsing it.
@@ -231,6 +248,7 @@ func main() {
 	}
 	loader.SetPackageRoots(pkgRoots)
 	loader.SetStdlibPackageNames(hpm.StdlibImportNames())
+	loader.SetMachineInstalledPackages(machineInstalledPackageNames)
 
 	loadResult, err := loader.Load(entryFile)
 	if err != nil {

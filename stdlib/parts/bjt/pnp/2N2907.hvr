@@ -1,0 +1,45 @@
+import <semiconductors/bjt> as dev;
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  2N2907A — 60 V / 600 mA general-purpose PNP switch (TO-18/TO-92)
+//
+//  The complement of the 2N2222A. Standard PSpice/Berkeley card, verbatim:
+//
+//    Is=650.6a  Bf=231.7  Br=3.563  Vaf=115.7  Ikf=1.079  Ise=54.81f
+//    Ne=1.829   Nc=2      Rb=10     Rc=.715    Cje=19.82p Mje=.3357
+//    Vje=.75    Cjc=14.76p Mjc=.5383 Vjc=.75   Fc=.5      Tf=603.7p
+//    Tr=111.3n
+//
+//  Is is written 0.6506f here: the card's 650.6E-18 is 650.6 aA, and the
+//  lexer's engineering suffixes stop at femto (f p n u m k Meg G), so the
+//  same number is expressed in femtoamps instead.
+//
+//  Parameters go in with normal positive SPICE signs; the PNP model handles
+//  polarity internally, so the card transcribes directly.
+//
+//  Same deviations as the other parts: Re = 1 mOhm (card says none), Cjs = 2p
+//  (required — see 2N2222.hvr), Var/Rbm/Irb = 0, Vt fixed at 0.026 V, and the
+//  card's Itf=.65 Vtf=5 Xtf=1.7 transit-time modulation not modelled.
+//
+//  Against its 2N2222A complement, two differences matter in a complementary
+//  pair. Ikf is 1.079 A versus the NPN's 0.285 A, so the PNP holds its beta to
+//  much higher current. But Tf is 604 ps versus 411 ps and Cjc is 14.8 pF
+//  versus 7.3 pF, so it is distinctly the slower half — a push-pull stage
+//  built from this pair is not symmetric in bandwidth.
+// ─────────────────────────────────────────────────────────────────────────────
+
+analog module Q2N2907<>()[wire base, wire collector, wire emitter] {
+    module q = dev.PNP<0.6506f, 1.0, 1.0,        // Is, Nf, Nr
+                       231.7, 3.563,            // Bf, Br
+                       115.7, 0.0,              // Vaf, Var
+                       1.079, 0.0,              // Ikf, Ikr
+                       54.81f, 1.829,           // Ise, Ne
+                       0.0, 2.0,                // Isc, Nc
+                       10.0, 0.0, 0.0,          // Rb, Rbm, Irb
+                       1m, 0.715,               // Re, Rc
+                       19.82p, 0.75, 0.3357,    // Cje, Vje, Mje
+                       14.76p, 0.75, 0.5383,    // Cjc, Vjc, Mjc
+                       0.5, 603.7p, 111.3n,     // Fc, Tf, Tr
+                       2p, 0.026>()             // Cjs, Vt
+                      [base, collector, emitter];
+}
