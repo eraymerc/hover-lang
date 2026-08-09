@@ -93,3 +93,126 @@ func double pnjlim(double v_new, double v_old, double nvt, double v_crit) {
     // log argument is positive.
     return nvt * log(v_new / nvt);
 }
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  pn-junction model math
+//
+//  Everything below is shared by every junction device in the standard library
+//  — the diode, both BJT polarities, and the MOSFET body diodes. It lives here
+//  rather than in <semiconductors> because none of it knows what device it is
+//  in: these are the functions a junction has, not the functions a diode or a
+//  transistor has, and pnjlim() above is already the same kind of thing.
+//
+//  There is a second reason, specific to how Hover names things. Functions are
+//  namespaced per DIRECTORY (compiler/elaborator/scope.go), so two device
+//  families that each kept a private copy would compile — the elaborator gives
+//  them distinct C identifiers — and would then silently drift apart. One copy
+//  here is one definition of what a depletion charge is.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────────────────────
+// jexp — junction exponential, exp(v/nvt) with an overflow guard.
+//
+// The guard is on the ARGUMENT rather than on the voltage, so the threshold
+// scales with each junction's own emission coefficient rather than assuming
+// room-temperature silicon. e^40 ~ 2.4e17 is far outside any physical bias.
+//
+// The guard is a hard clamp, and in Hover a hard clamp is not a neutral act.
+// vm_compute_jacobian (runtime/vm/vm.cpp) builds a full Jacobian by perturbing
+// every node voltage and re-running the analog blocks, so the derivative the
+// solver uses is MEASURED FROM THIS SOURCE: a zero-slope region becomes a zero
+// column, a direction Newton cannot step along. That is why device models must
+// not clamp their terminal voltages, and it is why this clamp sits where it
+// does — out past the point where nothing physical is left to model, with the
+// device's own GMIN keeping the branch conductance positive even there.
+//
+// Smooth extrapolation was tried in its place, matching value and slope at the
+// seam the way limexp() does, and it was worse: past the seam the current then
+// grows without bound and a bad iterate runs away instead of saturating. This
+// is the one place where flat beats smooth.
+func double jexp(double v, double nvt) {
+    double x = v / nvt;
+    if (x >  40.0) { x =  40.0; }
+    if (x < -40.0) { x = -40.0; }
+    return exp(x);
+}
+
+// vcrit_of — the junction voltage at which the exponential's curvature starts
+// to dominate, nvt*log(nvt/(sqrt(2)*Is)). This is the v_crit that pnjlim()
+// wants: below it an unlimited Newton step is harmless, above it the curve is
+// steep enough that one unbounded step can overshoot by decades of current.
+func double vcrit_of(double Is, double nvt) {
+    double arg = nvt / (1.41421356237 * Is);
+    if (arg < 1.0) { return 0.0; }   // absurdly large Is: limit everywhere
+    return nvt * log(arg);
+}
+
+// q_dep — depletion charge, the integral of the junction capacitance law
+// Cj/(1 - v/Vj)^Mj.
+//
+// Below Fc*Vj that integral is closed-form. Above it the capacitance law is
+// replaced by its tangent line, because the true law has a pole at v = Vj and
+// a forward-biased junction sits right on top of it — pow() would be handed a
+// negative base and return NaN. The F1/F2/F3 grouping is SPICE's, and it is
+// built so that BOTH the charge and its slope match at the v = Fc*Vj seam: a
+// kink there would be a step in capacitance, which the solver feels as a
+// spurious current spike every time a junction crosses it.
+//
+// Feed this the UNLIMITED junction voltage. Hover measures dq/dv numerically,
+// through whatever the caller did to get its argument, so passing a pnjlim()
+// output makes the limiter's compression divide the capacitance — and a
+// junction that presents almost no capacitance during a violent iterate is
+// exactly a junction that will not converge. Limiting exists to tame the
+// exponential; this power law needs none of it.
+func double q_dep(double v, double Cj, double Vj, double Mj, double Fc) {
+    if (Cj <= 0.0) { return 0.0; }
+
+    double vf = Fc * Vj;
+    if (v < vf) {
+        return Cj * Vj / (1.0 - Mj) * (1.0 - pow(1.0 - v / Vj, 1.0 - Mj));
+    }
+
+    double f1 = Vj * (1.0 - pow(1.0 - Fc, 1.0 - Mj)) / (1.0 - Mj);
+    double f2 = pow(1.0 - Fc, 1.0 + Mj);
+    double f3 = 1.0 - Fc * (1.0 + Mj);
+    return Cj * (f1 + (f3 * (v - vf)
+                       + (Mj / (2.0 * Vj)) * (v * v - vf * vf)) / f2);
+}
+
+// rb_of — current-dependent base resistance (Gummel-Poon).
+//
+// A real base is not a resistor: as injection rises the current crowds toward
+// the emitter edge, the conducting path shortens, and the effective resistance
+// falls from RB toward the high-current floor RBM. Two formulations, matching
+// SPICE's:
+//
+//   Irb <= 0   the base-charge form, Rbm + (Rb - Rbm)/qb — cheap, and tied to
+//              the same qb that already carries Early and high injection.
+//   Irb  > 0   the Berkeley current form, where Irb is the base current at
+//              which Rb has fallen about half way to Rbm.
+//
+// The z-series has a removable singularity at ib -> 0: (tan z - z)/(z tan^2 z)
+// tends to 1/3, which is why the small-z branch returns Rb exactly rather than
+// evaluating 0/0. At the other end z approaches pi/2 from below and the same
+// group tends to 0, so the result tends to Rbm. Both limits are correct by
+// construction.
+//
+// This one is only used by the BJTs, but it is junction-model math of the same
+// kind and splitting it off would put half of one model in another package.
+func double rb_of(double Rb, double Rbm, double Irb, double ib, double qb) {
+    if (Rbm <= 0.0) { return Rb; }    // RBM unset: constant base resistance
+    if (Rbm >= Rb)  { return Rbm; }
+
+    if (Irb <= 0.0) {
+        if (qb < 1.0e-9) { return Rb; }
+        return Rbm + (Rb - Rbm) / qb;
+    }
+
+    if (ib <= 0.0) { return Rb; }
+    double x = ib / Irb;
+    double z = (-1.0 + sqrt(1.0 + 14.5924348 * x)) / (2.4317084 * sqrt(x));
+    if (z < 1.0e-4) { return Rb; }
+    double tz = tan(z);
+    return Rbm + 3.0 * (Rb - Rbm) * (tz - z) / (z * tz * tz);
+}

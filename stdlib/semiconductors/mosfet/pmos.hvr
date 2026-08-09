@@ -112,5 +112,17 @@ analog module PMOS<double Kp,     double W,      double L,
     // tied to the source (cathode) and the p-drain is the anode, so it conducts
     // on V(drain) > V(source) — clamping the drain to just above the source
     // rail, which is exactly the high-side recirculation path in a bridge.
-    module bodydiode = Body.Diode<1p, 1.0, 0.026>() [drain, source];
+    //
+    // Same generic power-body-junction parameters as the NMOS, and for the same
+    // reason: this is the transistor's own junction, not a part number. See
+    // nmos.hvr for what each number is doing.
+    module bodydiode = Body.Diode<1n, 1.6,          // Is, N
+                                  20m,              // Rs
+                                  0.0,              // Ikf
+                                  0.0, 2.0,         // Isr, Nr
+                                  0.0, 0.0,         // Bv, Ibv (avalanche not modelled)
+                                  100p, 0.7, 0.5, 0.5,  // Cjo, Vj, M, Fc
+                                  100n,             // Tt
+                                  0.026>()          // Vt
+                                 [drain, source];
 }

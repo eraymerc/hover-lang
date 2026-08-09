@@ -1,0 +1,47 @@
+import <semiconductors> as dev;
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  1N4007 — 1000 V / 1 A general-purpose mains rectifier (DO-41)
+//
+//  The other end of the diode world from the 1N4148: slow, rugged, and meant
+//  for 50/60 Hz. Card values, the standard PSpice model:
+//
+//    Is=14.11n  N=1.984   Rs=33.89m  Ikf=94.81  Isr=1.6n  Nr=2
+//    Cjo=25.89p M=.44     Vj=.3245   Fc=.5      Bv=1000   Ibv=10u
+//    Tt=5.7u
+//
+//  Deviations: Vt fixed at 0.026 V, and the card's Xti=3 Eg=1.11 temperature
+//  scaling is not modelled.
+//
+//  Tt = 5.7 us is the whole story of this part. It is 285 times the 1N4148's,
+//  which means several microseconds of reverse recovery — longer than an
+//  entire switching period at 100 kHz. Put one in a buck converter and it
+//  conducts backwards through most of every cycle. It is also why the same
+//  1 A part that is perfectly happy in a mains bridge is useless as a
+//  freewheel diode next to a PWM'd inductor.
+//
+//  In the other direction Ikf = 94.81 A is effectively no knee at all within
+//  its rating, and Rs = 34 mOhm is 20x lower than the 1N4148's — this is a
+//  part built to carry current, not to switch.
+//
+//  The 1N400x series is one die in seven reverse gradings, so this card is the
+//  1N4001's with Bv raised from 50 V to 1000 V and nothing else changed. That
+//  single number is usually the whole decision: a bridge sees a peak inverse
+//  voltage of twice the transformer peak, so a 24 V peak secondary puts 48 V
+//  across each blocking diode and a 1N4001 is already in breakdown. See
+//  examples/Diode/rectifier.hvr, which fails to converge with the 4001 for
+//  exactly that reason — the model conducts in reverse because the real part
+//  would.
+// ─────────────────────────────────────────────────────────────────────────────
+
+analog module D1N4007<>()[wire anode, wire cathode] {
+    module d = dev.Diode<14.11n, 1.984,          // Is, N
+                         33.89m,                 // Rs
+                         94.81,                  // Ikf
+                         1.6n, 2.0,              // Isr, Nr
+                         1000.0, 10u,            // Bv, Ibv
+                         25.89p, 0.3245, 0.44, 0.5,  // Cjo, Vj, M, Fc
+                         5.7u,                   // Tt
+                         0.026>()                // Vt
+                        [anode, cathode];
+}

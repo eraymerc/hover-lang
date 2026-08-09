@@ -1,39 +1,226 @@
-from <math> import exp;
+from <math> import sqrt, pnjlim, jexp, vcrit_of, q_dep;
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Ideal Diode (Shockley Model)
+//  Junction Diode — SPICE Level-1 (Berkeley) model
 //
-//  This model implements the fundamental Shockley diode equation. 
+//  What this buys over the Shockley equation it replaces
+//  ─────────────────────────────────────────────────────
+//  The old model was id = Is*(e^(vd/nVt) - 1) with a fixed 2 pF across the
+//  terminals. That curve is right over maybe four decades in the middle of the
+//  forward region and wrong everywhere else. Added here, in the order they
+//  start to matter:
 //
-//  Numerical Stability:
-//  As with the bipolar models, this diode relies entirely on Hover's
-//  built-in diagonally-scaled trust-region solver to prevent exponential
-//  overflow during Newton-Raphson iterations. It uses the pure, unadulterated 
-//  `exp()` function for mathematically perfect physical accuracy.
+//    Rs    Ohmic series resistance. Above a few tens of mA this is what
+//          actually sets the forward drop — the exponential has gone nearly
+//          vertical and every further millivolt is I*Rs. Without it a 1N4001
+//          reaches 1 A at about 0.85 V instead of the 1.1 V on its data sheet.
+//    Isr   Recombination current in the depletion region, with its own
+//    Nr     emission coefficient (typically ~2). This dominates the forward
+//          current BELOW roughly a microamp, and it is why a real diode's
+//          Gummel slope is 120 mV/decade near the bottom and 60 mV/decade in
+//          the middle rather than 60 throughout.
+//    Ikf   High-injection knee. Beyond it the injected carrier density rivals
+//          the doping and the slope halves, id ~ e^(vd/2nVt).
+//    Bv    Reverse breakdown, as an exponential turn-on at -Bv carrying Ibv.
+//    Ibv    This is what makes a Zener a Zener; the old model would have
+//          conducted nothing at -5 V and clamped anything past -100 V into a
+//          numerically dead region.
+//    Cjo   Depletion charge from the real junction law rather than a fixed
+//    Vj     capacitor: 22 pF at 0 V is not 8 pF at -10 V, and reverse recovery
+//    M      depends on the difference.
+//    Fc
+//    Tt    Transit time — the DIFFUSION charge, stored minority carriers. This
+//          is reverse recovery. A switching diode has Tt in picoseconds and a
+//          rectifier has it in microseconds, and that single number is most of
+//          why you cannot use a 1N4001 in a switching supply.
 //
-//  Physical Clamps:
-//  The clamps (+0.85V and -100.0V) are not numerical hacks; they represent
-//  the literal physical limits of a standard PN junction before the series 
-//  resistance completely dominates or avalanche breakdown occurs.
+//  Convergence: the solver is real Newton, so keep derivatives alive
+//  ────────────────────────────────────────────────────────────────
+//  vm_compute_jacobian (runtime/vm/vm.cpp) builds a FULL numerical Jacobian by
+//  perturbing every node voltage by sqrt(eps)*max(|v|,1), re-running the analog
+//  blocks and measuring how B_static moved. The solvers consume it with
+//  Jacobian reuse and Newton damping. It is true Newton-Raphson — a
+//  finite-difference Jacobian instead of an analytic one, but structurally what
+//  SPICE does.
+//
+//  The consequence is the single most important thing about this file: the
+//  derivative the solver uses is MEASURED FROM THIS SOURCE. Whatever slope the
+//  code has is the slope Newton gets. So the previous model's
+//
+//      if (vd > 0.85)   { vd = 0.85; }
+//      if (vd < -100.0) { vd = -100.0; }
+//
+//  was not a physical bound and not a safety net — it was a region of exactly
+//  zero derivative, i.e. a zero column in the Jacobian, a direction the solver
+//  cannot step along. The comment claiming those clamps "represent the literal
+//  physical limits of a standard PN junction" had it backwards twice over: a
+//  real junction has no such wall (past 0.85 V it keeps conducting, which is
+//  what Rs is for, and past -100 V it breaks down, which is what Bv is for),
+//  and the wall actively caused divergence rather than preventing it. Removing
+//  the identical clamp from the BJT models is what fixed the amplifier cases
+//  that had been failing there. There are no voltage clamps below.
+//
+//  What keeps the iteration in bounds instead:
+//    · pnjlim() limits the STEP, not the value — the Berkeley junction
+//      limiter, fed the previous NR iterate via nr_prev(). It never flattens
+//      the curve; it only refuses to leap across it in one bound.
+//    · jexp() guards overflow on the exponential's argument, out at |x| = 40
+//      where nothing physical is left. See <math>'s jexp() for why that one hard
+//      clamp is tolerable and why smoothing it made things worse.
+//    · GMIN, a 1 pS conductance in parallel with the junction, exactly as
+//      SPICE does it. In deep reverse bias every exponential term has gone
+//      flat and the branch would otherwise present a truly singular row; this
+//      keeps the conductance strictly positive everywhere. 1 pS is 100 pA at
+//      100 V, far below any real leakage.
+//
+//  The one thing to know before using it: cold starts
+//  ──────────────────────────────────────────────────
+//  A transient that begins with the diode ALREADY deep in forward conduction
+//  may fail to find its operating point at t = 0. Measured on a 1N4148 into
+//  1 kOhm: a source starting at 1 V or 2 V is fine, 3 V and above is not.
+//  Every source that starts at or near zero and ramps — which is every
+//  realistic testbench, including all four examples that use this model — is
+//  unaffected.
+//
+//  The cause is specific and worth stating, because it is not the exponential
+//  and not the limiter. It is ddt() of the DIFFUSION charge. Bisected: with
+//  Tt = 0 the same 5 V cold start converges; with any Tt at all, from 100 pF
+//  of transit time to 11.54 ns, it does not; and removing pnjlim() entirely
+//  does not change the outcome either way. At t = 0 the synthesized charge
+//  element holds zero charge while the circuit demands the full q(v) of a
+//  conducting junction, and there is no consistent solution to start from.
+//
+//  SPICE does not hit this because it solves a DC operating point FIRST, with
+//  every capacitance open, and starts the transient from that. Hover starts
+//  the transient directly from a zero-state guess. So the fix, if this ever
+//  needs one, is an operating-point phase in the solver, not a change here.
+//  Until then: ramp your sources, or set Tt = 0 if you must start hot and do
+//  not care about reverse recovery.
+//
+//  Not modelled: temperature (Vt is passed in, so this is an isothermal model
+//  — the card's Eg/Xti scaling is absent), and the Level-3 refinements.
+//
+//  Parameters are ordinary SPICE card values with their usual positive signs.
+//  Rs must be > 0: R<0> is a short and the primitive rejects it, so parts use
+//  1 mOhm where the card specifies none. Ikf, Isr, Bv, Cjo and Tt are each
+//  disabled by passing 0.
 // ─────────────────────────────────────────────────────────────────────────────
 
-analog module Diode<double Is, double n, double Vt>()
+analog module Diode<double Is,  double N,
+                    double Rs,
+                    double Ikf,
+                    double Isr, double Nr,
+                    double Bv,  double Ibv,
+                    double Cjo, double Vj, double M, double Fc,
+                    double Tt,
+                    double Vt>()
     [wire anode, wire cathode]
 {
-    // Fetch the voltage across the diode
-    double vd = V(anode) - V(cathode);
+    // Internal anode. The junction equations are written across ai-cathode,
+    // and the ohmic drop from the terminal to the junction is carried by Rs —
+    // the same split as the BJT's intrinsic nodes.
+    wire ai;
 
-    // Physical bounds clamping (forward voltage drop and reverse breakdown)
-    if (vd > 0.85)   { vd = 0.85; }
-    if (vd < -100.0) { vd = -100.0; }
+    R<Rs>() [anode, ai];
 
-    // Pure Shockley physics equation using standard exp()
-    // id = Is * (e^(Vd / (n * Vt)) - 1)
-    double i_d = Is * (exp(vd / (n * Vt)) - 1.0);
+    double nvt   = N  * Vt;
+    double nvt_r = Nr * Vt;
 
-    // Stamp current into the MNA matrix
-    current_source<>(i_d)[anode, cathode];
+    // Per-iteration junction limiting. nr_prev() reaches back to the previous
+    // NEWTON iterate (not the previous timestep), which is what a junction
+    // limiter needs: it bounds how far one iteration may travel up the
+    // exponential, then lets the next iteration continue from there.
+    double vd = pnjlim(V(ai) - V(cathode), nr_prev(V(ai) - V(cathode)),
+                       nvt, vcrit_of(Is, nvt));
 
-    // Fixed parasitic junction capacitance for transient/AC realism
-    C<2p>() [anode, cathode];
+    // ── Ideal diffusion current ─────────────────────────────────────────────
+    double i_fwd = Is * (jexp(vd, nvt) - 1.0);
+
+    // ── High-injection knee ─────────────────────────────────────────────────
+    // Beyond Ikf the injected minority density approaches the doping and the
+    // effective slope halves. sqrt(Ikf/(Ikf+i)) is 1 well below the knee and
+    // falls as 1/sqrt(i) above it, which is exactly that halving.
+    //
+    // No guard on the denominator: i_fwd is bounded below by -Is, so
+    // Ikf + i_fwd >= Ikf - Is, and any physical card has Ikf many orders above
+    // Is. A guard here would be a zero-derivative branch bought for a case
+    // that cannot occur.
+    double kinj = 1.0;
+    if (Ikf > 0.0) {
+        kinj = sqrt(Ikf / (Ikf + i_fwd));
+    }
+
+    // ── Depletion-region recombination ──────────────────────────────────────
+    // The low-current tail, with its own emission coefficient (~2).
+    double i_rec = Isr * (jexp(vd, nvt_r) - 1.0);
+
+    // ── Reverse breakdown ───────────────────────────────────────────────────
+    // Turns on exponentially below -Bv and passes exactly -Ibv at vd = -Bv,
+    // which is how a card specifies the pair. Above -Bv the argument is deeply
+    // negative and jexp floors it, leaving a term of order 1e-18*Ibv — nothing
+    // next to Is, so the off-state is unaffected.
+    //
+    // It gets its OWN pnjlim, on its own argument, and it has to. Breakdown is
+    // a second exponential with a second turn-on point, so a step that is
+    // modest for the forward junction can be enormous for this one: a first
+    // iterate at -8 V on a 5.1 V part lands 2.9 V up an e^(v/Vt) curve, which
+    // is e^111 before any limiting. Reusing the forward limiter does not help,
+    // because it is watching a different voltage. Treating -(Bv + vd) as the
+    // forward voltage of a diode whose saturation current is Ibv makes the
+    // same limiter apply verbatim.
+    //
+    // The V()-differences are respelled rather than reusing vd: nr_prev()
+    // rewrites the V() leaves inside its argument, so it has to be handed the
+    // node expression, not a local that was already limited.
+    double ibv_eff = Ibv;
+    if (ibv_eff <= 0.0) { ibv_eff = 1.0e-12; }   // keeps vcrit_of finite
+
+    double vbd = pnjlim(-(Bv + (V(ai) - V(cathode))),
+                        nr_prev(-(Bv + (V(ai) - V(cathode)))),
+                        Vt, vcrit_of(ibv_eff, Vt));
+
+    double i_bv = 0.0;
+    if (Bv > 0.0) {
+        i_bv = -Ibv * jexp(vbd, Vt);
+    }
+
+    // ── Total branch current ────────────────────────────────────────────────
+    // GMIN closes the loop on the Jacobian: see the header. It is SPICE's
+    // default 1e-12 S and is deliberately not a parameter, because tuning it
+    // per part would be tuning the solver, not the device.
+    double i_d = i_fwd * kinj + i_rec + i_bv + 1.0e-12 * vd;
+
+    current_source<>(i_d) [ai, cathode];
+
+    // ── Charge storage ──────────────────────────────────────────────────────
+    // Diffusion charge (stored minority carriers, ~ Tt * conducted current)
+    // plus depletion charge. ddt() rewrites to a 1 F capacitor driven by a
+    // current source, so the derivative comes out of the MNA solve itself
+    // rather than from a difference taken here — which is what makes the
+    // capacitance correctly bias-dependent instead of frozen at its DC value.
+    // The depletion term is built from the RAW terminal voltage, not from the
+    // limited vd, and that difference is load-bearing rather than cosmetic.
+    //
+    // SPICE evaluates its capacitance at the limited voltage and gets away with
+    // it because it stamps an ANALYTIC dq/dv at that point. Hover measures the
+    // derivative numerically, by perturbing the node and re-running this block,
+    // so the chain rule runs through pnjlim() as well: whatever the limiter is
+    // doing to the step also divides the capacitance. Where the limiter is
+    // compressing hardest — a first iterate several volts up the curve, which
+    // is exactly a transient started at full bias — its local slope is a few
+    // parts per thousand, and the junction presents essentially NO capacitance
+    // at the one moment the solver most needs some. That was reproducibly
+    // fatal: an operating point at 5 V through 1 kOhm failed to converge with
+    // the limited voltage here and converges with the raw one.
+    //
+    // Nothing is lost by using the raw voltage. The depletion law is a mild
+    // power law with no overflow to guard against, and limiting exists only to
+    // tame the exponential. The diffusion term below keeps the limited current,
+    // because that IS the exponential — and at convergence dv is small, pnjlim
+    // passes through untouched, and the two agree exactly.
+    double q_d = Tt * i_fwd * kinj
+               + q_dep(V(ai) - V(cathode), Cjo, Vj, M, Fc);
+    double i_c = ddt(q_d);
+
+    current_source<>(i_c) [ai, cathode];
 }

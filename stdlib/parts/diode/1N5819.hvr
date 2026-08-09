@@ -1,0 +1,42 @@
+import <semiconductors> as dev;
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  1N5819 — 40 V / 1 A Schottky barrier rectifier (DO-41)
+//
+//  A Schottky is a metal-semiconductor junction, not a pn junction, and the
+//  SPICE diode models it by pushing the same equations to different corners
+//  rather than by using different equations. Two numbers do it:
+//
+//    Is = 31.7 uA   Six orders above a silicon Is. This is the low forward
+//                   drop: ~0.32 V at 1 A instead of ~1.1 V. It is also the
+//                   leakage — a Schottky leaks microamps where a 1N4001
+//                   leaks nanoamps, and that leakage climbs steeply with
+//                   temperature, which this isothermal model will not show.
+//    Tt = 1 ns      There is no stored minority charge in a majority-carrier
+//                   device, so reverse recovery is essentially the depletion
+//                   capacitance discharging and nothing else.
+//
+//  Cjo = 140 pF is the cost: 35x the 1N4148's, because low forward drop needs
+//  a large barrier area. At high frequency that capacitance, not recovery, is
+//  what limits the part.
+//
+//  Card values are the commonly circulated ON Semi model; Ikf, Isr and Fc are
+//  unspecified there and take 0/0/0.5. Vt fixed at 0.026 V.
+//
+//  Bv = 40 V with Ibv = 10 mA. A Schottky's reverse breakdown is soft and
+//  close to its rating, so unlike the silicon parts here it is genuinely worth
+//  having modelled — a 40 V Schottky on a 30 V rail is not the comfortable
+//  margin the number suggests.
+// ─────────────────────────────────────────────────────────────────────────────
+
+analog module D1N5819<>()[wire anode, wire cathode] {
+    module d = dev.Diode<31.7u, 1.24,            // Is, N
+                         51m,                    // Rs
+                         0.0,                    // Ikf
+                         0.0, 2.0,               // Isr, Nr
+                         40.0, 10m,              // Bv, Ibv
+                         140p, 0.35, 0.35, 0.5,  // Cjo, Vj, M, Fc
+                         1n,                     // Tt
+                         0.026>()                // Vt
+                        [anode, cathode];
+}

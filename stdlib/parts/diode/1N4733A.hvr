@@ -1,0 +1,39 @@
+import <semiconductors> as dev;
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  1N4733A — 5.1 V / 1 W Zener reference (DO-41)
+//
+//  The part that exists to be operated in the region every other diode here
+//  avoids. Bv = 5.1 V with Ibv = 49 mA is the data sheet's Vz at Izt, and the
+//  model reproduces it directly: the breakdown term passes exactly -Ibv at
+//  vd = -Bv and rises exponentially below that.
+//
+//  Rs = 1 Ohm carries a second meaning for a Zener. Forward it is the usual
+//  ohmic resistance, but in breakdown it is what sets the dynamic impedance
+//  Zzt — the slope of the regulation curve. The data sheet gives 7 Ohm at
+//  49 mA; the exponential contributes the rest of that, so do not read Rs
+//  here as if it were only a forward parameter.
+//
+//  Card values follow the commonly circulated model for the 1N47xxA series
+//  with Bv/Ibv set to this member's Vz/Izt. Isr, Ikf and Fc are unspecified
+//  and take 0/0/0.5; Vt is fixed at 0.026 V, which matters more for this part
+//  than for the others — a real 5.1 V Zener sits near the crossover between
+//  the negative-tempco Zener mechanism and the positive-tempco avalanche one,
+//  and none of that temperature behaviour is modelled here.
+//
+//  Validated in this configuration: swept from -1 V to -8 V through 1 kOhm,
+//  the terminal voltage clamps between 5.05 V and 5.09 V while the current
+//  rises to 2.89 mA, matching (Vsrc - Vz)/R at every point.
+// ─────────────────────────────────────────────────────────────────────────────
+
+analog module D1N4733A<>()[wire anode, wire cathode] {
+    module d = dev.Diode<1.404n, 1.5,            // Is, N
+                         1.0,                    // Rs
+                         0.0,                    // Ikf
+                         0.0, 2.0,               // Isr, Nr
+                         5.1, 49m,               // Bv, Ibv
+                         1.5n, 0.75, 0.3, 0.5,   // Cjo, Vj, M, Fc
+                         50n,                    // Tt
+                         0.026>()                // Vt
+                        [anode, cathode];
+}

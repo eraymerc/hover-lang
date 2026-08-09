@@ -7,7 +7,7 @@
 .tran(0, 100m, 1u, 10u); // 100 ms run to capture 5 full cycles of 50 Hz
 .solver(bdf2);
 
-import <semiconductors> as diode;
+import <parts/diode> as parts;
 from <math> import sin;
 
 // ═══════════════════════════════════════════════════════════════
@@ -40,12 +40,12 @@ module main<>() []
     // Parameters: Is = 1pA, n = 1.0, Vt = 0.026V
     
     // Positive half-cycle path
-    module D1 = diode.Diode<1p, 1.0, 0.026>() [ac_in1, dc_out]; // Conducts to output
-    module D2 = diode.Diode<1p, 1.0, 0.026>() [gnd, ac_in2];    // Returns to source
+    module D1 = parts.D1N4007<>() [ac_in1, dc_out]; // Conducts to output
+    module D2 = parts.D1N4007<>() [gnd, ac_in2];    // Returns to source
 
     // Negative half-cycle path
-    module D3 = diode.Diode<1p, 1.0, 0.026>() [ac_in2, dc_out]; // Conducts to output
-    module D4 = diode.Diode<1p, 1.0, 0.026>() [gnd, ac_in1];    // Returns to source
+    module D3 = parts.D1N4007<>() [ac_in2, dc_out]; // Conducts to output
+    module D4 = parts.D1N4007<>() [gnd, ac_in1];    // Returns to source
 
     // 3. Load & Output Filter
     R<1k>() [dc_out, gnd];       // R_load - 1 kOhm bleeder/load

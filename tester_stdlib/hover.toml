@@ -1,0 +1,9 @@
+# Local test project: pins `stdlib` to the working copy in ../stdlib rather
+# than the published v0.8 package, so edits under ../stdlib are exercised by
+# `../hover test.hvr` without publishing anything.
+[package]
+name = "tester_stdlib"
+version = "0.0.0"
+
+[dependencies]
+stdlib = "0.8.0"

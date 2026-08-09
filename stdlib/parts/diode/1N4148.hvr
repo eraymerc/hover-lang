@@ -1,0 +1,39 @@
+import <semiconductors> as dev;
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  1N4148 — 75 V / 300 mA small-signal switching diode (DO-35)
+//
+//  The default choice for signal work: clamps, small-signal rectification,
+//  logic steering, and the diode half of a discrete bias string. Card values,
+//  the widely circulated Philips/Vishay PSpice model:
+//
+//    Is=2.52n  Rs=.568  N=1.752  Cjo=4p  M=.4  Tt=20n  Vj=.4
+//    Bv=75     Ibv=5u
+//
+//  Deviations, all forced by what the model supports or by what the card
+//  leaves unspecified:
+//
+//    Ikf   Not on the card, so 0 (no high-injection knee). At 300 mA rated
+//          current this part is nowhere near injection-limited anyway.
+//    Isr   Not on the card, so 0. The low-current tail is therefore purely
+//    Nr    ideal here — expect the sub-microamp region to be optimistic.
+//    Fc    Not on the card; SPICE's default 0.5.
+//    Vt    Fixed at 0.026 V (~28 C). Card temperature scaling (Xti, Eg) is
+//          not modelled, so this is a room-temperature part.
+//
+//  The number that distinguishes this part from a rectifier is Tt = 20 ns.
+//  That is what "switching diode" means, and it is why this and not a 1N4001
+//  belongs anywhere a waveform moves faster than a few hundred kilohertz.
+// ─────────────────────────────────────────────────────────────────────────────
+
+analog module D1N4148<>()[wire anode, wire cathode] {
+    module d = dev.Diode<2.52n, 1.752,          // Is, N
+                         0.568,                 // Rs
+                         0.0,                   // Ikf
+                         0.0, 2.0,              // Isr, Nr
+                         75.0, 5u,              // Bv, Ibv
+                         4p, 0.4, 0.4, 0.5,     // Cjo, Vj, M, Fc
+                         20n,                   // Tt
+                         0.026>()               // Vt
+                        [anode, cathode];
+}

@@ -1,4 +1,4 @@
-from <math> import sqrt, pnjlim;
+from <math> import sqrt, pnjlim, jexp, vcrit_of, q_dep, rb_of;
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  NPN Gummel-Poon Bipolar Junction Transistor

@@ -22,6 +22,9 @@ sim.exe
 /runtime/hover_runtime.lib
 docs/hovercraft-issues.md
 
+# Session notes kept for Claude to re-read; local only, not part of the project.
+memories/
+
 # Python driver library
 __pycache__/
 *.py[cod]

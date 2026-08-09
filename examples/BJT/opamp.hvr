@@ -13,6 +13,9 @@
 
 import <semiconductors/bjt>;
 import <semiconductors> as devices;
+import <parts/diode> as parts;
+import <parts/bjt/npn> as npnp;
+import <parts/bjt/pnp> as pnpp;
 from <math> import sin;
 
 // ═══════════════════════════════════════════════════════════════
@@ -25,8 +28,8 @@ module DiscreteOpAmp<>() [wire non_inv, wire inv, wire vcc, wire vee, wire out]
 
     // ─── 1. DIFFERENTIAL INPUT STAGE ───
     // Compares the non-inverting and inverting inputs
-    module q1 = bjt.NPN<0.01p, 150, 3, 0.026>() [non_inv, c1, tail];
-    module q2 = bjt.NPN<0.01p, 150, 3, 0.026>() [inv, c2, tail];
+    module q1 = npnp.Q2N3904<>() [non_inv, c1, tail];
+    module q2 = npnp.Q2N3904<>() [inv, c2, tail];
     
     R<10k>() [tail, vee]; // Tail current sink to negative rail
     R<10k>() [vcc, c1];   // Collector load 1 (Drives the next stage)
@@ -41,7 +44,7 @@ module DiscreteOpAmp<>() [wire non_inv, wire inv, wire vcc, wire vee, wire out]
     // (the inv-side collector) makes the two inversions cancel, turning
     // "inv" into a non-inverting pin and the outer feedback network into
     // positive feedback instead of negative feedback.
-    module q3 = bjt.PNP<0.01p, 150, 3, 0.026>() [c1, vas_out, vcc];
+    module q3 = pnpp.Q2N3906<>() [c1, vas_out, vcc];
 
     // Miller Compensation Capacitor (crucial for closed-loop AC stability)
     // Must bridge the VAS's actual input/output pair: vas_out <-> c1.
@@ -50,16 +53,16 @@ module DiscreteOpAmp<>() [wire non_inv, wire inv, wire vcc, wire vee, wire out]
     // ─── 3. CLASS-AB DIODE BIAS NETWORK ───
     // Q3 pushes current through these two diodes to VEE.
     // This creates a ~1.4V drop to bias the output transistors on the edge of conduction.
-    module d1 = devices.Diode<1p, 1.0, 0.026>() [vas_out, d_mid];
-    module d2 = devices.Diode<1p, 1.0, 0.026>() [d_mid, d_bot];
+    module d1 = parts.D1N4148<>() [vas_out, d_mid];
+    module d2 = parts.D1N4148<>() [d_mid, d_bot];
     R<4.7k>() [d_bot, vee]; // Pull-down resistor to complete the VAS circuit
 
     // ─── 4. PUSH-PULL OUTPUT STAGE ───
     // NPN pushes current from VCC to the output load
-    module q4 = bjt.NPN<0.01p, 150, 3, 0.026>() [vas_out, vcc, out];
+    module q4 = npnp.Q2N2222<>() [vas_out, vcc, out];
     
     // PNP pulls current from the output load to VEE
-    module q5 = bjt.PNP<0.01p, 150, 3, 0.026>() [d_bot, vee, out];
+    module q5 = pnpp.Q2N2907<>() [d_bot, vee, out];
 }
 
 

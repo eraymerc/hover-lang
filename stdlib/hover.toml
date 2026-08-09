@@ -16,8 +16,11 @@
 #
 # Contents:
 #
-#   math/                libm bindings, limexp, pnjlim
+#   math/                libm bindings, limexp, pnjlim, and the shared
+#                        pn-junction model math (jexp, vcrit_of, q_dep, rb_of)
 #   semiconductors/      diode, plus bjt/ and mosfet/ subdirectories
+#   parts/               real part cards built on those models — bjt/npn/,
+#                        bjt/pnp/ and diode/
 #   electromechanical/   pmsm (uses math)
 #   optoelectronics/     leds/ only — no .hvr files at its own root, so
 #                        `import <optoelectronics>` is an error and you write

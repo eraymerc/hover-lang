@@ -157,6 +157,21 @@ analog module NMOS<double Kp,     double W,      double L,
     // cathode, so it conducts on V(source) > V(drain) and catches the inductive
     // kick when the channel opens. This is the part a BJT bridge has to add by
     // hand — see the four discrete flyback diodes in examples/DCMotor/h_bridge.hvr.
-    // Note it brings its own 2p junction capacitance, in parallel with Cdb.
-    module bodydiode = Body.Diode<1p, 1.0, 0.026>() [source, drain];
+    //
+    // Parameters are a generic power-MOSFET body junction rather than a card:
+    // it is not a separate component with a part number, it is this transistor's
+    // own drain-body junction, so its size tracks the die. Is=1n and Rs=20m give
+    // roughly a 0.8 V drop at an amp; Tt=100n makes it the slow, lossy diode a
+    // real body diode is, which is exactly why bridges add a fast external one
+    // in parallel. Cjo=100p replaces the 2 pF the old model carried and sits in
+    // parallel with Cdb.
+    module bodydiode = Body.Diode<1n, 1.6,          // Is, N
+                                  20m,              // Rs
+                                  0.0,              // Ikf
+                                  0.0, 2.0,         // Isr, Nr
+                                  0.0, 0.0,         // Bv, Ibv (avalanche not modelled)
+                                  100p, 0.7, 0.5, 0.5,  // Cjo, Vj, M, Fc
+                                  100n,             // Tt
+                                  0.026>()          // Vt
+                                 [source, drain];
 }

@@ -1,10 +1,10 @@
-from <math> import sqrt, pnjlim;
+from <math> import sqrt, pnjlim, jexp, vcrit_of, q_dep, rb_of;
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  PNP Gummel-Poon Bipolar Junction Transistor
 //
 //  The complementary device to npn.hvr, and deliberately the same model: it
-//  shares every helper in gp_core.hvr and every equation below is character
+//  shares every helper in <math> and every equation below is character
 //  for character the NPN's. Only two things are inverted, and they are the
 //  only two things that CAN differ between the polarities:
 //
