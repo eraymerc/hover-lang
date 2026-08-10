@@ -1,5 +1,6 @@
 #include "ndf2.hpp"
 #include "newton_trust_region.hpp"
+#include "step_trace.hpp"
 #include "../vm/vm.hpp"
 #include "../vm/zcd.hpp"
 
@@ -56,7 +57,10 @@ void NDF2::run(VM *vm) {
     Eigen::MatrixXd jacobian;
     bool jacobian_valid = false;
 
+    long attempt = 0;   // counts ATTEMPTS, not accepted steps — see step_trace.hpp
+
     while (vm->time < vm->end_time) {
+        attempt++;
         VMSnapshot checkpoint = vm_save_state(vm);
         double dt = vm->time_step;
 
@@ -159,9 +163,11 @@ void NDF2::run(VM *vm) {
             vm_restore_state(vm, checkpoint);
             if (!jacobian_current_this_step) {
                 jacobian_valid = false;
+                step_trace("ndf2", attempt, vm->time, dt, iters, "jac-refresh");
                 continue;
             }
             vm->time_step *= 0.5;
+            step_trace("ndf2", attempt, vm->time, dt, iters, "reject");
             // NOTE: step_count is deliberately NOT reset here. An earlier
             // version reset it to 0 on every convergence failure, which
             // forced an order-2 -> order-1 demotion alongside the dt cut
@@ -200,8 +206,12 @@ void NDF2::run(VM *vm) {
         if (iters <= 5) {
             vm->time_step *= 1.2;
             if (vm->time_step > max_dt) vm->time_step = max_dt;
+            step_trace("ndf2", attempt, vm->time, dt, iters, "grow");
         } else if (iters > max_iter / 2) {
             vm->time_step *= 0.8;
+            step_trace("ndf2", attempt, vm->time, dt, iters, "shrink");
+        } else {
+            step_trace("ndf2", attempt, vm->time, dt, iters, "accept");
         }
     }
 }

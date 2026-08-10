@@ -1,4 +1,4 @@
-from <math> import sqrt, pnjlim, jexp, vcrit_of, q_dep;
+from <math> import exp, sqrt, pnjlim, jexp, vcrit_of, q_dep;
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Junction Diode — SPICE Level-1 (Berkeley) model
@@ -44,8 +44,12 @@ from <math> import sqrt, pnjlim, jexp, vcrit_of, q_dep;
 //  SPICE does.
 //
 //  The consequence is the single most important thing about this file: the
-//  derivative the solver uses is MEASURED FROM THIS SOURCE. Whatever slope the
-//  code has is the slope Newton gets. So the previous model's
+//  derivative the solver uses comes FROM THIS SOURCE. Whatever slope the code
+//  has is the slope Newton gets — and note that this is a property of the
+//  derivative being taken from the model at all, not of it being taken by
+//  finite differences. Automatic differentiation would report the same slopes.
+//  Everything below about keeping derivatives alive would survive unchanged if
+//  the Jacobian became analytic tomorrow. So the previous model's
 //
 //      if (vd > 0.85)   { vd = 0.85; }
 //      if (vd < -100.0) { vd = -100.0; }
@@ -73,29 +77,49 @@ from <math> import sqrt, pnjlim, jexp, vcrit_of, q_dep;
 //      keeps the conductance strictly positive everywhere. 1 pS is 100 pA at
 //      100 V, far below any real leakage.
 //
-//  The one thing to know before using it: cold starts
-//  ──────────────────────────────────────────────────
+//  The one thing to know before using it: cold starts want .op
+//  ───────────────────────────────────────────────────────────
 //  A transient that begins with the diode ALREADY deep in forward conduction
-//  may fail to find its operating point at t = 0. Measured on a 1N4148 into
-//  1 kOhm: a source starting at 1 V or 2 V is fine, 3 V and above is not.
-//  Every source that starts at or near zero and ramps — which is every
-//  realistic testbench, including all four examples that use this model — is
-//  unaffected.
+//  will fail to find its operating point at t = 0 UNLESS the deck declares
+//  `.op;`. Measured on a 1N4148 into 1 kOhm without it: a source starting at
+//  1 V or 2 V is fine, 3 V and above is not. With `.op;` the same 5 V start
+//  solves exactly — 0.6514 V across the junction at 4.349 mA, flat from the
+//  first timestep.
 //
-//  The cause is specific and worth stating, because it is not the exponential
-//  and not the limiter. It is ddt() of the DIFFUSION charge. Bisected: with
-//  Tt = 0 the same 5 V cold start converges; with any Tt at all, from 100 pF
-//  of transit time to 11.54 ns, it does not; and removing pnjlim() entirely
-//  does not change the outcome either way. At t = 0 the synthesized charge
-//  element holds zero charge while the circuit demands the full q(v) of a
-//  conducting junction, and there is no consistent solution to start from.
+//  Sources that begin at or near zero and ramp are unaffected either way,
+//  which is why the examples using this model do not all carry `.op;`.
 //
-//  SPICE does not hit this because it solves a DC operating point FIRST, with
-//  every capacitance open, and starts the transient from that. Hover starts
-//  the transient directly from a zero-state guess. So the fix, if this ever
-//  needs one, is an operating-point phase in the solver, not a change here.
-//  Until then: ramp your sources, or set Tt = 0 if you must start hot and do
-//  not care about reverse recovery.
+//  The cause is specific, and it is narrower than it first looks. It is not
+//  the exponential current, not pnjlim (removing it entirely changes nothing),
+//  and not ddt itself. It is that the DIFFUSION charge Tt*Is*e^(v/nVt) has a
+//  derivative — a capacitance — that varies exponentially with voltage.
+//
+//  Bisected at a 5 V cold start into 1 kOhm, holding the capacitance at the
+//  solution fixed near 1 nF in all three:
+//
+//    diffusion charge through ddt()          fails at t = 0
+//    a LINEAR 1 nF charge through ddt()      converges, 2048 timesteps
+//    a LINEAR 1 nF as a C<> primitive        converges, 2021 timesteps
+//
+//  So the synthesized charge element is fine and the magnitude is fine. What
+//  the solver cannot do is start at v = 0, where this capacitance is
+//  essentially zero, and reach v = 0.65, where it is a nanofarad, while the
+//  element's stored charge goes from nothing to full in the same instant —
+//  every trial point along the way has a capacitance orders of magnitude
+//  different from the last.
+//
+//  SPICE does not hit this because it always solves a DC operating point
+//  first. Hover's equivalent is opt-in: without `.op;` the transient starts
+//  from a zero-state guess, which for this element is not a consistent one.
+//  vm_solve_op (runtime/vm/vm.cpp) does source stepping — it ramps the
+//  independent sources through twelve alphas with a damped iteration — and
+//  that is enough to walk the diffusion charge up to its correct value.
+//
+//  One caveat when reading its log: vm_solve_op prints "OP alpha=... complete"
+//  unconditionally, including when its 500-iteration inner loop ran out
+//  without converging. The line means the alpha was attempted, not that it
+//  succeeded, so do not take a clean-looking OP log as proof of a solved
+//  operating point — check the first few rows of output instead.
 //
 //  Not modelled: temperature (Vt is passed in, so this is an isothermal model
 //  — the card's Eg/Xti scaling is absent), and the Level-3 refinements.
@@ -181,7 +205,28 @@ analog module Diode<double Is,  double N,
 
     double i_bv = 0.0;
     if (Bv > 0.0) {
-        i_bv = -Ibv * jexp(vbd, Vt);
+        // NOT jexp() here, and the difference is not cosmetic. jexp guards its
+        // argument at BOTH ends, and the lower guard floors the exponential at
+        // e^-40 ~ 4.2e-18. For the forward current that floor is harmless — it
+        // just yields the correct -Is. For this term it manufactures a constant
+        // -Ibv * 4.2e-18 that is present at every bias, in every diode, forever:
+        // about -4e-23 A on a 10 uA Ibv. The true breakdown current a thousand
+        // volts short of Bv is around 1e-190, i.e. zero.
+        //
+        // That spurious constant is not negligible in practice. Substituting a
+        // literal -4.25e-23 A for this whole term reproduces the failure of a
+        // full-bridge rectifier exactly, while removing the term lets the same
+        // circuit solve in 3418 steps — so this floor, and not breakdown
+        // physics, is what a blocking diode was contributing.
+        //
+        // Only the upper guard is needed. IEEE exp() underflows to zero
+        // gracefully on the way down, with no exception and no denormal
+        // trouble, so the off-state term is exactly 0 and contributes exactly
+        // nothing — which is both the physically right answer and the
+        // numerically quiet one.
+        double x_bd = vbd / Vt;
+        if (x_bd > 40.0) { x_bd = 40.0; }
+        i_bv = -Ibv * exp(x_bd);
     }
 
     // ── Total branch current ────────────────────────────────────────────────
@@ -202,10 +247,16 @@ analog module Diode<double Is,  double N,
     // limited vd, and that difference is load-bearing rather than cosmetic.
     //
     // SPICE evaluates its capacitance at the limited voltage and gets away with
-    // it because it stamps an ANALYTIC dq/dv at that point. Hover measures the
-    // derivative numerically, by perturbing the node and re-running this block,
-    // so the chain rule runs through pnjlim() as well: whatever the limiter is
-    // doing to the step also divides the capacitance. Where the limiter is
+    // it because limiting there is TRANSPARENT TO THE JACOBIAN: $limit (and
+    // SPICE's pnjlim before it) moves the operating point only, and dq/dv is
+    // taken with respect to the unlimited junction voltage. Hover has no such
+    // hook — pnjlim() is an ordinary function in this block's data flow, so its
+    // own slope is part of the derivative. Note this is NOT about the Jacobian
+    // being finite-difference rather than analytic: pnjlim's limiting branch
+    // has derivative 1/(arg - 2) with respect to v_new, and automatic
+    // differentiation would report exactly the same value. Any faithful
+    // differentiation of the code as written divides the capacitance by
+    // whatever the limiter is doing to the step. Where the limiter is
     // compressing hardest — a first iterate several volts up the curve, which
     // is exactly a transient started at full bias — its local slope is a few
     // parts per thousand, and the junction presents essentially NO capacitance

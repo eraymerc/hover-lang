@@ -71,6 +71,33 @@ func double limexp(double x) {
 // from a bad guess was answered with a jump UP to v_crit, large and in the
 // wrong direction. It also never engaged at all while v_new <= v_crit, however
 // violent the step.
+//
+// A NOTE ON THE SEAM AT |dv| = 2*nvt, AND A FIX THAT DID NOT WORK
+// ──────────────────────────────────────────────────────────────
+// This branch is discontinuous where it meets the pass-through guard above.
+// Any |dv| < 2*nvt passes straight through, so the limited branch is entered
+// at arg = 2+, where log(arg - 2) -> -infinity: at arg = 2.0001 pass-through
+// returns 2*nvt above v_old while this branch returns 7.2*nvt BELOW it, with a
+// local slope of 10000 rather than 1.
+//
+// That matters more in Hover than in SPICE. SPICE excludes its limiter from
+// the Jacobian — $limit moves the operating point and dI/dV is taken with
+// respect to the unlimited voltage — whereas this function sits in the analog
+// block's ordinary data flow, so its slope is part of the derivative the
+// solver gets. (That is true of automatic differentiation too; it is not an
+// artefact of finite differences.)
+//
+// Shifting the log by one — log(arg - 1) — removes the discontinuity in both
+// value and slope: at arg = 2 it returns exactly v_old + 2*nvt with slope 1,
+// matching pass-through on both counts, and it agrees with Berkeley to a
+// fraction of nvt far from the seam (6.6347 vs 6.6444 at arg = 105).
+//
+// It was tried, and it is NOT an improvement in practice. It did not fix the
+// full-bridge rectifier it was aimed at, and it broke examples/BJT/npn_amp.hvr,
+// which stopped converging at t = 0 having previously run in 3165 steps. The
+// big downward jump this branch makes near the seam is evidently doing useful
+// work on hard cold starts, however ugly it looks. Berkeley's form is restored
+// here; do not "fix" the discontinuity again without re-running npn_amp.
 // ─────────────────────────────────────────────────────────────────────────────
 func double pnjlim(double v_new, double v_old, double nvt, double v_crit) {
     if (v_new <= v_crit) { return v_new; }

@@ -1,5 +1,6 @@
 #include "bdf2.hpp"
 #include "newton_trust_region.hpp"
+#include "step_trace.hpp"
 #include "../vm/vm.hpp"
 #include "../vm/zcd.hpp"
 
@@ -51,7 +52,10 @@ void BDF2::run(VM *vm) {
     Eigen::MatrixXd jacobian;
     bool jacobian_valid = false;
 
+    long attempt = 0;   // counts ATTEMPTS, not accepted steps — see step_trace.hpp
+
     while (vm->time < vm->end_time) {
+        attempt++;
         VMSnapshot checkpoint = vm_save_state(vm);
         double dt = vm->time_step;
 
@@ -165,12 +169,14 @@ void BDF2::run(VM *vm) {
                 // not a step rejection, so BDF2's multistep history should
                 // not be discarded.
                 jacobian_valid = false;
+                step_trace("bdf2", attempt, vm->time, dt, iters, "jac-refresh");
                 continue;
             }
             // Jacobian was already current and still failed — the
             // failure is genuinely about the step size now.
             vm->time_step *= 0.5;
             step_count = 0;
+            step_trace("bdf2", attempt, vm->time, dt, iters, "reject");
             if (vm->time_step < min_dt) {
                 fprintf(stderr, "[BDF2] FATAL: Failed to converge at t=%.3e\n", vm->time);
                 break;
@@ -191,8 +197,12 @@ void BDF2::run(VM *vm) {
         if (iters <= 5) {
             vm->time_step *= 1.2;
             if (vm->time_step > max_dt) vm->time_step = max_dt;
+            step_trace("bdf2", attempt, vm->time, dt, iters, "grow");
         } else if (iters > max_iter / 2) {
             vm->time_step *= 0.8;
+            step_trace("bdf2", attempt, vm->time, dt, iters, "shrink");
+        } else {
+            step_trace("bdf2", attempt, vm->time, dt, iters, "accept");
         }
     }
 }
