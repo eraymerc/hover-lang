@@ -79,7 +79,10 @@ void stamp_voltage_source(System *sys, int n1, int n2, double voltage, int branc
     g_add(sys, n2, br, -1.0);
     g_add(sys, br, n2, -1.0);
     g_add(sys, br, br, -1e-6);
-    sys->B_static(br) = voltage;
+    sys->register_voltage_source_stamp(br, voltage);
+    // source_alpha is 1.0 at init; it only differs from 1.0 while the DC
+    // operating point's source-stepping ladder is running.
+    sys->B_static(br) = voltage * sys->source_alpha;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -143,16 +143,24 @@ func double pnjlim(double v_new, double v_old, double nvt, double v_crit) {
 //
 // The guard is on the ARGUMENT rather than on the voltage, so the threshold
 // scales with each junction's own emission coefficient rather than assuming
-// room-temperature silicon. e^40 ~ 2.4e17 is far outside any physical bias.
+// room-temperature silicon. e^60 ~ 1.1e26 is far outside any physical bias
+// yet still e^222 short of double overflow.
+//
+// The ceiling is 60, not the historical 40, and the reason is knee voltage,
+// not overflow: the guard must sit ABOVE the operating knee of every device
+// in the library, because a hard clamp's zero-slope region is a zero column
+// in the measured Jacobian (vm_compute_jacobian perturbs node voltages and
+// re-runs this exact source), and a zero column is a direction Newton cannot
+// step along. At 40, the guard engaged at 40*nvt = 1.98 V for the red LED
+// (nvt ~ 49.5 mV) — 130 mV past its 1.85 V operating knee — so the Jacobian
+// went flat exactly where a driven source crossing the knee needs it most,
+// and the OP ladder cycled on that knee forever (measured on redled.hvr:
+// rungs 0.40+ exhausted 500 iterations each). At 60 the same LED clamps at
+// 2.97 V and a silicon diode at 1.56 V, both clear of the knee with e^60
+// still nowhere near overflow.
 //
 // The guard is a hard clamp, and in Hover a hard clamp is not a neutral act.
-// vm_compute_jacobian (runtime/vm/vm.cpp) builds a full Jacobian by perturbing
-// every node voltage and re-running the analog blocks, so the derivative the
-// solver uses is MEASURED FROM THIS SOURCE: a zero-slope region becomes a zero
-// column, a direction Newton cannot step along. That is why device models must
-// not clamp their terminal voltages, and it is why this clamp sits where it
-// does — out past the point where nothing physical is left to model, with the
-// device's own GMIN keeping the branch conductance positive even there.
+// That is why device models must not clamp their own terminal voltages.
 //
 // Smooth extrapolation was tried in its place, matching value and slope at the
 // seam the way limexp() does, and it was worse: past the seam the current then
@@ -160,7 +168,7 @@ func double pnjlim(double v_new, double v_old, double nvt, double v_crit) {
 // is the one place where flat beats smooth.
 func double jexp(double v, double nvt) {
     double x = v / nvt;
-    if (x >  40.0) { x =  40.0; }
+    if (x >  60.0) { x =  60.0; }
     if (x < -40.0) { x = -40.0; }
     return exp(x);
 }

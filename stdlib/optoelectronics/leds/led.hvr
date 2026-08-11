@@ -1,3 +1,5 @@
+from <math> import pnjlim, jexp, vcrit_of;
+
 // ═══════════════════════════════════════════════════════════════
 //  LED DEVICE MODEL (generic — reusable for any color)
 // ═══════════════════════════════════════════════════════════════
@@ -19,24 +21,41 @@
 analog module LED<double Is, double n, double Vt, double Vf_clamp, double eta>()
 [wire anode, wire cathode, wire light_out]
 {
-    double vNew = V(anode) - V(cathode);
-    double vOld = nr_prev(V(anode) - V(cathode));
     double nVt = n * Vt;
 
-    // Per-iteration junction limiting (manual 13.1): bound how far the
-    // working voltage guess can move from the previous NR iterate.
-    double dv = vNew - vOld;
-    if (dv > nVt) { dv = nVt; }
-    if (dv < -nVt) { dv = -nVt; }
-    double vLim = vOld + dv;
+    // Per-iteration junction limiting, via math's pnjlim() — the same limiter
+    // the diode and both BJT polarities use.
+    //
+    // This REPLACED a hard clamp of the form
+    //     dv = vNew - vOld; if (dv > nVt) dv = nVt; ... vLim = vOld + dv;
+    // which has a defect no hard clamp can avoid: while it is clamping, vLim is
+    // vOld +- nVt and does not depend on vNew at all, so d(vLim)/dV is exactly
+    // ZERO. Hover measures the Jacobian numerically THROUGH the analog block, so
+    // a clamping LED contributes no conductance to the matrix — Newton goes
+    // blind to the diode during precisely the violent iterate the clamp exists
+    // to survive, which is self-reinforcing: a blind Newton takes a big step,
+    // the big step keeps the clamp engaged.
+    //
+    // Berkeley's pnjlim() compresses logarithmically instead, so its slope past
+    // the seam is small but never zero. That is why every other junction in this
+    // library already uses it.
+    //
+    // This became load-bearing when vm_solve_op started supplying a Jacobian: a
+    // Jacobian-free .op did not care what the limiter's slope was, so the clamp
+    // survived unnoticed. With the Jacobian in play, redled.hvr and
+    // multiple_leds.hvr stopped converging at .op alpha = 0.40 until this
+    // changed.
+    double vLim = pnjlim(V(anode) - V(cathode),
+                         nr_prev(V(anode) - V(cathode)),
+                         nVt, vcrit_of(Is, nVt));
 
-    // Hard clamp too — covers the very first iteration (no NR history
-    // yet, nr_prev() just returns the cold-start guess) and deep reverse
-    // bias, where the unclamped exponential would otherwise overflow.
+    // Vf_clamp is kept as a last-resort ceiling for a cold start with no NR
+    // history; pnjlim handles every subsequent iterate. jexp() below guards the
+    // EXPONENT rather than the voltage, so deep reverse bias cannot overflow
+    // without flattening the derivative the way a clamp on vLim would.
     if (vLim > Vf_clamp) { vLim = Vf_clamp; }
-    if (vLim < -5.0) { vLim = -5.0; }
 
-    double id = Is * (2.71828 ** (vLim / nVt) - 1.0);
+    double id = Is * (jexp(vLim, nVt) - 1.0);
     current_source<>(id) [anode, cathode];
 
     // Optical output. The diode equation's own exponential already gives

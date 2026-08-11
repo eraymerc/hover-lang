@@ -64,6 +64,26 @@ struct System {
     // ── Current sources ──────────────────────────────────────────────────────
     std::unordered_map<std::string, CurrentSourceRecord> current_sources;
 
+    // ── Source stepping (DC operating point homotopy) ────────────────────────
+    // Scale applied to every independent voltage source at STAMP time, so the
+    // alpha ladder of vm_solve_op reaches driven sources through every
+    // evaluation path (phase_b, Jacobian probes, residual probes) — post-hoc
+    // rewrites of B_static rows cannot survive those re-stamps. 1.0 outside
+    // .op, so the transient is unaffected. current_source is deliberately NOT
+    // scaled: junction device currents flow through api_set_current_source,
+    // and those are the nonlinearities, not the excitation.
+    double source_alpha = 1.0;
+
+    // Init-stamped voltage sources (row + unscaled value). Driven sources
+    // pass param0 = 0.0 here, so their registry entry rewrites row := 0 and
+    // the per-phase_b api_set_voltage_source restamp applies the alpha once.
+    struct VoltageSourceStamp { int branch_row; double base_value; };
+    std::vector<VoltageSourceStamp> voltage_source_stamps;
+
+    void register_voltage_source_stamp(int row, double base_value) {
+        voltage_source_stamps.push_back(VoltageSourceStamp{row, base_value});
+    }
+
     // ── Timestep ─────────────────────────────────────────────────────────────
     double dt;
 
@@ -188,4 +208,16 @@ inline void system_finalize(System *sys) {
     sys->C        = Eigen::MatrixXd::Zero(sys->size, sys->size);
     sys->B_static = Eigen::VectorXd::Zero(sys->size);
     sys->B_dynamic= Eigen::VectorXd::Zero(sys->size);
+}
+
+// Set the DC-operating-point source-stepping scale. Rewrites the
+// init-stamped (static) voltage-source rows, the only vsrc rows phase_b
+// never restamps; driven rows are overwritten each phase_b by
+// api_set_voltage_source with the same factor applied there, so both paths
+// stay consistent across Jacobian and residual probes.
+// DC .op only — MUST be returned to 1.0 before the transient runs.
+inline void system_set_source_alpha(System *sys, double alpha) {
+    sys->source_alpha = alpha;
+    for (const auto &rec : sys->voltage_source_stamps)
+        sys->B_static(rec.branch_row) = rec.base_value * alpha;
 }

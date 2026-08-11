@@ -24,10 +24,19 @@
 struct Solver {
     System                          *sys;
     Eigen::PartialPivLU<Eigen::MatrixXd> lu;
-    Eigen::MatrixXd                  G_eff;      // G + alpha*C + jacobian
+    Eigen::MatrixXd                  G_eff;      // G + alpha*C + jacobian, EQUILIBRATED
     Eigen::VectorXd                  last_solution;
     Eigen::VectorXd                  gx_scratch;  // ComputeGx result buffer
     Eigen::VectorXd                  d_scratch;   // ComputeDerivatives result buffer
+
+    // Equilibration scale factors, all exact powers of two. G_eff as factorized
+    // is row_scale.asDiagonal() * (G + alpha*C + J) * col_scale.asDiagonal(),
+    // so a solve scales the RHS by row_scale going in and the result by
+    // col_scale coming out. See solver_factorize for why this is needed.
+    Eigen::VectorXd                  row_scale;
+    Eigen::VectorXd                  col_scale;
+    Eigen::VectorXd                  rhs_scratch; // scaled RHS, kept to avoid a malloc per solve
+
     double                           last_alpha;
     int                              g_dirty;     // 1 = must refactorize
 };

@@ -177,6 +177,23 @@ Directives appear at the top level, outside any module, and start with
 .tran(0, 40m, 1u); // 0 to 40 ms, 1 us steps -> 40 000 points
 \end{lstlisting}
 
+\textbf{Known gap, 2026-08-10.} On adaptive solvers \code{min\_step} is not
+currently enforced. The runtime uses an internal floor of \code{1e-12}\,s, so
+a deck asking for 1\,\textmu s steps may still be driven six orders below
+that when a step will not converge. Wiring the declared minimum through was
+implemented and reverted: it broke both BJT amplifier examples at
+\(t = 0\), and lowering their \code{min\_step} to 100\,ns and then 1\,ns did
+not help --- a bipolar cold start genuinely needs picosecond steps for a few
+steps before it settles. Enforcing it therefore needs to be a floor the
+solver may cross for a bounded number of consecutive steps, not an absolute
+one. Until then, treat \code{min\_step} as the step the solver \emph{starts}
+from rather than a guaranteed lower bound.
+
+Raising \code{min\_step} and \code{max\_step} is nonetheless a useful first
+response to a circuit that will not converge: the companion conductance of
+every capacitor scales as \(C/dt\), so very small steps make the matrix
+progressively harder to solve rather than easier.
+
 \subsection{.save — Signal Logging}
 
 \begin{lstlisting}
@@ -271,9 +288,37 @@ transient itself is the subject of the simulation.
 \newpage
 \subsection{.solver --- Solver Type}
 \begin{lstlisting}
-.solver(solverName, reltol, abstol, max_iter);
+.solver(solverName, reltol, vntol, max_iter, abstol);
 \end{lstlisting}
-Same with SPICE.
+Every argument after \code{solverName} is optional, and passing \code{0}
+for any of them means ``use this solver's default'' rather than ``use
+zero''. Arguments that the chosen solver does not support are ignored, as
+in SPICE's \code{.OPTIONS}.
+
+\begin{center}
+\renewcommand{\arraystretch}{1.4}
+\begin{tabular}{@{} L{2.2cm} L{2.0cm} L{9.5cm} @{}}
+\toprule
+\textbf{Argument} & \textbf{Default} & \textbf{Applies to} \\
+\midrule
+\code{reltol} & \code{1e-3} & Relative tolerance, every row. \\
+\code{vntol}  & \code{1e-6}~V & Absolute tolerance for \textbf{node voltages}. \\
+\code{max\_iter} & \code{100} & Newton iterations before the step is rejected. \\
+\code{abstol} & \code{1e-12}~A & Absolute tolerance for \textbf{branch currents}. \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\textbf{Change, 2026-08-10.} Argument 2 was previously named \code{abstol}
+and was applied to every row of the solution vector. That vector holds node
+voltages in its first rows and branch currents in the rest, so one absolute
+tolerance could not be right for both: \code{1e-6} is a sensible microvolt
+on a node and a very loose microamp on a branch. Argument 2 keeps its
+position and now applies to voltages only (SPICE calls this \code{vntol}),
+and a fifth argument \code{abstol} was appended for currents, defaulting to
+SPICE's \code{1e-12}\,A. Existing decks are unaffected in their voltage
+behaviour; branch currents are now held to a tighter tolerance than before,
+which can change iteration counts.
 
 \subsubsection*{Solvers}
 Implicit solvers treat the circuit as a Differential-Algebraic system and

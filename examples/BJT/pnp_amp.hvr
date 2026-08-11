@@ -4,7 +4,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 .save(main.q1_base, main.q1_collector, main.v_in);
-.tran(0, 30m, 1u, 10u); // 30 ms run
+.tran(0, 30m, 10u); // 30 ms run
 .op;
 .solver(bdf2);
 

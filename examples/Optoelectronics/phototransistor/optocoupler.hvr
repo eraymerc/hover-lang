@@ -5,8 +5,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 .save(main.led_anode, main.light_bus, main.pt_collector);
-.op;
-.tran(0, 5m, 1u, 50u);
+
+.tran(0, 50m, 50u);
 .solver(bdf2);
 
 from <math> import exp, sin;

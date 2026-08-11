@@ -25,10 +25,10 @@ struct Trapezoidal : SolverStrategy {
     double rtol     = 1e-3;
     double atol     = 1e-6;
     int    max_iter = 50;   // SPICE typically limits NR loops to ~20-50 max
-    double min_dt   = 1e-12;
     double max_dt   = 0.0;
 
     void run(VM *vm) override;
+    bool is_adaptive() const override { return true; }
 
 private:
     bool has_converged(const Eigen::VectorXd &x_new, const Eigen::VectorXd &x_old) const;

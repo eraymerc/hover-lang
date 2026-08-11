@@ -54,10 +54,10 @@ struct NDF2 : SolverStrategy {
     double rtol     = 1e-3;
     double atol     = 1e-6;
     int    max_iter = 100;
-    double min_dt   = 1e-12;
     double max_dt   = 0.0;  // 0 = use vm->time_step at first run() call
 
     void run(VM *vm) override;
+    bool is_adaptive() const override { return true; }
 
 private:
     Eigen::VectorXd x_prev1, x_prev2;

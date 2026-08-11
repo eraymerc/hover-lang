@@ -1,5 +1,7 @@
 #pragma once
 
+#include "step_trace.hpp"
+
 #include <Eigen/Dense>
 #include <cmath>
 #include "../mna/engine.hpp"
@@ -116,6 +118,13 @@ struct TrustRegionResult {
     Eigen::VectorXd x_candidate;
     bool            accepted;
     bool            collapsed;
+
+    // Set when the radius collapsed because the step had shrunk to a NO-OP —
+    // residual_after equal to residual_before to full precision — rather than
+    // because candidates were genuinely making things worse. The two demand
+    // opposite responses from the caller and were previously indistinguishable.
+    bool            stagnated = false;
+    double          residual  = 0.0;   // residual at x_current when it gave up
 };
 
 // trust_region_step computes the diagonally-scaled candidate and scores
@@ -170,6 +179,30 @@ inline TrustRegionResult trust_region_step(
 
     api_peek_solution(vm->api, saved_reads);
 
+    result.residual = residual_before;
+
+    // NOTE — A TOLERANT ACCEPT TEST WAS TRIED HERE AND REVERTED.
+    //
+    // The strict `residual_after < residual_before` below has a real and
+    // demonstrated failure mode: once the radius shrinks far enough that
+    // x_candidate is numerically indistinguishable from x_current, the two
+    // residuals are EQUAL to full precision, so the test can never pass again
+    // and the radius decays to collapse. Measured on the bridge rectifier:
+    // twenty collapses per run, each ending with before and after identical to
+    // all seven printed digits at a radius of 7e-11. The trust region reads its
+    // own no-op step as evidence of failure.
+    //
+    // Accepting on "not worse" (<= before * (1 + 1e-12)) fixes that reasoning,
+    // and it is canary-clean on npn_amp (3197 steps, gain 65.51, unchanged).
+    // But it moved pnp_amp's gain from 62.70 to 61.58 — 1.8%, past the 1%
+    // threshold set in advance for "this is perturbing working circuits rather
+    // than fixing anything" — while changing nothing about the rectifier it was
+    // written for. Reverted on that rule rather than on judgement.
+    //
+    // Worth knowing before retrying: pnp_amp's measured gain has ranged over
+    // 61.58..63.13 across solver-internal changes in this work, so roughly a
+    // 2.5% band. An amplifier's gain should not be that sensitive to solver
+    // internals, and understanding WHY it is may matter more than this test.
     if (residual_after < residual_before) {
         trust.radius *= trust.grow_factor;
         result.x_candidate = x_candidate;
@@ -180,8 +213,88 @@ inline TrustRegionResult trust_region_step(
         result.accepted = false;
         if (trust.radius < trust.min_radius) {
             result.collapsed = true;
+            // Set when the collapse came from the step becoming a no-op rather
+            // than from candidates getting worse. Nothing acts on it today —
+            // see the reverted stagnation response in bdf2.cpp — but it is what
+            // distinguishes the two cases if this is picked up again.
+            result.stagnated = (residual_after <= residual_before * (1.0 + 1e-9));
         }
     }
 
+    // Diagnostic: the accept/reject decision is made purely on whether the
+    // residual improved, with no notion of whether it is already small enough.
+    // Logging both residuals against the radius is what distinguishes "Newton
+    // is genuinely lost" from "Newton is sitting on the answer and cannot tell".
+    if (step_trace_enabled()) {
+        fprintf(stderr, "[tr] radius=%.3e before=%.6e after=%.6e %s\n",
+                trust.radius, residual_before, residual_after,
+                result.accepted ? "accept" : (result.collapsed ? "COLLAPSED" : "reject"));
+    }
+
     return result;
+}
+// ─────────────────────────────────────────────────────────────────────────────
+// RESIDUAL-BASED CONVERGENCE
+//
+// A second, independent convergence criterion: the iterate is acceptable if the
+// true nonlinear residual is small, EVEN WHEN the step test rejects it.
+//
+// Why this is needed. A step-only test asks "did the iterate stop moving?",
+// which is not the same question as "are the circuit equations satisfied?".
+// They come apart whenever the Jacobian barely constrains some direction. At a
+// bridge rectifier's commutation instant the source-side nodes are held only by
+// a barely-conducting diode (g = Is/nvt*exp(v/nvt), around 3e-7 S) and a 1 MOhm
+// reference, while other rows carry 1e-3 to 1e6. Those nodes sit in a
+// near-null-space: the linear solve throws a large, meaningless excursion into
+// them and it never settles. Measured on exactly that circuit: every equation
+// satisfied to ||r||_inf = 3.0e-6, the blocking node's own residual 6.4e-7, and
+// a Newton step of 1.776 V against a 1.97 mV tolerance — rejected forever, at
+// a point that was already the answer.
+//
+// The test mirrors SPICE's KCL check rather than inventing one: a row passes if
+// its residual is within reltol of the magnitude of the currents actually
+// flowing in that row, plus an absolute floor. Scoring against the row's own
+// traffic is what makes one tolerance work for a node carrying 20 mA and a node
+// carrying 1 uA.
+//
+// NOTE this evaluates the analog blocks, so call it only when the step test has
+// already failed — never on every iteration.
+inline bool residual_converged(
+    VM                     *vm,
+    const Eigen::VectorXd  &x,
+    double                  alpha,
+    const Eigen::VectorXd  &x_history,
+    double                  rtol,
+    double                  atol)
+{
+    api_peek_solution(vm->api, x);
+    vm_run_analog(vm);
+    vm_run_phase_b(vm);
+
+    Solver *s = vm->solver;
+    Eigen::VectorXd gx   = s->sys->G * x;
+    Eigen::VectorXd cdot = s->sys->C * (x_history - x);   // capacitive current / alpha
+
+    for (int i = 0; i < x.size(); i++) {
+        double r = s->sys->B_static(i) + alpha * cdot(i) - gx(i);
+
+        // Row traffic: how much current is actually flowing through this
+        // equation, used as the yardstick for reltol.
+        //
+        // The capacitive term MUST be formed as alpha*C*(x_history - x), the
+        // net current, and not as the magnitudes of alpha*C*x and
+        // alpha*C*x_history added separately. Those two are each enormous and
+        // nearly cancel — at dt = 1.6e-6 a 10 uF capacitor holding 19.67 V
+        // gives each of them about 185 A, while the real current through it is
+        // milliamps. Summing them inflated the yardstick by four orders, which
+        // made this test accept almost anything: the rectifier then failed at
+        // t = 6.6e-4 instead of 1.7e-2, having been walked off course by
+        // accepted non-solutions. Physical cancellation here is real and must
+        // be respected.
+        double scale = std::abs(gx(i)) + alpha * std::abs(cdot(i))
+                     + std::abs(s->sys->B_static(i));
+
+        if (std::abs(r) > rtol * scale + atol) return false;
+    }
+    return true;
 }

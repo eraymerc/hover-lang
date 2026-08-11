@@ -34,14 +34,32 @@ type solverParam struct {
 // simConfig holds everything emitMain needs to know about how the
 // simulation should be set up, after parsing all top-level directives.
 type simConfig struct {
-	tEnd       string      // C++ double literal, e.g. "0.029999999999999999"
-	tStep      string      // C++ double literal
-	maxStep    solverParam // .tran's optional 4th argument — ignored by fixed-step solvers
-	solverType string      // raw Hover solver name, e.g. "ndf2" — resolved to a C++ struct name by solverStructName
+	tEnd string // C++ double literal, e.g. "0.029999999999999999"
+
+	// tStep is .tran's 3rd and last argument, and it means ONE thing in both
+	// solver families: the largest step the simulation may take.
+	//
+	//   fixed-step solvers     every step is exactly tStep
+	//   variable-step solvers  tStep is max_dt — the run starts there and the
+	//                          controller may shrink below it, never above
+	//
+	// There is deliberately no separate max_step argument and no minimum-step
+	// argument. See the contract note in parseSimConfig.
+	tStep string // C++ double literal
+
+	solverType string // raw Hover solver name, e.g. "ndf2" — resolved to a C++ struct name by solverStructName
 	zcdEnabled bool
 	opEnabled  bool
 
-	// rtol/atol/maxIter are .solver(...)'s optional 2nd-4th arguments.
+	// rtol/atol/maxIter/abstol are .solver(...)'s optional 2nd-5th arguments.
+	//
+	// 2026-08-10: atol became the VOLTAGE tolerance and abstol was added as the
+	// CURRENT tolerance, matching SPICE's vntol/abstol split. The solution
+	// vector holds node voltages in rows 0..num_nodes-1 and branch currents
+	// after them, so one absolute tolerance cannot be right for both — 1e-6 is
+	// a sensible microvolt on a node and a wildly loose microamp on a branch.
+	// Argument 2 keeps its position and its meaning for voltages, so existing
+	// decks are unaffected; abstol is appended as argument 5.
 	// Unlike .tran's maxStep, 0 here IS a valid sentinel meaning "use the
 	// default" (see solverParam) — this is a deliberate asymmetry between
 	// the two directives, not an inconsistency: a zero step size is
@@ -49,8 +67,9 @@ type simConfig struct {
 	// override has no other sensible interpretation than "I didn't mean
 	// to override this."
 	rtol    solverParam
-	atol    solverParam
+	atol    solverParam // .solver arg 2 — VOLTAGE tolerance (SPICE's vntol)
 	maxIter solverParam
+	abstol  solverParam // .solver arg 5 — CURRENT tolerance (SPICE's abstol)
 
 	// saveMNANodes are .save() arguments that resolved to an MNA node name
 	// (a wire that's also a terminal of some physical primitive) — these
@@ -115,12 +134,56 @@ func directiveNumber(directive string, arg ast.Expression) (float64, error) {
 // this compiler understands. Directives it doesn't recognize are silently
 // ignored — unknown directives are not a compile error today.
 //
-// Returns an error if .tran's optional 4th argument (max_step) is present
-// but evaluates to exactly 0 — a zero-size step is physically meaningless,
-// and treating it as a tuning default sentinel here (the way .solver's
-// arguments work) would silently produce a simulation that can never
-// advance time on adaptive solvers, far more likely to be a typo'd source
-// of confusion than the actual asymmetry being a hard error makes it.
+// ─────────────────────────────────────────────────────────────────────────────
+// THE .tran STEP-SIZE CONTRACT — ONE ARGUMENT, ONE MEANING
+//
+//	.tran(t_start, t_stop, t_step)
+//
+// t_step is the LARGEST step the simulation may take. On a fixed-step solver
+// every step is exactly t_step; on a variable-step solver it is max_dt — the
+// run starts there and the controller may shrink below it but never above.
+//
+// This replaces a 4-argument form, `.tran(t0, tstop, tstep, max_step)`, in
+// which tstep was the *initial* dt for adaptive solvers and max_step the
+// ceiling. Two knobs were one too many, in a specific and damaging way:
+//
+//   - tstep did not survive contact with the controller. It set only where the
+//     run started; within ~35 steps every adaptive solver had grown to max_dt
+//     and stayed there, so tstep's entire lasting effect was the PHASE of the
+//     time grid. That is not a control, it is a lottery, and it was decided by
+//     an argument whose name promised otherwise. Measured on optocoupler.hvr:
+//     tstep = 1u and tstep = 0.1u produced the same dt at the same times, but
+//     landed steps at different instants, and one alignment happened to put a
+//     step across an LED's turn-off where the other did not — the deck FATALed
+//     at 0.1u and completed at 1u for no reason a user could act on.
+//
+//   - it read like a minimum and was not one. Nothing in .tran ever bounded dt
+//     from below; the floor was a hardcoded solver constant no deck could
+//     reach. Two arguments that looked like a [min, max] pair while being an
+//     [initial, max] pair is the kind of API that makes every step-size bug
+//     take twice as long to diagnose.
+//
+// The minimum is gone entirely rather than being promoted to an argument.
+// Wiring tstep through as a floor was tried (2026-08-10) and it costs working
+// simulations: npn_amp.hvr and pnp_amp.hvr both stopped converging at t = 0,
+// because a BJT amplifier's cold start genuinely needs to shrink toward
+// picoseconds for a few steps before it settles, and no honest deck-level
+// number can be written that permits that while still bounding anything.
+// Runaway halving is bounded by a consecutive-rejection count in each solver
+// instead, which is scale-free and needs no user input.
+//
+// A 4-argument .tran is a hard compile error carrying the one-line migration
+// (drop the 3rd argument, keep the 4th), NOT a silently reinterpreted call.
+// Reinterpreting `.tran(0, 50m, 1u, 50u)` as max_dt = 1u would silently make
+// every existing deck 50x slower while still producing plausible output —
+// exactly the failure this codebase already refuses elsewhere (see
+// solverStructName's unknown-solver error and directiveNumber's silent-zero
+// note).
+//
+// Returns an error if t_step is 0: a zero-size step is physically meaningless,
+// and treating it as a "use the default" sentinel the way .solver's arguments
+// do would produce a simulation that can never advance time.
+// ─────────────────────────────────────────────────────────────────────────────
 func (g *generator) parseSimConfig() (simConfig, error) {
 	cfg := simConfig{
 		tEnd:       "0.01",
@@ -130,6 +193,15 @@ func (g *generator) parseSimConfig() (simConfig, error) {
 
 	for _, d := range g.prog.Directives {
 		if d.Name == "tran" && len(d.Args) >= 3 {
+			if len(d.Args) >= 4 {
+				return cfg, fmt.Errorf(
+					".tran(...) takes 3 arguments (t_start, t_stop, t_step), got %d. "+
+						"The separate max_step argument has been removed: t_step IS the "+
+						"maximum step now — the fixed step on a fixed-step solver, max_dt "+
+						"on a variable-step one. Migrate by dropping the 3rd argument and "+
+						"keeping the 4th, e.g. `.tran(0, 50m, 1u, 50u)` becomes "+
+						"`.tran(0, 50m, 50u)`.", len(d.Args))
+			}
 			tEnd, err := directiveNumber("tran", d.Args[1])
 			if err != nil {
 				return cfg, err
@@ -138,21 +210,13 @@ func (g *generator) parseSimConfig() (simConfig, error) {
 			if err != nil {
 				return cfg, err
 			}
+			if tStep == 0 {
+				return cfg, fmt.Errorf(
+					".tran(...)'s 3rd argument (t_step) is 0 — a zero-size step is not " +
+						"valid and would produce a simulation that can never advance time.")
+			}
 			cfg.tEnd = fmt.Sprintf("%.17g", tEnd)
 			cfg.tStep = fmt.Sprintf("%.17g", tStep)
-
-			if len(d.Args) >= 4 {
-				maxStepVal, err := directiveNumber("tran", d.Args[3])
-				if err != nil {
-					return cfg, err
-				}
-				if maxStepVal == 0 {
-					return cfg, fmt.Errorf(
-						".tran(...)'s 4th argument (max_step) is 0 — a zero-size step is not valid. " +
-							"Omit the argument entirely if you don't want an explicit max_step ceiling.")
-				}
-				cfg.maxStep = solverParam{value: fmt.Sprintf("%.17g", maxStepVal), present: true}
-			}
 		}
 		if d.Name == "solver" && len(d.Args) >= 1 {
 			// The solver name is a bare identifier ("bdf2"); anything else
@@ -171,6 +235,9 @@ func (g *generator) parseSimConfig() (simConfig, error) {
 				return cfg, err
 			}
 			if cfg.maxIter, err = parseOptionalSolverArg(d.Args, 3); err != nil {
+				return cfg, err
+			}
+			if cfg.abstol, err = parseOptionalSolverArg(d.Args, 4); err != nil {
 				return cfg, err
 			}
 		}

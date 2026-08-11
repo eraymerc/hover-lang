@@ -1,4 +1,5 @@
 #include "trapezoidal.hpp"
+#include "step_limits.hpp"
 #include "newton_trust_region.hpp"
 #include "../vm/vm.hpp"
 #include "../vm/zcd.hpp"
@@ -26,6 +27,7 @@ bool Trapezoidal::has_converged(const Eigen::VectorXd &x_new, const Eigen::Vecto
 
 void Trapezoidal::run(VM *vm) {
     if (max_dt == 0.0) max_dt = vm->time_step;
+    RejectRun reject_run;   // bounds the back-off spiral — see step_limits.hpp
     
     int n = (int)vm->solver->last_solution.size();
     Eigen::VectorXd x_anchor(n), b_old(vm->solver->sys->B_static.size());
@@ -178,11 +180,13 @@ void Trapezoidal::run(VM *vm) {
             if (vm->phase_log) vm->phase_log(vm);
             logger_log_signals(&vm->logger, vm->values);
 
+            reject_run.clear();
+
             // Time Step Adjustment Heuristics
             if (iters <= 4) {
                 vm->time_step = std::min(dt * 2.0, max_dt);
             } else if (iters > max_iter / 2) {
-                vm->time_step = std::max(dt * 0.5, min_dt);
+                vm->time_step = dt * 0.5;
             } else {
                 vm->time_step = dt; // Hold steady
             }
@@ -194,10 +198,11 @@ void Trapezoidal::run(VM *vm) {
         } else {
             // Convergence Failed. Reject step, shrink dt, try again.
             vm_restore_state(vm, checkpoint);
+            reject_run.note(dt);
             vm->time_step = dt * 0.25; // Aggressive back-off
-            
-            if (vm->time_step < min_dt) {
-                fprintf(stderr, "[Trap] FATAL: Convergence failed at MinDt t=%.3e\n", vm->time);
+
+            if (reject_run.exhausted(vm->time_step)) {
+                fprintf(stderr, "[Trap] FATAL: Failed to converge at t=%.3e\n", vm->time);
                 break;
             }
             

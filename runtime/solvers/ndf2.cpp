@@ -1,4 +1,5 @@
 #include "ndf2.hpp"
+#include "step_limits.hpp"
 #include "newton_trust_region.hpp"
 #include "step_trace.hpp"
 #include "../vm/vm.hpp"
@@ -43,6 +44,7 @@ bool NDF2::has_converged(const Eigen::VectorXd &x_new, const Eigen::VectorXd &x_
 
 void NDF2::run(VM *vm) {
     if (max_dt == 0.0) max_dt = vm->time_step;
+    RejectRun reject_run;   // bounds the back-off spiral — see step_limits.hpp
 
     int n = (int)vm->solver->last_solution.size();
     x_prev1 = vm->solver->last_solution;
@@ -166,6 +168,7 @@ void NDF2::run(VM *vm) {
                 step_trace("ndf2", attempt, vm->time, dt, iters, "jac-refresh");
                 continue;
             }
+            reject_run.note(dt);
             vm->time_step *= 0.5;
             step_trace("ndf2", attempt, vm->time, dt, iters, "reject");
             // NOTE: step_count is deliberately NOT reset here. An earlier
@@ -186,13 +189,14 @@ void NDF2::run(VM *vm) {
             // genuinely reset elsewhere (ZCD re-priming after a detected
             // discontinuity), not as a side effect of ordinary step
             // rejection.
-            if (vm->time_step < min_dt) {
+            if (reject_run.exhausted(vm->time_step)) {
                 fprintf(stderr, "[NDF2] FATAL: Failed to converge at t=%.3e\n", vm->time);
                 break;
             }
             continue;
         }
 
+        reject_run.clear();
         x_prev2 = x_prev1;
         x_prev1 = x_guess;
 

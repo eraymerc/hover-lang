@@ -55,16 +55,22 @@ var knownSolvers = map[string]string{
 // (unused parameters for the active method are silently ignored) requires
 // codegen to know, struct by struct, which fields actually exist — there
 // is no way to express "ignore if absent" in the generated C++ itself.
+// maxDt is what tells a solver apart as VARIABLE-step here: a struct that
+// declares max_dt is one whose controller chooses its own dt and needs a
+// ceiling, and .tran's t_step is emitted into it. A struct without max_dt is
+// fixed-step and takes t_step through vm.time_step alone. There is no minDt
+// column — no solver has a minimum-step field any more (see the .tran contract
+// note in directives.go).
 var solverFields = map[string]struct {
-	rtol, atol, maxIter, maxDt bool
+	rtol, atol, maxIter, maxDt, abstol bool
 }{
-	"EulerFixed":       {false, false, false, false},
-	"EulerAdaptive":    {true, true, true, true},
-	"GaussSiedel":      {true, true, true, false},
-	"Trapezoidal":      {true, true, true, true},
-	"TrapezoidalFixed": {true, true, true, false},
-	"BDF2":             {true, true, true, true},
-	"NDF2":             {true, true, true, true},
+	"EulerFixed":       {false, false, false, false, false},
+	"EulerAdaptive":    {true, true, true, true, false},
+	"GaussSiedel":      {true, true, true, false, false},
+	"Trapezoidal":      {true, true, true, true, false},
+	"TrapezoidalFixed": {true, true, true, false, false},
+	"BDF2":             {true, true, true, true, true},
+	"NDF2":             {true, true, true, true, false},
 }
 
 // emitSolverTuningOverrides emits "strategy.field = value;" for each of
@@ -99,9 +105,34 @@ func (g *generator) emitSolverTuningOverrides(strategyStruct string, cfg simConf
 	if cfg.maxIter.present && fields.maxIter {
 		g.line("strategy.max_iter = (int)(%s);", cfg.maxIter.value)
 	}
-	if cfg.maxStep.present && fields.maxDt {
-		g.line("strategy.max_dt = %s;", cfg.maxStep.value)
+	// .tran's t_step IS max_dt on a variable-step solver — always emitted, with
+	// no "was it given" test, because t_step is not optional. The runtime's
+	// `if (max_dt == 0.0) max_dt = vm->time_step;` fallback therefore never
+	// fires for these solvers; it is kept only for a strategy constructed
+	// directly in C++ (hovercraft, tests) rather than through a .tran.
+	if fields.maxDt {
+		g.line("strategy.max_dt = %s;", cfg.tStep)
 	}
+	if cfg.abstol.present && fields.abstol {
+		g.line("strategy.abstol = %s;", cfg.abstol.value)
+	}
+
+	// NOTE — THERE IS NO min_dt TO EMIT, AND .tran's t_step MUST NOT BECOME ONE.
+	//
+	// Making t_step bound dt from below as well as above is the obvious
+	// symmetry, and it was tried (2026-08-10). It breaks real circuits:
+	// examples/BJT/npn_amp.hvr and pnp_amp.hvr both stopped converging at t = 0,
+	// and lowering their t_step to 100 ns and then to 1 ns did not rescue them —
+	// a BJT amplifier's cold start genuinely needs to shrink toward picoseconds
+	// for a few steps before it settles. Meanwhile the circuit that motivated
+	// the change (a full-bridge rectifier grinding dt down) still failed with
+	// the floor in place; the floor only made it fail faster.
+	//
+	// A floor costs working simulations and buys nothing, so the solvers no
+	// longer have the field at all. What a floor was really wanted for —
+	// stopping an unbounded halving spiral — is handled scale-free inside each
+	// solver by capping CONSECUTIVE rejections, which needs no deck-level
+	// number and cannot forbid a legitimate cold start.
 }
 
 // solverStructName maps a Hover .solver(...) name to the matching C++

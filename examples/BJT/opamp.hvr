@@ -8,7 +8,7 @@
 .op;                        // Solve DC bias point first — diff pair + class-AB
                              // bias string need to settle before the 5ms/5-cycle
                              // transient window we're actually trying to observe.
-.tran(0, 5m, 1u, 10u); // 5 ms run, 5 cycles of 1kHz
+.tran(0, 5m, 10u); // 5 ms run, 5 cycles of 1kHz
 .solver(bdf2);
 
 import <semiconductors/bjt>;

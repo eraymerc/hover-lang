@@ -130,7 +130,13 @@ void api_set_voltage_source(API *api, const char *name, double voltage) {
         fprintf(stderr, "[MNA API] error: SetVoltageSource(\"%s\") — element not found\n", name);
         return;
     }
-    api->sys->B_static(idx) = voltage;
+    // source_alpha makes the .op source-stepping ladder reach DRIVEN sources:
+    // this restamp is an absolute overwrite, so applying the scale here is the
+    // only way Jacobian and residual probes (which re-run phase_b) stay
+    // alpha-consistent. It is 1.0 outside vm_solve_op, so the transient is
+    // unaffected. api_set_current_source is deliberately NOT scaled — junction
+    // device currents flow through it, and those are the nonlinearities.
+    api->sys->B_static(idx) = voltage * api->sys->source_alpha;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -1,4 +1,5 @@
 #include "euler_adaptive.hpp"
+#include "step_limits.hpp"
 #include "newton_trust_region.hpp"
 #include "../vm/vm.hpp"
 #include "../vm/zcd.hpp"
@@ -92,6 +93,7 @@ std::pair<int, bool> EulerAdaptive::take_implicit_step(VM *vm, double dt) {
 
 void EulerAdaptive::run(VM *vm) {
     if (max_dt == 0.0) max_dt = vm->time_step;
+    RejectRun reject_run;   // bounds the back-off spiral — see step_limits.hpp
 
     vm->solver->sys->dt = vm->time_step;
 
@@ -118,6 +120,7 @@ void EulerAdaptive::run(VM *vm) {
         auto [iters, converged] = take_implicit_step(vm, dt);
 
         if (converged) {
+            reject_run.clear();
             logger_log_step(&vm->logger, vm->time, vm->solver->sys, vm->solver->last_solution);
             if (vm->phase_log) vm->phase_log(vm);
             logger_log_signals(&vm->logger, vm->values);
@@ -130,9 +133,10 @@ void EulerAdaptive::run(VM *vm) {
             }
         } else {
             vm_restore_state(vm, checkpoint);
+            reject_run.note(dt);
             vm->time_step *= 0.5;
-            if (vm->time_step < min_dt) {
-                fprintf(stderr, "[Adaptive] FATAL: Failed to converge at MinDt. Matrix stuck at t=%.3e\n", vm->time);
+            if (reject_run.exhausted(vm->time_step)) {
+                fprintf(stderr, "[Adaptive] FATAL: Failed to converge at t=%.3e\n", vm->time);
                 break;
             }
         }

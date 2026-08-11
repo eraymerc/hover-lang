@@ -4,7 +4,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 .save(main.ac_in1, main.ac_in2, main.dc_out);
-.tran(0, 100m, 1u, 10u); // 100 ms run to capture 5 full cycles of 50 Hz
+.tran(0, 100m, 100u); // 100 ms run, 100 µs max step — 5 full cycles of 50 Hz
 
 // SOLVER NOTE — use .solver(bdf2) here, not ndf2.
 //
@@ -19,9 +19,14 @@
 // one: the identical netlist solves correctly under bdf2, and tightening ndf2's
 // tolerances by 1000x costs 100x the steps and returns the same wrong answer.
 //
-// Still outstanding: bdf2 stops converging at t = 29.96 ms, at a commutation
-// instant. Everything before that point is correct, so a run shorter than that
-// is trustworthy.
+// FIXED 2026-08-10 — this deck used to stop converging partway through, at a
+// commutation instant, and no longer does: it now completes the full 100 ms in
+// 1476 steps with dc_out at 12.09 .. 22.53 V over the last cycle. The cause was
+// not this circuit and not the diode model. bdf2 re-formed its Jacobian only
+// after a step FAILED, so a single matrix survived 311 consecutive accepted
+// steps — across a full commutation of all four diodes — and Newton was left
+// converging linearly until the rate crossed 1. See the accept site in
+// runtime/solvers/bdf2.cpp.
 .solver(bdf2);
 
 import <parts/diode> as parts;

@@ -12,7 +12,7 @@
     main.green_light_out
 );
 .op;
-.tran(0, 5m, 1u, 50u);
+.tran(0, 5m, 50u);
 .solver(bdf2);
 from <optoelectronics/leds> import LED, LED_RED, LED_GREEN;
 // ═══════════════════════════════════════════════════════════════

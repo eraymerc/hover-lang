@@ -19,7 +19,7 @@
 
 import <math/math.hvr>;
 
-.tran(0, 3600, 10m, 10m);
+.tran(0, 3600, 10m);
 .solver(bdf2);
 .save(main.alt, main.downrange, main.vy, main.vx,
       main.fuel, main.mass, main.thrust, main.flow, main.tilt);

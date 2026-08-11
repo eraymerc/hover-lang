@@ -4,7 +4,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 .save(main.q1_base, main.q1_collector);
-.tran(0, 30m, 1u, 10u); // 5 ms run, 1 µs timesteps (1 kHz sine will show 5 full cycles)
+.tran(0, 30m, 10u); // 30 ms run, 10 µs max step (1 kHz sine shows 30 full cycles)
 .solver(bdf2);
 
 import <parts/bjt/npn>;
@@ -22,7 +22,7 @@ analog module AC_Source<double dc_bias, double ac_amp, double freq>()[wire out, 
 module main<>()[]
 {
     wire vcc, q1_base, q1_collector, q1_emitter, v_in;
-
+    
     // 1. Power Supply Rail (12V DC)
     voltage_source<20>()[vcc, gnd];
 

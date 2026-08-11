@@ -9,7 +9,7 @@
 .op;    // Settle the bridge/motor bias point before the switching sequence.
 .zcd;   // HBridgeControl's outputs step discretely at t_switch +/- deadtime --
         // this isolates those edges instead of stepping across them.
-.tran(0, 400m, 1u, 20u);
+.tran(0, 400m, 20u);
 .solver(bdf2);
 
 import <semiconductors/bjt>;

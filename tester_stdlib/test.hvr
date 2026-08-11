@@ -1,33 +1,64 @@
 // ─────────────────────────────────────────────────────────────────────────────
-//  Diode validation — forward sweep 0 -> 1.2 V, 1N4148 card
+//  HVR Testbench — Common-Emitter PNP Amplifier
+//  Validates: Active linear amplification, PNP polarity physics, and AC Gain
 // ─────────────────────────────────────────────────────────────────────────────
 
-.save(main.vsrc, main.n1);
-.tran(0, 20m, 1u, 10u);
+.save(main.q1_base, main.q1_collector, main.v_in);
+.tran(0, 30m, 10u); // 30 ms run
+.op;
 .solver(bdf2);
 
-import <semiconductors> as dev;
+import <parts/bjt/pnp>;
+from <math> import sin;
 
-analog module Ramp<double v0, double v1, double tend>()[wire out, wire gnd] {
-    double v = v0 + (v1 - v0) * time / tend;
-    voltage_source<>(v)[out, gnd];
+// ═══════════════════════════════════════════════════════════════
+//  AC VOLTAGE SOURCE
+// ═══════════════════════════════════════════════════════════════
+
+analog module AC_Source<double dc_bias, double ac_amp, double freq>() [wire out, wire gnd] {
+    double v_sig = dc_bias + ac_amp * sin(2.0 * 3.14159265359 * freq * time);
+    voltage_source<>(v_sig)[out, gnd];
 }
 
-module main<>()[]
+// ═══════════════════════════════════════════════════════════════
+//  TOP-LEVEL CIRCUIT
+// ═══════════════════════════════════════════════════════════════
+
+module main<>() []
 {
-    wire vsrc, n1;
+    wire vee, q1_base, q1_collector, q1_emitter, v_in, mid;
 
-    module src = Ramp<0.0, 1.2, 20m>()[vsrc, gnd];
+    // 1. Power Supply Rail (-20V DC for PNP)
+    // We use a negative supply so the ground acts as the "high" potential for the emitter.
+    voltage_source<-20>()[vee, gnd];
 
-    module D1 = dev.Diode<2.52n, 1.752,          // Is, N
-                          0.568,                 // Rs
-                          0.0,                   // Ikf
-                          1.805n, 2.0,           // Isr, Nr
-                          75.0, 100u,            // Bv, Ibv
-                          4p, 0.75, 0.333, 0.5,  // Cjo, Vj, M, Fc
-                          11.54n,                // Tt
-                          0.026>()               // Vt
-                         [vsrc, n1];
+    // 2. Input Source: -1.03V DC Bias + 20mV AC Sine Wave (1 kHz)
+    // The negative bias pulls the base below ground, forward-biasing the emitter-base junction.
+    module signal_source = AC_Source<-1.03, 20m, 1k>()[v_in, gnd];
 
-    R<10>() [n1, gnd];
+    // 3. Passive Amplifier Network (Perfect Mirror of the NPN Circuit)
+    R<110k>() [vee, q1_base];          // Rb - Pulls base towards negative rail
+    R<10k>()  [vee, q1_collector];     // Rc - Collector load resistor to negative rail
+    R<10k>()  [q1_base, gnd];          // Base bias resistor to ground
+    R<1k>()   [q1_emitter, gnd];       // Re - Emitter degeneration to ground
+    
+    C<0.34u>() [v_in, q1_base];        // AC coupling capacitor
+    
+    R<74>()   [q1_emitter, mid];       // AC bypass path
+    C<16u>()  [mid, gnd];
+
+    // 4. Transistor Under Test — BC557B from the parts library. Parameters go
+    // in with normal positive SPICE signs; the PNP model handles polarity.
+    //
+    // Note on part choice: Q2N3906 and Q2N2907 do NOT converge in this exact
+    // circuit, and it is a solver limitation rather than a modelling error.
+    // Because a current_source contributes nothing to G, the Early feedback
+    // around the collector node is a damped fixed-point loop whose gain is
+    // roughly Rc/ro, with ro = Vaf/Ic. At Rc = 10k and Ic = 1 mA that is 0.53
+    // for the 2N3906 (Vaf = 18.7) and 0.36 for the BC557 (Vaf = 27.87) — and
+    // the startup transient, which briefly drives the device to its clamp
+    // current, pushes the former well past 1. The 2N2907 fails for a separate
+    // reason traced to its very small Is (0.65 fA). If you need those parts
+    // here, lower Rc or soften the startup.
+    module Q1 = pnp.QBC557<>() [q1_base, q1_collector, q1_emitter];
 }
