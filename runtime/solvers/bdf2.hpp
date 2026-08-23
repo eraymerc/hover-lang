@@ -2,6 +2,7 @@
 
 #include <Eigen/Dense>
 #include "../vm/solver_strategy.hpp"
+#include "newton_core.hpp"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // BDF2
@@ -69,26 +70,14 @@ struct BDF2 : SolverStrategy {
 
 private:
     Eigen::VectorXd x_prev1, x_prev2;
-    bool has_converged(const Eigen::VectorXd &x_new, const Eigen::VectorXd &x_old) const;
 
-    // Which row blocked convergence on the most recent has_converged call, and
-    // by how much. Diagnostic only — nothing reads these unless HOVER_DUMP_FAIL
-    // is set. The residual dump can say which EQUATIONS are unsatisfied but not
-    // which row failed the convergence TEST, and those are different questions:
-    // the test is on the step between iterates, not on the residual.
     // Row index where branch currents start; everything below it is a node
-    // voltage. Captured in run() so has_converged can pick the right absolute
-    // tolerance per row.
+    // voltage. Captured in run() so the convergence test can pick the right
+    // absolute tolerance per row (see newton_converged in newton_core.hpp).
     int n_nodes = 0;
 
-    // Weighted norm of the most recent Newton step: max over rows of
-    // |step_i| / tol_i, so converged is exactly worst_ratio <= 1 regardless of
-    // the units a row carries. Unlike the three fields below this is NOT
-    // diagnostic-only — run()'s convergence-rate monitor reads it every
-    // iteration to estimate the contraction ratio.
-    mutable double worst_ratio = 0.0;
-
-    mutable int    worst_row  = -1;
-    mutable double worst_step = 0.0;   // |x_new - x_old| at that row
-    mutable double worst_tol  = 0.0;   // the tolerance it was compared against
+    // What the last convergence test measured — the weighted step norm the
+    // within-step refresh policy reads, plus the blocking-row diagnostics the
+    // failure dump prints. See newton_core.hpp.
+    ConvergenceReport conv;
 };

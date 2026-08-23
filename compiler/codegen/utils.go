@@ -55,6 +55,13 @@ var knownSolvers = map[string]string{
 // (unused parameters for the active method are silently ignored) requires
 // codegen to know, struct by struct, which fields actually exist — there
 // is no way to express "ignore if absent" in the generated C++ itself.
+// The abstol column is the vntol/abstol split: a struct carries it only if it
+// declares a separate CURRENT tolerance and its convergence test actually splits
+// the solution vector by row (see newton_converged in runtime/solvers/
+// newton_core.hpp). That is bdf2 plus the three solvers ported onto the shared
+// core. GaussSiedel and TrapezoidalFixed were deliberately left on the older
+// single-tolerance test, so argument 5 stays silently ignored for them rather
+// than being emitted as a field they do not have.
 // maxDt is what tells a solver apart as VARIABLE-step here: a struct that
 // declares max_dt is one whose controller chooses its own dt and needs a
 // ceiling, and .tran's t_step is emitted into it. A struct without max_dt is
@@ -65,12 +72,12 @@ var solverFields = map[string]struct {
 	rtol, atol, maxIter, maxDt, abstol bool
 }{
 	"EulerFixed":       {false, false, false, false, false},
-	"EulerAdaptive":    {true, true, true, true, false},
+	"EulerAdaptive":    {true, true, true, true, true},
 	"GaussSiedel":      {true, true, true, false, false},
-	"Trapezoidal":      {true, true, true, true, false},
+	"Trapezoidal":      {true, true, true, true, true},
 	"TrapezoidalFixed": {true, true, true, false, false},
 	"BDF2":             {true, true, true, true, true},
-	"NDF2":             {true, true, true, true, false},
+	"NDF2":             {true, true, true, true, true},
 }
 
 // emitSolverTuningOverrides emits "strategy.field = value;" for each of

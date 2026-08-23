@@ -6,8 +6,8 @@
 
 .save(main.led_anode, main.light_bus, main.pt_collector);
 
-.tran(0, 50m, 50u);
-.solver(bdf2);
+.tran(0, 50m, 5u);
+.solver(ndf2);
 
 from <math> import exp, sin;
 from <optoelectronics/leds> import LED, LED_RED;

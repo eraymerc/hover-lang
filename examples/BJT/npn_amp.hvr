@@ -5,7 +5,7 @@
 
 .save(main.q1_base, main.q1_collector);
 .tran(0, 30m, 10u); // 30 ms run, 10 µs max step (1 kHz sine shows 30 full cycles)
-.solver(bdf2);
+.solver(ndf2);
 
 import <parts/bjt/npn>;
 from <math> import sin;

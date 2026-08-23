@@ -17,7 +17,7 @@
 //  the host, which is what makes this a game rather than a batch run.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import <math/math.hvr>;
+from <math> import sin,cos;
 
 .tran(0, 3600, 10m);
 .solver(bdf2);

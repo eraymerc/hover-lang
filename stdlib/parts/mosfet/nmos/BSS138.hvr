@@ -1,0 +1,44 @@
+import <semiconductors/mosfet> as dev;
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  BSS138 — 50 V / 200 mA logic-level N-channel MOSFET (SOT-23)
+//
+//  The 2N7000's surface-mount successor, and genuinely logic-level: Vgs(th) is
+//  0.8-1.5 V, so it turns on properly from a 3.3 V rail. It is the transistor
+//  in the ubiquitous bidirectional I2C level shifter, which works precisely
+//  because the body diode conducts in the direction the channel does not.
+//
+//  Lumped-geometry card — W = L = 1, LD = 0, TOX = 0, so KP is the device
+//  transconductance in A/V^2 and the CG*O values are absolute farads. See
+//  2N7000.hvr for the full explanation of that convention and why TOX = 0 is
+//  the honest choice for a packaged part.
+//
+//  ── Fit ─────────────────────────────────────────────────────────────────────
+//
+//  VTO = 1.3     mid-range of the 0.8-1.5 V window
+//  KP  = 0.04    from Rds(on) = 3.5 Ohm at Vgs = 10 V: channel 1/(KP*8.7) is
+//                2.9 Ohm, RD+RS supplies the rest
+//  RD  = 0.4
+//  RS  = 0.1
+//  LAMBDA = 0.02
+//
+//    Ciss = Cgs + Cgd + Cgb = 15p + 5.5p + 6.5p = 27 pF   (datasheet 27 pF)
+//    Coss = Cgd + Cds       = 5.5p + 7.5p       = 13 pF   (datasheet 13 pF)
+//    Crss = Cgd             = 5.5p              = 5.5 pF  (datasheet 5.5 pF)
+//
+//  GAMMA = 0, TT = 0, no breakdown — as for every discrete card here; see
+//  2N7000.hvr.
+// ─────────────────────────────────────────────────────────────────────────────
+
+analog module MBSS138<>()[wire gate, wire drain, wire source] {
+    module m = dev.NMOS<1.3, 0.04, 0.0, 0.6, 0.02,   // VTO, KP, GAMMA, PHI, LAMBDA
+                        1.0, 1.0, 0.0,               // W, L, LD  (lumped)
+                        0.4, 0.1,                    // RD, RS
+                        0.0, 15p, 5.5p, 6.5p,        // TOX, CGSO, CGDO, CGBO
+                        1e-14, 1.0, 0.8,             // IS, N, PB
+                        7.5p, 7.5p, 0.0, 0.5,        // CBD, CBS, CJ, MJ
+                        0.0, 0.33, 0.5, 0.0,         // CJSW, MJSW, FC, TT
+                        0.0, 0.0, 0.0, 0.0,          // AD, ASRC, PD, PSRC
+                        0.026>()                     // VT
+                       [gate, drain, source];
+}

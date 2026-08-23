@@ -1,0 +1,77 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  HVR Testbench — Common-Source P-MOSFET Amplifier
+//  Validates: P-channel polarity, the negative-VTO card convention, and AC gain
+// ─────────────────────────────────────────────────────────────────────────────
+
+.save(main.m1_gate, main.m1_drain, main.v_in);
+.op;
+.tran(0, 30m, 10u); // 30 ms run
+.solver(ndf2);
+
+import <parts/mosfet/pmos>;
+from <math> import sin;
+
+// ═══════════════════════════════════════════════════════════════
+//  AC VOLTAGE SOURCE
+// ═══════════════════════════════════════════════════════════════
+
+analog module AC_Source<double dc_bias, double ac_amp, double freq>() [wire out, wire gnd] {
+    double v_sig = dc_bias + ac_amp * sin(2.0 * 3.14159265359 * freq * time);
+    voltage_source<>(v_sig)[out, gnd];
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  TOP-LEVEL CIRCUIT
+// ═══════════════════════════════════════════════════════════════
+//
+//  The exact mirror of nmos_amp.hvr about ground: a negative supply, the source
+//  degeneration returning to ground as the "high" rail, and the gate biased
+//  BELOW the source instead of above it. Current flows source -> drain, i.e.
+//  from ground down into the negative rail.
+//
+//  The part card carries VTO = -1.4, negative, exactly as the BSS84 datasheet
+//  prints it — see stdlib/parts/mosfet/pmos/BSS84.hvr. The model applies the
+//  polarity internally with a SPICE type sign, so nothing in this deck has to
+//  keep a sign convention straight.
+//
+//  One real device difference shows up in the numbers rather than the topology:
+//  the BSS84's KP is 0.021 against the 2N7000's 0.14, because hole mobility is
+//  several times lower than electron mobility. At the same 1 mA bias that makes
+//  gm about a third as large, so the same circuit gets about a third less gain.
+//  This is precisely why a CMOS inverter is drawn with a wider P device.
+
+module main<>() []
+{
+    wire vee, m1_gate, m1_drain, m1_source, v_in;
+
+    // 1. Power Supply Rail (-20V DC for the P-channel)
+    // Ground acts as the "high" potential the source sits just below.
+    voltage_source<-20>()[vee, gnd];
+
+    // 2. Input Source: 20 mV AC sine (1 kHz) on a -1.8731 V DC pedestal.
+    // The pedestal matches the divider so the coupling capacitor sits at 0 V
+    // in the steady state — see nmos_amp.hvr for why .op cares.
+    module signal_source = AC_Source<-1.8731, 20m, 1k>()[v_in, gnd];
+
+    // 3. Bias network and load
+    // The divider hangs between the negative rail and ground, putting the gate
+    // at -20 * 31k/(300k + 31k) = -1.873 V. The device then finds the source
+    // voltage that closes the loop: Vs = -Id*200 and
+    // Id = (KP/2)*(Vs - Vg - 1.4)^2, which settles at Id ~ 0.98 mA,
+    // Vov ~ 0.28 V, V(drain) ~ -10.2 V — mid-rail, and in saturation with
+    // Vsd ~ 10 V far above Vov.
+    R<300k>() [vee, m1_gate];
+    R<31k>()  [m1_gate, gnd];
+    R<10k>()  [vee, m1_drain];      // Rd - drain load resistor (sets the gain)
+    R<200>()  [gnd, m1_source];     // Rs - source degeneration, sets the bias
+
+    C<0.34u>() [v_in, m1_gate];     // AC coupling into the gate
+
+    // Unbypassed, as in nmos_amp.hvr and for the same reason. Gain is
+    // -Rd/(Rs + 1/gm); gm = KP*Vov = 5.8 mS puts 1/gm at 172 Ohm, so the
+    // prediction is -10k/372 = -26.9. About a third of the N-channel deck's
+    // -37.9 at the same bias current, which is the mobility difference.
+
+    // 4. Transistor Under Test — BSS84 from the parts library.
+    module M1 = pmos.MBSS84<>() [m1_gate, m1_drain, m1_source];
+}

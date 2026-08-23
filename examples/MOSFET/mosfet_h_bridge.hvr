@@ -1,0 +1,224 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  HVR Testbench — Complementary MOSFET H-Bridge Driving a DC Motor
+//  Validates: P/N complementary switching, dead-time sequencing, and inductive
+//             recirculation through the INTRINSIC BODY DIODES — with no
+//             external flyback network anywhere in the netlist
+// ─────────────────────────────────────────────────────────────────────────────
+
+.save(main.motor_a, main.motor_b, main.omega_node, main.loadCmd,
+      main.cmd_TL, main.cmd_BL, main.cmd_TR, main.cmd_BR);
+.op;    // Settle the bridge/motor bias point before the switching sequence.
+.zcd;   // HBridgeControl's outputs step discretely at t_switch +/- deadtime --
+        // this isolates those edges instead of stepping across them.
+.tran(0, 400m, 20u);
+.solver(bdf2);
+
+import <parts/mosfet/nmos> as nfet;
+import <parts/mosfet/pmos> as pfet;
+
+// ═══════════════════════════════════════════════════════════════
+//  DC MOTOR MODEL (electromechanical analogy)
+// ═══════════════════════════════════════════════════════════════
+//
+// Identical to the model in examples/DCMotor/h_bridge.hvr, reproduced here so
+// the two decks can be diffed against each other — the ONLY differences that
+// matter are in the power stage below.
+//
+// Electrical:   V(p)-V(n) = ia*Ra + La*dia/dt + Ke*w
+// Mechanical:   J*dw/dt   = Kt*ia - B*w - Tload
+//
+// The mechanical equation is mapped onto an equivalent electrical one and
+// left entirely to the MNA solver:
+//   J      -> capacitance (energy storage = inertia)
+//   B      -> 1/Rdamp     (viscous damping / friction)
+//   Kt*ia  -> VCCS current sourced from the sense-resistor voltage
+//   Tload  -> driven in via loadCmd from the LoadTorque digital block
+//
+// omega_node's voltage IS shaft speed (rad/s), directly .save-able.
+
+module DCMotor<double Ra, double La, double gm_torque, double Ke,
+               double Jcap, double Rdamp>
+(input double loadCmd)
+[wire p, wire n, wire omega_node]
+{
+    wire a, b, s;
+
+    // ── Electrical armature loop: p --Ra--> a --La--> b --Rsense--> s --EMF--> n
+    R<Ra>() [p, a];
+    L<La>() [a, b];
+    R<1m>() [b, s];   // current-sense resistor: ia = (V(b)-V(s)) / 1m
+
+    // Back-EMF: opposes the applied voltage, proportional to shaft speed.
+    VCVS<Ke>() [s, n, omega_node, gnd];
+
+    // ── Mechanical side ──
+    C<Jcap>()  [omega_node, gnd];                // rotor inertia
+    R<Rdamp>() [omega_node, gnd];                // viscous damping / friction
+    VCCS<gm_torque>() [omega_node, gnd, b, s];   // Kt*ia torque current
+
+    current_source<>(loadCmd) [gnd, omega_node];
+}
+
+// Recomputes the opposing load current every step based on the *current*
+// sign of omega, so it always fights whichever direction the rotor is
+// actually spinning.
+digital module LoadTorque<double Tload>
+(input double omega, output double loadCmd) []
+{
+    if (omega > 0.0) {
+        loadCmd = -Tload;
+    } else if (omega < 0.0) {
+        loadCmd = Tload;
+    } else {
+        loadCmd = 0.0;
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  H-BRIDGE CONTROL LOGIC (digital)
+// ═══════════════════════════════════════════════════════════════
+//
+// Diagonal pairs switch together: (TL,BR) for forward, (TR,BL) for reverse. A
+// dead-time window around t_switch forces ALL four switches off before the
+// opposite diagonal turns on, so both switches in a leg are never commanded on
+// simultaneously — avoids shoot-through across the supply.
+//
+// The command levels come out of this block as GATE voltages directly, which
+// is the one place a MOSFET bridge is simpler than the BJT one: there is no
+// base current to size a resistor for, so the sequencer's output IS the drive.
+//
+//   High-side P-channel: gate at 0 V turns it ON (Vsg = vcc), gate at vcc OFF.
+//   Low-side  N-channel: gate at vgs_on turns it ON, 0 V OFF.
+
+digital module HBridgeControl<double vcc_val, double vgs_on,
+                              double t_switch, double deadtime>
+(output double cmd_TL, output double cmd_BL,
+ output double cmd_TR, output double cmd_BR) []
+{
+    double onTL = 0.0;
+    double onBL = 0.0;
+    double onTR = 0.0;
+    double onBR = 0.0;
+
+    if (time < t_switch - deadtime) {
+        onTL = 1.0;   // forward: top-left + bottom-right
+        onBR = 1.0;
+    } else if (time < t_switch + deadtime) {
+        // dead-time: everything off. In the BJT deck this is when the four
+        // discrete flyback diodes take over; here it is when the body diodes
+        // do, and there is nothing else in the circuit for the armature
+        // current to flow through.
+    } else {
+        onTR = 1.0;   // reverse: top-right + bottom-left
+        onBL = 1.0;
+    }
+
+    // High-side P-channel gates: pulled to 0 V to turn ON, to vcc for OFF.
+    cmd_TL = vcc_val * (1.0 - onTL);
+    cmd_TR = vcc_val * (1.0 - onTR);
+
+    // Low-side N-channel gates: pulled up to vgs_on to turn ON, 0 V for OFF.
+    cmd_BL = vgs_on * onBL;
+    cmd_BR = vgs_on * onBR;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  H-BRIDGE POWER STAGE (structural)
+// ═══════════════════════════════════════════════════════════════
+//
+//        vcc ──┬───────────────┬── vcc
+//               │ Mtl (PMOS)    │ Mtr (PMOS)
+//    railTL─Rg─gate       gate─Rg─railTR
+//               ├─ motor_a   motor_b ─┤
+//    railBL─Rg─gate       gate─Rg─railBR
+//               │ Mbl (NMOS)    │ Mbr (NMOS)
+//        gnd ──┴───────────────┴── gnd
+//
+// Three differences from the BJT stage in examples/DCMotor/h_bridge.hvr, all of
+// them consequences of the device rather than of the topology:
+//
+//  1. NO FLYBACK DIODES. The BJT deck needs four 1N5819s across the motor
+//     terminals, and its own comment says why: "these BJTs (unlike MOSFETs)
+//     have no intrinsic body diode to catch the inductive kick when a switch
+//     opens." Every MOSFET here brings its own bulk-drain junction, oriented
+//     exactly the way a flyback diode would be — the high-side P devices clamp
+//     each motor terminal to just above vcc, the low-side N devices clamp it to
+//     just below ground. Deleting those four parts is the entire point of the
+//     deck, and if the body diodes were not there the armature inductance would
+//     drive the terminals to arbitrary voltages during dead time.
+//
+//  2. The gate resistors are 47 Ohm, not the BJT's 1 Ohm base resistors, and
+//     they are doing a completely different job. A base resistor sets the DC
+//     base CURRENT and therefore the transistor's operating point. A gate
+//     resistor passes no DC at all; it only meters the charge into and out of
+//     the gate capacitance, which is what sets the switching edge rate.
+//
+//  3. A complementary bridge — P on top, N on the bottom — is used so both
+//     gates can be driven against ground. An all-N-channel bridge is more
+//     efficient (see the IRF540N's 44 mOhm against the IRF9540N's 117 mOhm)
+//     but its high-side gates have to float above the switch node, which needs
+//     a bootstrap or an isolated supply.
+
+module HBridge<double Rgate>
+(input double cmd_TL, input double cmd_BL,
+ input double cmd_TR, input double cmd_BR)
+[wire vcc, wire motor_a, wire motor_b]
+{
+    wire railTL, railBL, railTR, railBR;
+    wire gateTL, gateBL, gateTR, gateBR;
+
+    // Gate-drive rails, each relaying the digital command as a node voltage.
+    voltage_source<>(cmd_TL) [railTL, gnd];
+    voltage_source<>(cmd_BL) [railBL, gnd];
+    voltage_source<>(cmd_TR) [railTR, gnd];
+    voltage_source<>(cmd_BR) [railBR, gnd];
+
+    R<Rgate>() [railTL, gateTL];
+    R<Rgate>() [railBL, gateBL];
+    R<Rgate>() [railTR, gateTR];
+    R<Rgate>() [railBR, gateBR];
+
+    // High side (P-channel): source = vcc, drain = motor terminal.
+    module mTL = pfet.MIRF9540N<>() [gateTL, motor_a, vcc];
+    module mTR = pfet.MIRF9540N<>() [gateTR, motor_b, vcc];
+
+    // Low side (N-channel): drain = motor terminal, source = gnd.
+    module mBL = nfet.MIRF540N<>() [gateBL, motor_a, gnd];
+    module mBR = nfet.MIRF540N<>() [gateBR, motor_b, gnd];
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  TOP-LEVEL TESTBENCH
+// ═══════════════════════════════════════════════════════════════
+
+module main<>() []
+{
+    wire vcc, motor_a, motor_b, omega_node;
+    state double cmd_TL = 0, cmd_BL = 0, cmd_TR = 0, cmd_BR = 0;
+    state double loadCmd = 0;
+
+    // 12V supply rail
+    voltage_source<12>() [vcc, gnd];
+
+    // Direction sequencer: forward until 200ms, 4ms dead-time, then reverse.
+    // 10 V of gate drive on the low side is what the IRF540N's Rds(on) is
+    // specified at; the high side gets the full 12 V rail for free, since
+    // turning a P-channel on means pulling its gate to ground.
+    module ctrl = HBridgeControl<12, 10, 200m, 2m>
+                  (cmd_TL, cmd_BL, cmd_TR, cmd_BR) [];
+
+    // 47 Ohm gate resistors
+    module bridge = HBridge<47>
+                    (cmd_TL, cmd_BL, cmd_TR, cmd_BR) [vcc, motor_a, motor_b];
+
+    // Read shaft speed from the previous solve, then compute a load
+    // current that opposes whichever direction it's currently spinning.
+    state double omega = V(omega_node);
+    module loadTorque = LoadTorque<10m>(omega, loadCmd) [];
+
+    // Ra=2ohm, La=5mH, gm_torque=50 (=Kt/1milliohm, Kt=0.05 N*m/A),
+    // Ke=0.05 V*s/rad, J=200uF-equivalent (0.0002 kg*m^2),
+    // Rdamp=500ohm (=1/B, B=0.002 N*m*s/rad).
+    module motor = DCMotor<2, 5m, 50, 0.05, 200u, 500>(loadCmd)
+                   [motor_a, motor_b, omega_node];
+}

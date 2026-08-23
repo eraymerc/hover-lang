@@ -2,6 +2,7 @@
 
 #include <Eigen/Dense>
 #include "../vm/solver_strategy.hpp"
+#include "newton_core.hpp"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // NDF2
@@ -41,18 +42,39 @@
 // local error estimate machinery this engine does not yet implement
 // reliably for any solver — see tr_bdf23's history with this).
 //
-// Jacobian reuse and Newton damping follow the same policies established
-// for BDF2/TR-BDF2: trust-region damping (see newton_trust_region.hpp)
-// instead of a fixed voltage clamp, and a Jacobian that carries over
-// across steps until a convergence failure proves it stale (using
-// has_converged itself as the staleness signal, not a flat step counter
-// — an earlier counter-based version was tested and found to allow
-// silent divergence on a stiff test circuit; see tr_bdf23's history).
+// JACOBIAN REUSE POLICY — identical to BDF2's, and for the same measured
+// reasons. One fresh Jacobian per ACCEPTED step; within a step, Modified Newton
+// by default with a progress-triggered re-form every eighth iteration (see
+// newton_core.hpp); on a failed step, blame the Jacobian before dt — if it was
+// not formed during this step, retry at the SAME dt with a fresh one, and only
+// a step that fails on a fresh Jacobian is treated as a step-size problem.
+//
+// This solver previously carried a Jacobian across accepted steps indefinitely,
+// clearing it only when a step FAILED, and it cost correct answers rather than
+// merely speed: examples/Diode/rectifier.hvr returned 0.25 .. 22.18 V — an
+// unfiltered waveform, as though the reservoir capacitor were absent — where the
+// identical netlist under bdf2 gives 12.14 .. 22.53 V, and examples/BJT/
+// npn_amp.hvr biased to a collector sitting at 0.21 V instead of swinging
+// 8.2 .. 12.3 V. examples/Optoelectronics/phototransistor/optocoupler.hvr took
+// 3.9 MILLION steps and 102 seconds without reaching the end of the run. All
+// three are the stale-Jacobian signature documented at bdf2.cpp's accept site:
+// the iteration keeps the true solution as its fixed point for any invertible J,
+// so it stays plausible while degrading from quadratic to linear convergence,
+// and at a commutation the contraction crosses 1.
+//
+// Newton damping is trust-region based (see newton_trust_region.hpp) rather than
+// a fixed voltage clamp, as for BDF2.
 // ─────────────────────────────────────────────────────────────────────────────
 
 struct NDF2 : SolverStrategy {
     double rtol     = 1e-3;
-    double atol     = 1e-6;
+
+    // atol is the VOLTAGE tolerance and abstol the CURRENT one, matching SPICE's
+    // vntol/abstol — the solution vector holds node voltages in rows
+    // 0..num_nodes-1 and branch currents after them, and one absolute tolerance
+    // cannot serve both. See newton_core.hpp.
+    double atol     = 1e-6;    // volts  — .solver argument 2
+    double abstol   = 1e-12;   // amps   — .solver argument 5
     int    max_iter = 100;
     double max_dt   = 0.0;  // 0 = use vm->time_step at first run() call
 
@@ -61,5 +83,12 @@ struct NDF2 : SolverStrategy {
 
 private:
     Eigen::VectorXd x_prev1, x_prev2;
-    bool has_converged(const Eigen::VectorXd &x_new, const Eigen::VectorXd &x_old) const;
+
+    // Row index where branch currents start; everything below it is a node
+    // voltage. Captured in run() so the convergence test can pick the right
+    // absolute tolerance per row.
+    int n_nodes = 0;
+
+    // What the last convergence test measured — see newton_core.hpp.
+    ConvergenceReport conv;
 };

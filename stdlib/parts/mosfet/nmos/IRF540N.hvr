@@ -1,0 +1,60 @@
+import <semiconductors/mosfet> as dev;
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  IRF540N — 100 V / 33 A N-channel power MOSFET (TO-220)
+//
+//  A HEXFET power switch: 44 mOhm on-resistance, roughly 2 nF of input
+//  capacitance, and a body diode rated for the full drain current. The
+//  low-side half of a motor bridge, and the part that makes the point about
+//  body diodes — see examples/MOSFET/nmos_switch.hvr, where the intrinsic
+//  bulk-drain junction catches an inductive turn-off with no external flyback
+//  diode anywhere in the deck.
+//
+//  Lumped-geometry card — W = L = 1, LD = 0, TOX = 0, so KP is the device
+//  transconductance in A/V^2 and the CG*O values are absolute farads. See
+//  2N7000.hvr for that convention in full.
+//
+//  ── Fit ─────────────────────────────────────────────────────────────────────
+//
+//  VTO = 3.5     mid-range of the 2.0-4.0 V Vgs(th) window
+//  KP  = 5.1     from Rds(on) = 44 mOhm at Vgs = 10 V, Id = 17 A: the channel
+//                term 1/(KP*6.5) is 30 mOhm and RD+RS supplies the remaining
+//                14 mOhm, which is about right for the package and bond wires
+//  RD  = 0.012
+//  RS  = 0.002
+//  LAMBDA = 0.005  a long-channel power device has a flat output characteristic
+//
+//    Ciss = Cgs + Cgd + Cgb = 1500p + 45p + 415p = 1960 pF  (datasheet 1960 pF)
+//    Coss = Cgd + Cds       =   45p + 205p       =  250 pF  (datasheet  250 pF)
+//    Crss = Cgd             =   45p              =   45 pF  (datasheet   45 pF)
+//
+//  ── Body diode, which is the point of this part ─────────────────────────────
+//
+//  IS = 1f with N = 1.2 puts the junction at 1.20 V forward at 17 A
+//  (N*Vt*ln(I/IS) = 0.0312 * 38.4), and RD adds another 0.2 V on top, which
+//  brackets the datasheet's 1.3 V typical / 1.7 V max Vsd. TT = 100n is a real
+//  number here rather than a placeholder: the reverse recovery of a power
+//  MOSFET's body diode is slow and lossy, and it is exactly why a hard-switched
+//  bridge often gets a fast external diode in parallel anyway.
+//
+//  ── Not modelled ────────────────────────────────────────────────────────────
+//
+//  GAMMA = 0 (bulk is bonded to the source in the package). No avalanche, so
+//  the part blocks past 100 V instead of breaking down — do not use this card
+//  to study an unclamped inductive switching event. No thermal model; Rds(on)
+//  is the 25 C value and a real IRF540N is nearly twice that at 150 C.
+//  Vt fixed at 0.026 V.
+// ─────────────────────────────────────────────────────────────────────────────
+
+analog module MIRF540N<>()[wire gate, wire drain, wire source] {
+    module m = dev.NMOS<3.5, 5.1, 0.0, 0.6, 0.005,   // VTO, KP, GAMMA, PHI, LAMBDA
+                        1.0, 1.0, 0.0,               // W, L, LD  (lumped)
+                        12m, 2m,                     // RD, RS
+                        0.0, 1500p, 45p, 415p,       // TOX, CGSO, CGDO, CGBO
+                        1f, 1.2, 0.8,                // IS, N, PB
+                        205p, 205p, 0.0, 0.5,        // CBD, CBS, CJ, MJ
+                        0.0, 0.33, 0.5, 100n,        // CJSW, MJSW, FC, TT
+                        0.0, 0.0, 0.0, 0.0,          // AD, ASRC, PD, PSRC
+                        0.026>()                     // VT
+                       [gate, drain, source];
+}

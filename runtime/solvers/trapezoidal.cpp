@@ -1,6 +1,9 @@
 #include "trapezoidal.hpp"
 #include "step_limits.hpp"
+#include "newton_core.hpp"
 #include "newton_trust_region.hpp"
+#include "step_trace.hpp"
+#include "fail_dump.hpp"
 #include "../vm/vm.hpp"
 #include "../vm/zcd.hpp"
 
@@ -8,36 +11,40 @@
 #include <cmath>
 #include <algorithm>
 
-// ─────────────────────────────────────────────────────────────────────────────
-// CONVERGENCE CHECK (Zero-Crossing Safe)
-// ─────────────────────────────────────────────────────────────────────────────
-
-bool Trapezoidal::has_converged(const Eigen::VectorXd &x_new, const Eigen::VectorXd &x_old) const {
-    for (int i = 0; i < x_new.size(); i++) {
-        double max_val = std::max(std::abs(x_new(i)), std::abs(x_old(i)));
-        double scale = atol + rtol * max_val;
-        if (std::abs(x_new(i) - x_old(i)) > scale) return false;
-    }
-    return true;
-}
-
+// The convergence test lives in newton_core.hpp, shared with bdf2. This solver's
+// own version was already zero-crossing safe — it is where that form came from —
+// but it used a plain `>` comparison, which reads a NaN row as CONVERGED, and a
+// single absolute tolerance for node voltages and branch currents alike.
+//
 // ─────────────────────────────────────────────────────────────────────────────
 // RUN (Variable-Step SPICE Architecture)
 // ─────────────────────────────────────────────────────────────────────────────
 
 void Trapezoidal::run(VM *vm) {
     if (max_dt == 0.0) max_dt = vm->time_step;
+    n_nodes = vm->solver->sys->num_nodes;
     RejectRun reject_run;   // bounds the back-off spiral — see step_limits.hpp
-    
+    JacRefresh jac;         // within-step re-form policy — see newton_core.hpp
+
     int n = (int)vm->solver->last_solution.size();
     Eigen::VectorXd x_anchor(n), b_old(vm->solver->sys->B_static.size());
     Eigen::VectorXd trap_base(n), x_guess(n), norton_correction(n), total_correction(n);
 
+    // jacobian_valid says whether a usable Jacobian is held at all;
+    // jacobian_current_this_step says whether it was formed during THIS attempt.
+    // The pair implements ode15s's failure rule, as in bdf2: a step that fails on
+    // a carried-over Jacobian retries with a fresh one at the same dt, and only a
+    // step that fails on a fresh Jacobian is blamed on dt. The Jacobian is never
+    // blamed twice within one step. Every ACCEPTED step invalidates it, so no
+    // matrix ever survives into a step it was not formed for.
     Eigen::MatrixXd cached_jacobian(n, n);
-    bool force_recompute = true;
+    bool jacobian_valid = false;
     bool force_euler = true; // ALWAYS start the simulation with a Backward Euler step
 
+    long attempt = 0;   // counts ATTEMPTS, not accepted steps — see step_trace.hpp
+
     while (vm->time < vm->end_time) {
+        attempt++;
         VMSnapshot checkpoint = vm_save_state(vm);
         double dt = vm->time_step;
         bool zcd_triggered = false;
@@ -86,18 +93,17 @@ void Trapezoidal::run(VM *vm) {
 
         vm->time += dt;
         vm->solver->sys->dt = dt;
+        jac.begin_step();
 
         // 2. Determine Integration Method for this step
         // We use Euler if recovering from a failed step, or if ZCD just triggered
-        if (zcd_triggered) force_euler = true; 
-        
-        double alpha;
-        if (force_euler) {
-            alpha = 1.0 / dt;
-            force_recompute = true; // Alpha changed, matrix must be rebuilt
-        } else {
-            alpha = 2.0 / dt;
-        }
+        if (zcd_triggered) force_euler = true;
+
+        // No "alpha changed, rebuild the matrix" flag is needed here any more:
+        // solver_solve_rhs refactorizes whenever g_dirty is set OR alpha differs
+        // from the last solve (mna/engine.cpp), and the Jacobian is re-formed at
+        // the top of every step regardless.
+        double alpha = force_euler ? (1.0 / dt) : (2.0 / dt);
 
         // Prepare Trapezoidal History if not using Euler
         x_anchor = vm->solver->last_solution;
@@ -110,12 +116,14 @@ void Trapezoidal::run(VM *vm) {
         x_guess = x_anchor;
         bool converged = false;
         int iters = 0;
+        bool jacobian_current_this_step = false;
 
         // 3. Evaluate Initial Jacobian
-        if (force_recompute) {
+        if (!jacobian_valid) {
             cached_jacobian = vm_compute_jacobian(vm, x_anchor);
             vm->solver->g_dirty = 1;
-            force_recompute = false;
+            jacobian_valid = true;
+            jacobian_current_this_step = true;
         } else {
             vm->solver->g_dirty = 0;
         }
@@ -125,6 +133,17 @@ void Trapezoidal::run(VM *vm) {
         // 4. Inner Newton-Raphson Loop
         for (int iter = 0; iter < max_iter; iter++) {
             iters++;
+
+            // Within-step Jacobian refresh — policy and measurements in
+            // newton_core.hpp. A Jacobian formed at x_anchor is the wrong
+            // linearization for a junction that changes state inside the step,
+            // and shrinking dt does not address it.
+            if (jac.due(iter, conv.worst_ratio)) {
+                cached_jacobian = vm_compute_jacobian(vm, x_guess);
+                vm->solver->g_dirty = 1;
+                jacobian_current_this_step = true;
+            }
+
             api_update_solution(vm->api, x_guess);
             vm_run_analog(vm);
             vm_run_phase_b(vm);
@@ -152,7 +171,12 @@ void Trapezoidal::run(VM *vm) {
                                          &total_correction, &cached_jacobian);
             }
 
-            if (has_converged(x_new, x_guess)) {
+            // Opens the refresh window; as in bdf2 this reads the ratio left by
+            // the previous convergence test, since it runs before this
+            // iteration's own.
+            if (iter == 0) jac.seed(conv.worst_ratio);
+
+            if (newton_converged(x_new, x_guess, n_nodes, rtol, atol, abstol, conv)) {
                 x_guess = x_new;
                 converged = true;
                 break;
@@ -180,34 +204,65 @@ void Trapezoidal::run(VM *vm) {
             if (vm->phase_log) vm->phase_log(vm);
             logger_log_signals(&vm->logger, vm->values);
 
+            // THE JACOBIAN IS RE-FORMED ONCE PER ACCEPTED STEP.
+            //
+            // This used to be conditional — the matrix was rebuilt only when
+            // alpha changed, i.e. on a dt change or a switch to Backward Euler —
+            // so a run of accepted steps at a steady dt kept solving against one
+            // matrix. A circuit's Jacobian IS its matrix of device conductances,
+            // and a diode's moves from 1e-12 S to ~1 S across a commutation, so
+            // the linearization silently stops describing the circuit while the
+            // iteration still converges (to the right fixed point, just linearly
+            // and ever more slowly). Measured on examples/Diode/rectifier.hvr the
+            // run died at t = 11.6 ms; the same defect and the same fix are
+            // recorded at bdf2.cpp's accept site.
+            jacobian_valid = false;
+
             reject_run.clear();
 
             // Time Step Adjustment Heuristics
             if (iters <= 4) {
                 vm->time_step = std::min(dt * 2.0, max_dt);
+                step_trace("trap", attempt, vm->time, dt, iters, "grow");
             } else if (iters > max_iter / 2) {
                 vm->time_step = dt * 0.5;
+                step_trace("trap", attempt, vm->time, dt, iters, "shrink");
             } else {
                 vm->time_step = dt; // Hold steady
+                step_trace("trap", attempt, vm->time, dt, iters, "accept");
             }
 
             // Only use Euler on the step immediately following a ZCD event
-            force_euler = zcd_triggered; 
-            if (force_euler || vm->time_step != dt) force_recompute = true;
+            force_euler = zcd_triggered;
 
         } else {
-            // Convergence Failed. Reject step, shrink dt, try again.
+            // Convergence Failed.
             vm_restore_state(vm, checkpoint);
+
+            // Blame the Jacobian before blaming dt: if this attempt inherited its
+            // matrix rather than forming one, retry at the SAME dt with a fresh
+            // one. force_euler is left alone, so the retry solves the same
+            // problem this attempt did, with a better linearization of it.
+            if (!jacobian_current_this_step) {
+                jacobian_valid = false;
+                step_trace("trap", attempt, vm->time, dt, iters, "jac-refresh");
+                continue;
+            }
+
+            // A fresh Jacobian still failed — now it is genuinely about dt.
             reject_run.note(dt);
             vm->time_step = dt * 0.25; // Aggressive back-off
+            step_trace("trap", attempt, vm->time, dt, iters, "reject");
 
             if (reject_run.exhausted(vm->time_step)) {
                 fprintf(stderr, "[Trap] FATAL: Failed to converge at t=%.3e\n", vm->time);
+                dump_convergence_row(vm, conv.worst_row, conv.worst_step, conv.worst_tol);
+                dump_failure(vm, "trapezoidal", dt, alpha, x_guess, x_anchor);
                 break;
             }
-            
-            force_euler = true;     // Use Euler to punch through the hard non-linearity
-            force_recompute = true; // Matrix must be cleared out
+
+            force_euler = true;      // Use Euler to punch through the hard non-linearity
+            jacobian_valid = false;  // Matrix must be cleared out
         }
     }
 }

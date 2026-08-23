@@ -1,177 +1,358 @@
-from <math> import fabs, floor;
-import <semiconductors> as Body;
+from <math> import fabs, sqrt, pnjlim, jexp, vcrit_of, q_dep;
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  N-Channel MOSFET — Level 1 (Shichman-Hodges) square law
+//  N-Channel MOSFET — SPICE Level 1 (Shichman-Hodges)
 //
-//  Three terminals, with the bulk tied internally to the source. That is the
-//  overwhelmingly common connection for a discrete device and for any digital
-//  switch, and it lets the body diode be instantiated as a real Diode rather
-//  than left to the user to remember. Body effect (gamma/phi) is the thing you
-//  give up; it only matters for stacked devices sharing a well.
+//  A faithful transcription of Berkeley SPICE's MOS level 1, as implemented in
+//  ngspice's mos1load.c / mos1temp.c, on the NFS = 0 path (no weak-inversion
+//  tail). Parameter names are the SPICE .model names, so a manufacturer card
+//  transcribes into the argument list without translation — see
+//  stdlib/parts/mosfet/ for worked examples.
+//
+//  ── Four terminals, and a three-terminal wrapper ────────────────────────────
+//
+//  NMOS4 is the real device: gate, drain, source, bulk. Body effect is a
+//  function of Vbs, so a model that hardwires the bulk to the source cannot
+//  express GAMMA/PHI at all — that is the single biggest thing a "3-terminal
+//  MOSFET" gives up, and it is why the core carries the fourth port.
+//
+//  NMOS below it is the discrete-device wrapper: same parameters, bulk tied to
+//  source internally. That is the overwhelmingly common connection for a
+//  packaged part and for any switch, and it is what makes the bulk-drain
+//  junction show up as the familiar intrinsic body diode.
+//
+//  ── Structure ──────────────────────────────────────────────────────────────
+//
+//      drain ──[RD]── di ──┐                    ┌── gate
+//                          │  channel + caps    │
+//     source ──[RS]── si ──┘                    └── bulk
+//
+//  RD and RS are real resistors and their conductance lands in G, exactly as
+//  the BJT's Rc/Re do. R<0> is a short and would make the matrix singular, so
+//  a card with no stated ohmic resistance passes 1m rather than 0 — the same
+//  convention stdlib/parts/bjt/npn/2N2222.hvr documents for Re.
 //
 //  ── Per-iteration limiting (manual 13.1) ────────────────────────────────────
 //
-//  Same nr_prev() technique led.hvr uses for its junction, but the MOSFET
-//  analogue: SPICE calls these fetlim (on Vgs) and limvds (on Vds). Both bound
-//  how far the working voltage guess may move from the previous NR iterate.
-//
-//  The scale is different from a junction's. A diode has a natural one — the
-//  thermal voltage — because its nonlinearity is exponential. A square law has
-//  no such scale, so the bound is taken proportional to the overdrive itself
-//  with a fixed floor (SPICE's vtsthi = 2*|Vgs_old - Vth| + 2), which keeps the
+//  SPICE calls these fetlim (on Vgs) and limvds (on Vds); both bound how far
+//  the working voltage guess may move from the previous NR iterate. The scale
+//  is different from a junction's: a diode has a natural one, the thermal
+//  voltage, because its nonlinearity is exponential. A square law has no such
+//  scale, so the bound is taken proportional to the overdrive itself with a
+//  fixed floor (SPICE's vtsthi = 2*|Vgs_old - von| + 2), which keeps the
 //  limiter loose once the device is solidly on and tight near threshold, where
 //  the region boundary lives and where jumping across it costs the most.
 //
-//  ── Why this model also has a resistor in it ────────────────────────────────
+//  Note the bound references von, the body-effect-shifted threshold, not the
+//  raw VTO — that is what SPICE compares against, and with a large GAMMA and a
+//  reverse-biased bulk the two are volts apart.
 //
-//  Limiting bounds how far an iterate may travel; it does not make a divergent
-//  iteration convergent. Those are separate failure modes and the MOSFET has
-//  both.
-//
-//  Hover stamps a current_source into B_static only — it contributes no
-//  conductance to G (runtime/mna/matrices.cpp, stamp_current_source). So the
-//  nonlinear loop is damped fixed-point iteration, not true Newton: there is no
-//  device Jacobian anywhere in the runtime. Convergence therefore requires the
-//  iteration to be contractive, i.e. |dI/dV| / G_node < 1.
-//
-//  The BJT and diode models get that from their voltage clamps — past a clamp
-//  the derivative is exactly zero. A MOSFET cannot be rescued that way. In
-//  triode dIds/dVds ~ 1/Ron, and Vds is the very node the current drives, so
-//  the loop gain is ~ Rload/Ron. For a switch that is by definition >> 1, and a
-//  MOSFET written in the naive style of npn.hvr limit-cycles in exactly the
-//  on-state it was built for, limiter or no limiter.
-//
-//  Rpar fixes this by moving the channel's linear part into G where the solver
-//  can see it, leaving the current_source to carry only the residual:
-//
-//      saturation (gds ~ 0):  gain = (1/Rpar)/(1/Rpar + Gload)  < 1  always
-//      triode (gds ~ 1/Ron):  gain = |1/Ron - 1/Rpar| / (1/Rpar + Gload) -> 0
-//                                                            when Rpar ~ Ron
-//
-//  Rpar is a NUMERICAL parameter, not a physical shunt. At convergence the
-//  residual source subtracts back exactly what the resistor injected, so the
-//  net device current is ids for any Rpar — and in cutoff ids is 0, so the
-//  cancellation is exact and there is no off-state leakage. Set Rpar to roughly
-//  the device's expected Rds(on). It also keeps the drain node conductive in
-//  cutoff, which is what stops .op from hitting a singular matrix when the only
-//  other path off the drain is a parasitic capacitor.
+//  The bulk junctions get pnjlim() on their own arguments, as diode.hvr does.
 //
 //  ── Channel-length modulation ───────────────────────────────────────────────
 //
-//  (1 + lambda*Vds) is applied in BOTH regions, unlike classic SPICE MOS1 which
-//  applies it only in saturation. That choice makes Ids C1-continuous across
-//  the triode/saturation boundary (both value and slope match at Vds = Vov),
-//  which the fixed-point iteration cares about a great deal more than it cares
-//  about reproducing SPICE's discontinuity.
+//  (1 + LAMBDA*Vds) multiplies BOTH the triode and the saturation expression.
+//  This is not a liberty: ngspice forms betap = Beta*(1 + lambda*vds) once and
+//  uses it in both branches, which is also what makes Ids C1-continuous across
+//  the region boundary.
 //
 //  ── Third quadrant ──────────────────────────────────────────────────────────
 //
 //  The channel is physically symmetric, so on Vds < 0 the roles of the drain
-//  and source terminals swap and the overdrive re-references to the drain
-//  (Vgd = Vgs - Vds). Without this the model is wrong wherever it is most
-//  useful — a synchronous bridge runs current backwards through the channel on
-//  purpose, and leaving that to the body diode alone would fake a diode drop
-//  that a real device shorts out.
+//  and source terminals swap: the overdrive re-references to Vgd, and the bulk
+//  bias that sets von re-references to Vbd. This is SPICE's `mode` variable.
+//  Without it the model is wrong exactly where it is most useful — a
+//  synchronous bridge runs current backwards through the channel on purpose,
+//  and leaving that to the body diode alone would fake a diode drop that a real
+//  device shorts out.
+//
+//  The mode is selected from the LIMITED Vds, before von is computed. That
+//  ordering is deliberate and breaks what would otherwise be a circular
+//  dependency: limvds needs no threshold, so it can run first; the mode falls
+//  out of its result; the mode picks which junction sets von; and von then
+//  scales the fetlim bound.
+//
+//  ── A note on the resistor that used to be here ─────────────────────────────
+//
+//  Earlier revisions of this model carried an Rpar companion resistor and a
+//  residual current source, on the stated grounds that "Hover stamps a
+//  current_source into B_static only, so there is no device Jacobian anywhere
+//  in the runtime" and the nonlinear loop was therefore damped fixed-point
+//  rather than Newton.
+//
+//  That is not true of this runtime. vm_compute_jacobian (runtime/vm/vm.cpp)
+//  perturbs every unknown in turn, re-runs the analog block, and differences
+//  B_static to build a full numerical Jacobian; solver_factorize
+//  (runtime/mna/engine.cpp) adds it straight into G_eff. A current_source's
+//  bias dependence therefore does reach G, and the iteration is a real Newton
+//  step. Rpar was solving a problem the solver no longer has, it has no SPICE
+//  counterpart, and it forced every part card to invent an Rds(on) — so it is
+//  gone, and the channel current is stamped directly the way npn.hvr stamps
+//  its transport current.
+//
+//  GMIN (1e-12) across each bulk junction stays, as in diode.hvr. It is what
+//  keeps the drain node conductive in cutoff, so .op does not meet a singular
+//  matrix when the only other path off the drain is a capacitor.
 // ─────────────────────────────────────────────────────────────────────────────
 
-analog module NMOS<double Kp,     double W,      double L,
-                   double Vth,    double lambda, double Rpar,
-                   double Cgs,    double Cgd,    double Cdb>
-    [wire gate, wire drain, wire source]
+analog module NMOS4<double VTO,  double KP,   double GAMMA, double PHI, double LAMBDA,
+                    double W,    double L,    double LD,
+                    double RD,   double RS,
+                    double TOX,  double CGSO, double CGDO,  double CGBO,
+                    double IS,   double N,    double PB,
+                    double CBD,  double CBS,  double CJ,    double MJ,
+                    double CJSW, double MJSW, double FC,    double TT,
+                    double AD,   double ASRC, double PD,    double PSRC,
+                    double VT>()
+    [wire gate, wire drain, wire source, wire bulk]
 {
-    // Transconductance parameter. Kp is the process constant (mu*Cox), W/L the
-    // device geometry, so K is what the square law actually scales by.
-    double K = Kp * W / L;
+    // Intrinsic nodes. Every channel equation below is written across di-si,
+    // so the ohmic drops are carried by real resistors and RS is genuine
+    // source degeneration rather than a fitting fudge.
+    wire di, si;
 
-    // True terminal voltages. vds_true is what the Rpar resistor actually sees
-    // and stamps, so the residual current source below must reference it — not
-    // the limited copy — for the two to cancel exactly at convergence.
-    double vgs_true = V(gate)  - V(source);
-    double vds_true = V(drain) - V(source);
+    R<RD>() [drain,  di];
+    R<RS>() [source, si];
 
-    double vgs_old = nr_prev(V(gate)  - V(source));
-    double vds_old = nr_prev(V(drain) - V(source));
+    // ── Geometry and process ────────────────────────────────────────────────
+    // Leff is the metallurgical length less the two lateral diffusions; SPICE
+    // scales Beta by it, not by the drawn L.
+    double Leff = L - 2.0 * LD;
+    double Beta = KP * W / Leff;
 
-    // fetlim: bound proportional to overdrive, with a 2 V floor.
-    double dvg_max = 2.0 * fabs(vgs_old - Vth) + 2.0;
-    double dvg     = vgs_true - vgs_old;
-    if (dvg >  dvg_max) { dvg =  dvg_max; }
-    if (dvg < -dvg_max) { dvg = -dvg_max; }
-    double vgs = vgs_old + dvg;
+    // Total gate-oxide capacitance, eps_ox * area / tox with
+    // eps_ox = 3.4531e-11 F/m. TOX <= 0 is SPICE's "no oxide information",
+    // which zeroes the intrinsic Meyer capacitances and leaves only the
+    // overlaps.
+    double COX = 0.0;
+    if (TOX > 0.0) { COX = 3.4531e-11 * W * Leff / TOX; }
 
-    // limvds: same idea on the channel voltage. This is the one that matters
-    // in triode, where a single unbounded iterate can overshoot the rail and
-    // hand the next iteration a wildly wrong region.
+    double nvt   = N * VT;
+    double is_j  = IS;
+    if (is_j <= 0.0) { is_j = 1.0e-14; }   // keeps vcrit_of finite
+    double vcrit = vcrit_of(is_j, nvt);
+
+    // ── limvds, and the mode it selects ─────────────────────────────────────
+    // Needs no threshold, so it runs first. A single unbounded iterate in
+    // triode can overshoot the rail and hand the next iteration a wildly wrong
+    // region, which is the failure this bound exists to stop.
+    double vds_true = V(di) - V(si);
+    double vds_old  = nr_prev(V(di) - V(si));
+
     double dvd_max = 2.0 * fabs(vds_old) + 2.0;
     double dvd     = vds_true - vds_old;
     if (dvd >  dvd_max) { dvd =  dvd_max; }
     if (dvd < -dvd_max) { dvd = -dvd_max; }
     double vds = vds_old + dvd;
 
-    // Forward orientation: drain above source, overdrive measured at source.
+    // flip = -1 is SPICE's reverse mode: the terminal called "drain" is acting
+    // as the physical source.
     double flip = 1.0;
-    double vch  = vds;
-    double vov  = vgs - Vth;
+    if (vds < 0.0) { flip = -1.0; }
 
-    // Reverse (third-quadrant) orientation: the physical source is the drain
-    // terminal, so the overdrive re-references to Vgd = Vgs - Vds.
-    if (vds < 0.0) {
-        flip = -1.0;
-        vch  = 0.0 - vds;
-        vov  = vgs - vds - Vth;
+    // ── Threshold with body effect ──────────────────────────────────────────
+    // von = VTO + GAMMA*(sqrt(PHI - Vbs) - sqrt(PHI)), referenced to whichever
+    // terminal is acting as the source. On forward bias the square root would
+    // go complex, so SPICE substitutes the tangent-like approximation
+    // sqrt(PHI)/(1 + Vbs/(2*PHI)) — same value and same slope at Vbs = 0.
+    double vbs_eff = V(bulk) - V(si);
+    if (flip < 0.0) { vbs_eff = V(bulk) - V(di); }
+
+    double sqphi = sqrt(PHI);
+    double sarg  = sqphi;
+    if (vbs_eff <= 0.0) {
+        sarg = sqrt(PHI - vbs_eff);
+    } else {
+        sarg = sqphi / (1.0 + vbs_eff / (2.0 * PHI));
     }
+    double von = VTO + GAMMA * (sarg - sqphi);
 
-    // Physical bound on overdrive. A pure square law is unbounded in Vgs; a
-    // real device runs out of carriers (velocity saturation) long before this.
-    // Also covers the very first iteration, where there is no NR history yet
-    // and nr_prev() just returns the cold-start guess.
-    if (vov > 20.0) { vov = 20.0; }
+    // ── fetlim ──────────────────────────────────────────────────────────────
+    double vgs_true = V(gate) - V(si);
+    double vgs_old  = nr_prev(V(gate) - V(si));
 
-    double ids = 0.0;
-    if (vov > 0.0) {
-        if (vch < vov) {
-            // Triode
-            ids = K * (vov * vch - 0.5 * vch * vch) * (1.0 + lambda * vch);
+    double dvg_max = 2.0 * fabs(vgs_old - von) + 2.0;
+    double dvg     = vgs_true - vgs_old;
+    if (dvg >  dvg_max) { dvg =  dvg_max; }
+    if (dvg < -dvg_max) { dvg = -dvg_max; }
+    double vgs = vgs_old + dvg;
+
+    // ── Channel current ─────────────────────────────────────────────────────
+    // In reverse mode the overdrive re-references to Vgd = Vgs - Vds and the
+    // channel voltage is -Vds; the resulting current flows the other way, which
+    // the flip factor restores.
+    double vch  = vds * flip;
+    double vgst = vgs - von;
+    if (flip < 0.0) { vgst = vgs - vds - von; }
+
+    // A pure square law is unbounded in Vgs; a real device runs out of carriers
+    // (velocity saturation) long before this. This also covers the very first
+    // iteration, where there is no NR history and nr_prev() returns the
+    // cold-start guess.
+    if (vgst > 20.0) { vgst = 20.0; }
+
+    double vdsat = vgst;
+    if (vdsat < 0.0) { vdsat = 0.0; }
+
+    double cdrain = 0.0;
+    if (vgst > 0.0) {
+        double betap = Beta * (1.0 + LAMBDA * vch);
+        if (vch < vdsat) {
+            cdrain = betap * vch * (vgst - 0.5 * vch);   // triode
         } else {
-            // Saturation
-            ids = 0.5 * K * vov * vov * (1.0 + lambda * vch);
+            cdrain = 0.5 * betap * vgst * vgst;          // saturation
         }
     }
-    ids = ids * flip;
+    cdrain = cdrain * flip;
 
-    // Linear part into G, residual into B. See the header — the pair is exact
-    // at convergence for any Rpar.
-    double ires = ids - vds_true / Rpar;
-    R<Rpar>() [drain, source];
-    current_source<>(ires) [drain, source];
+    current_source<>(cdrain) [di, si];
 
-    // Fixed parasitics. Cgd is the Miller capacitance and dominates switching
-    // loss and gate-drive behaviour, which is why it is a parameter here rather
-    // than a hardcoded constant like the BJT models use.
-    C<Cgs>() [gate,  source];
-    C<Cgd>() [gate,  drain];
-    C<Cdb>() [drain, source];
-
-    // Intrinsic body diode: p-bulk (tied to source) is the anode, n-drain the
-    // cathode, so it conducts on V(source) > V(drain) and catches the inductive
-    // kick when the channel opens. This is the part a BJT bridge has to add by
-    // hand — see the four discrete flyback diodes in examples/DCMotor/h_bridge.hvr.
+    // ── Bulk junctions ──────────────────────────────────────────────────────
+    // Two of them, bulk-source and bulk-drain, replacing what a three-terminal
+    // model has to fake with a single bolted-on body diode. With the bulk tied
+    // to the source (see the NMOS wrapper) the bulk-source junction sits at
+    // 0 V and contributes nothing, and the bulk-drain junction IS the intrinsic
+    // body diode — no special case required.
     //
-    // Parameters are a generic power-MOSFET body junction rather than a card:
-    // it is not a separate component with a part number, it is this transistor's
-    // own drain-body junction, so its size tracks the die. Is=1n and Rs=20m give
-    // roughly a 0.8 V drop at an amp; Tt=100n makes it the slow, lossy diode a
-    // real body diode is, which is exactly why bridges add a fast external one
-    // in parallel. Cjo=100p replaces the 2 pF the old model carried and sits in
-    // parallel with Cdb.
-    module bodydiode = Body.Diode<1n, 1.6,          // Is, N
-                                  20m,              // Rs
-                                  0.0,              // Ikf
-                                  0.0, 2.0,         // Isr, Nr
-                                  0.0, 0.0,         // Bv, Ibv (avalanche not modelled)
-                                  100p, 0.7, 0.5, 0.5,  // Cjo, Vj, M, Fc
-                                  100n,             // Tt
-                                  0.026>()          // Vt
-                                 [source, drain];
+    // IS is the total saturation current of each junction. SPICE also supports
+    // a per-area JS scaled by AD/ASRC; that is not carried here, so AD/ASRC and
+    // PD/PSRC scale the capacitances only.
+    double vbs_l = pnjlim(V(bulk) - V(si), nr_prev(V(bulk) - V(si)), nvt, vcrit);
+    double vbd_l = pnjlim(V(bulk) - V(di), nr_prev(V(bulk) - V(di)), nvt, vcrit);
+
+    double ibs = is_j * (jexp(vbs_l, nvt) - 1.0);
+    double ibd = is_j * (jexp(vbd_l, nvt) - 1.0);
+
+    // GMIN, SPICE's default 1e-12 S. Deliberately not a parameter: tuning it
+    // per part would be tuning the solver, not the device.
+    double ibs_g = ibs + 1.0e-12 * vbs_l;
+    double ibd_g = ibd + 1.0e-12 * vbd_l;
+    current_source<>(ibs_g) [bulk, si];
+    current_source<>(ibd_g) [bulk, di];
+
+    // Junction capacitance. CBD/CBS, when given, are the total zero-bias
+    // capacitances and take precedence over the per-area CJ — SPICE's own
+    // precedence rule. The sidewall term is separate, with its own grading
+    // coefficient, scaled by the junction perimeter.
+    double cbd_eff = CBD;
+    if (cbd_eff <= 0.0) { cbd_eff = CJ * AD; }
+    double cbs_eff = CBS;
+    if (cbs_eff <= 0.0) { cbs_eff = CJ * ASRC; }
+
+    // The depletion charges take the RAW terminal voltage, not the limited one.
+    // diode.hvr's charge-storage comment carries the full argument: Hover
+    // measures dq/dv numerically through whatever the caller did to reach its
+    // argument, so passing a pnjlim() output divides the capacitance by the
+    // limiter's local slope — and a junction that presents almost no
+    // capacitance during a violent iterate is a junction that will not
+    // converge. The power law needs no limiting of its own.
+    double vbs_raw = V(bulk) - V(si);
+    double vbd_raw = V(bulk) - V(di);
+
+    double qbs = q_dep(vbs_raw, cbs_eff,     PB, MJ,   FC)
+               + q_dep(vbs_raw, CJSW * PSRC, PB, MJSW, FC)
+               + TT * ibs;
+    double qbd = q_dep(vbd_raw, cbd_eff,   PB, MJ,   FC)
+               + q_dep(vbd_raw, CJSW * PD, PB, MJSW, FC)
+               + TT * ibd;
+
+    double icbs = ddt(qbs);
+    double icbd = ddt(qbd);
+    current_source<>(icbs) [bulk, si];
+    current_source<>(icbd) [bulk, di];
+
+    // ── Gate capacitance: overlaps + Meyer ──────────────────────────────────
+    // The overlaps are bias-independent by construction, so they stay ordinary
+    // capacitors and their admittance lands in C directly. CGSO/CGDO are per
+    // metre of gate width, CGBO per metre of channel length.
+    C<CGSO * W>()            [gate, source];
+    C<CGDO * W>()            [gate, drain];
+    C<CGBO * (L - 2.0 * LD)>() [gate, bulk];
+
+    // The intrinsic part is Meyer's model, region by region, exactly as SPICE's
+    // qmeyer() computes it. cox below is the TOTAL oxide capacitance.
+    //
+    // Meyer is not charge-conserving — capgs and capgd are functions of both
+    // vgs and vgd, so no single potential exists whose gradient they are, and
+    // q = C(v)*v is what SPICE effectively integrates through its average-
+    // capacitance scheme. That is a known property of MOS1 and not a defect to
+    // be repaired here: the charge-conserving alternative (Ward-Dutton) is a
+    // different model, not this one.
+    double vgd = V(gate) - V(di);
+    double vgb = V(gate) - V(bulk);
+
+    double capgs = 0.0;
+    double capgd = 0.0;
+    double capgb = 0.0;
+
+    if (vgst <= 0.0 - PHI) {
+        capgb = 0.5 * COX;
+    } else if (vgst <= 0.0 - 0.5 * PHI) {
+        capgb = 0.0 - vgst * COX / (2.0 * PHI);
+    } else if (vgst <= 0.0) {
+        capgb = 0.0 - vgst * COX / (2.0 * PHI);
+        capgs = vgst * COX / (1.5 * PHI) + COX / 3.0;
+    } else {
+        if (vch >= vdsat) {
+            capgs = COX / 3.0;
+        } else {
+            // Both terminals are inside the channel, so the inversion charge
+            // splits between them. vddif -> vdsat as vds -> 0, which is where
+            // this collapses to the symmetric COX/2 each.
+            double vddif  = 2.0 * vdsat - vch;
+            double vddif1 = vdsat - vch;
+            double vddif2 = vddif * vddif;
+            capgd = COX * (1.0 - vdsat * vdsat / vddif2) / 3.0;
+            capgs = COX * (1.0 - vddif1 * vddif1 / vddif2) / 3.0;
+        }
+    }
+
+    // ddt() has to sit at the module body's top level — the elaborator rewrites
+    // it into a companion inductor plus a current source and cannot do that
+    // from inside a branch (processAnalogDdt, compiler/elaborator/macros.go).
+    // So the regions above assign into the capacitance locals, and the three
+    // charges are formed unconditionally here.
+    double qgs = capgs * vgs_true;
+    double qgd = capgd * vgd;
+    double qgb = capgb * vgb;
+
+    double igs = ddt(qgs);
+    double igd = ddt(qgd);
+    double igb = ddt(qgb);
+
+    current_source<>(igs) [gate, si];
+    current_source<>(igd) [gate, di];
+    current_source<>(igb) [gate, bulk];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Three-terminal wrapper: bulk tied to source.
+//
+//  The discrete-device connection. Parameters are identical and passed through
+//  untouched — GAMMA and PHI still appear in the list, and still do nothing
+//  here, because Vbs is pinned at the drop across RS. Keeping them in the
+//  signature means a part card is written once and works against either form.
+// ─────────────────────────────────────────────────────────────────────────────
+
+analog module NMOS<double VTO,  double KP,   double GAMMA, double PHI, double LAMBDA,
+                   double W,    double L,    double LD,
+                   double RD,   double RS,
+                   double TOX,  double CGSO, double CGDO,  double CGBO,
+                   double IS,   double N,    double PB,
+                   double CBD,  double CBS,  double CJ,    double MJ,
+                   double CJSW, double MJSW, double FC,    double TT,
+                   double AD,   double ASRC, double PD,    double PSRC,
+                   double VT>()
+    [wire gate, wire drain, wire source]
+{
+    module m = NMOS4<VTO, KP, GAMMA, PHI, LAMBDA,
+                     W, L, LD,
+                     RD, RS,
+                     TOX, CGSO, CGDO, CGBO,
+                     IS, N, PB,
+                     CBD, CBS, CJ, MJ,
+                     CJSW, MJSW, FC, TT,
+                     AD, ASRC, PD, PSRC,
+                     VT>()
+                    [gate, drain, source, source];
 }

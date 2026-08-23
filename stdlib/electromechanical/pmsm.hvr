@@ -99,9 +99,9 @@ analog module PMSM<double Rs, double Ld, double Lq, double flux_m, double p, dou
     double T_load = 0;
     double k_load = 0.0015;  
 
-    if(time > 0.8 && time < 1.2){
-        T_load = 3;
-    }
+    //if(time > 0.8 && time < 1.2){
+    //    T_load = 3;
+    //}
 
    // if (omega_m >= 0) {
     //    T_load = k_load * omega_m * omega_m;

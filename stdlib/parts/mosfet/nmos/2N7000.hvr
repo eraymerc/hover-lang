@@ -1,0 +1,73 @@
+import <semiconductors/mosfet> as dev;
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  2N7000 — 60 V / 200 mA small-signal N-channel MOSFET (TO-92)
+//
+//  The classic logic-adjacent small switch: high enough threshold that it is
+//  NOT a 3.3 V logic-level part (Vgs(th) is 0.8-3 V and Rds(on) is specified at
+//  Vgs = 10 V), cheap, and the default answer for switching a relay or an LED
+//  string from a microcontroller through a level shifter.
+//
+//  ── The lumped-geometry convention ──────────────────────────────────────────
+//
+//  W = L = 1, LD = 0, TOX = 0. Every discrete .model card on a datasheet or in
+//  a vendor library is written this way, and it needs saying because the
+//  parameters mean something slightly different from their process-level
+//  meanings when it is:
+//
+//    KP    is the DEVICE transconductance in A/V^2, not mu*Cox, because
+//          Beta = KP*W/Leff and W/Leff is 1.
+//    CGSO  and friends are ABSOLUTE farads, not F/m, for the same reason.
+//    TOX=0 disables the intrinsic Meyer capacitances, so the whole gate
+//          capacitance is carried by the three overlap terms. That is the only
+//          honest thing to do here: a packaged part's datasheet gives Ciss,
+//          Coss and Crss at one bias, not an oxide thickness, and inventing a
+//          geometry to recover a Meyer split would be fabricating data.
+//          stdlib/semiconductors/mosfet/nmos.hvr reads TOX <= 0 as SPICE's
+//          "no oxide information".
+//
+//  ── Fit ─────────────────────────────────────────────────────────────────────
+//
+//  VTO = 2.0     mid-range of the 0.8-3.0 V Vgs(th) window
+//  KP  = 0.14    set from Rds(on) = 1.8 Ohm at Vgs = 10 V: the channel term
+//                1/(KP*Vov) with Vov = 8 V is 0.89 Ohm, and RD+RS makes up the
+//                remaining 0.9 Ohm
+//  RD  = 0.8     package and metallisation, split drain-heavy as usual
+//  RS  = 0.1
+//  LAMBDA = 0.02 gives an output resistance of ~7 kOhm at 7 mA, in line with
+//                the measured slope in the saturation region of the datasheet
+//                output characteristic
+//
+//  Capacitances land exactly on the datasheet's three numbers, which is what
+//  the three overlap terms are for (Cgb becomes a gate-source capacitance once
+//  the bulk is tied to the source, and Cbd becomes Cds):
+//
+//    Ciss = Cgs + Cgd + Cgb = 25p +  5p + 30p = 60 pF    (datasheet 60 pF)
+//    Coss = Cgd + Cds       =  5p + 20p       = 25 pF    (datasheet 25 pF)
+//    Crss = Cgd             =  5p             =  5 pF    (datasheet  5 pF)
+//
+//  ── Not modelled ────────────────────────────────────────────────────────────
+//
+//  GAMMA = 0 and PHI is left at its nominal 0.6. Body effect cannot appear in
+//  a packaged three-terminal part — the bulk is bonded to the source inside the
+//  package — so no discrete card carries GAMMA, and this one does not either.
+//
+//  TT = 0: the body diode's reverse recovery is not specified for this part and
+//  matters nowhere it is used at 200 mA. See IRF540N.hvr, where it does.
+//
+//  Drain-source breakdown is not modelled; the device will not avalanche at
+//  60 V, it will simply keep blocking. Vt is fixed at 0.026 V (~28 C).
+// ─────────────────────────────────────────────────────────────────────────────
+
+analog module M2N7000<>()[wire gate, wire drain, wire source] {
+    module m = dev.NMOS<2.0, 0.14, 0.0, 0.6, 0.02,   // VTO, KP, GAMMA, PHI, LAMBDA
+                        1.0, 1.0, 0.0,               // W, L, LD  (lumped)
+                        0.8, 0.1,                    // RD, RS
+                        0.0, 25p, 5p, 30p,           // TOX, CGSO, CGDO, CGBO
+                        1e-14, 1.0, 0.8,             // IS, N, PB
+                        20p, 20p, 0.0, 0.5,          // CBD, CBS, CJ, MJ
+                        0.0, 0.33, 0.5, 0.0,         // CJSW, MJSW, FC, TT
+                        0.0, 0.0, 0.0, 0.0,          // AD, ASRC, PD, PSRC
+                        0.026>()                     // VT
+                       [gate, drain, source];
+}

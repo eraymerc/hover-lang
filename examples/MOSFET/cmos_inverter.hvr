@@ -1,0 +1,129 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  HVR Testbench — CMOS Inverter
+//  Validates: Rail-to-rail complementary switching, the bias-dependent Meyer
+//             gate capacitances, and crowbar (shoot-through) supply current
+// ─────────────────────────────────────────────────────────────────────────────
+
+.save(main.v_in, main.v_out, main.vdd, main.vdd_src);
+.op;
+.tran(0, 4u, 2n); // 4 µs = 4 cycles of the 1 MHz input, 2 ns max step
+.solver(ndf2);
+
+import <semiconductors/mosfet>;
+from <math> import sin;
+
+// ═══════════════════════════════════════════════════════════════
+//  PROCESS DEVICES
+// ═══════════════════════════════════════════════════════════════
+//
+//  The other decks in this folder use part cards from stdlib/parts/mosfet/,
+//  which are lumped discrete models: W = L = 1, TOX = 0, KP standing in for
+//  the whole device's transconductance. That convention is right for a packaged
+//  transistor whose datasheet gives Ciss/Coss/Crss and nothing about geometry,
+//  but it switches OFF the intrinsic Meyer capacitances, because TOX <= 0 is
+//  SPICE's "no oxide information".
+//
+//  An inverter on a die is the opposite case: the geometry is the design, so
+//  these two wrappers are written process-first — a generic 2 µm CMOS run, with
+//  W as the one thing the designer picks per device. That turns the Meyer model
+//  on, and it is what this deck is here to exercise.
+//
+//  KP = mu*Cox here, its real meaning: with TOX = 40 nm, Cox is 863 µF/m^2,
+//  and mu_n ~ 580 cm^2/Vs gives KP_n = 5e-5 A/V^2 while the roughly 3x lower
+//  hole mobility gives KP_p = 1.8e-5. That ratio is why W_p below is three
+//  times W_n — sizing the P device wide is how the two halves are made to
+//  drive equally, and it is the single most recognisable feature of a CMOS
+//  layout.
+//
+//  The junction areas and perimeters are derived from W as any layout tool
+//  would derive them, assuming a 5 µm diffusion overhang: AD = W*5u,
+//  PD = W + 2*5u. All of that is static arithmetic, so it folds at elaboration
+//  time.
+
+analog module NMOS_2U<double W>() [wire g, wire d, wire s, wire b] {
+    module m = mosfet.NMOS4<0.8, 5e-5, 0.5, 0.6, 0.02,   // VTO, KP, GAMMA, PHI, LAMBDA
+                            W, 2u, 0.2u,                 // W, L, LD
+                            20.0, 20.0,                  // RD, RS (diffusion + contact)
+                            40n, 3e-10, 3e-10, 2e-10,    // TOX, CGSO, CGDO, CGBO
+                            1e-14, 1.0, 0.8,             // IS, N, PB
+                            0.0, 0.0, 2e-4, 0.5,         // CBD, CBS, CJ, MJ
+                            5e-10, 0.33, 0.5, 0.0,       // CJSW, MJSW, FC, TT
+                            W * 5u, W * 5u,              // AD, ASRC
+                            W + 10u, W + 10u,            // PD, PSRC
+                            0.026>()                     // VT
+                           [g, d, s, b];
+}
+
+analog module PMOS_2U<double W>() [wire g, wire d, wire s, wire b] {
+    module m = mosfet.PMOS4<-0.9, 1.8e-5, 0.5, 0.6, 0.02, // VTO (negative!), KP, ...
+                            W, 2u, 0.2u,
+                            20.0, 20.0,
+                            40n, 3e-10, 3e-10, 2e-10,
+                            1e-14, 1.0, 0.8,
+                            0.0, 0.0, 2e-4, 0.5,
+                            5e-10, 0.33, 0.5, 0.0,
+                            W * 5u, W * 5u,
+                            W + 10u, W + 10u,
+                            0.026>()
+                           [g, d, s, b];
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  INPUT DRIVE
+// ═══════════════════════════════════════════════════════════════
+
+analog module Sine_Drive<double dc, double amp, double freq>() [wire out, wire gnd] {
+    double v = dc + amp * sin(2.0 * 3.14159265359 * freq * time);
+    voltage_source<>(v)[out, gnd];
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  TOP-LEVEL CIRCUIT
+// ═══════════════════════════════════════════════════════════════
+//
+//              vdd_src ──[1 Ohm sense]── vdd ──┐
+//                                              │ MP  (W = 60u)
+//               v_in ──┬──────────────── gate ─┤
+//                      │                       ├── v_out ──┬── C_load
+//                      └──────────────── gate ─┤           │
+//                                              │ MN (W = 20u)
+//                                     gnd ─────┴──────────gnd
+//
+//  Both bulks go to their own rails rather than to their sources, which is the
+//  physical connection on a die: one p-substrate tied to ground, one n-well
+//  tied to VDD. In an inverter that happens to coincide with source-tied, so
+//  GAMMA does no work here — it would in a stacked NAND, where the upper
+//  device's source floats above the substrate. The four-terminal form is used
+//  anyway because it is the honest netlist.
+
+module main<>() []
+{
+    wire vdd_src, vdd, v_in, v_out;
+
+    // 1. Supply, through a 1 Ohm sense resistor.
+    // The crowbar current is (V(vdd_src) - V(vdd)) / 1, recoverable from the
+    // two saved columns. 1 Ohm is negligible next to the devices' own tens of
+    // ohms, so it perturbs nothing.
+    voltage_source<5>()[vdd_src, gnd];
+    R<1>()[vdd_src, vdd];
+
+    // 2. Input: a 1 MHz sine swinging the full rail, 0 V to 5 V.
+    // A sine rather than a pulse on purpose — it sweeps continuously through
+    // the transition region instead of jumping across it, so the crowbar
+    // current appears as a resolved pulse with a shape rather than as a spike
+    // between two timesteps, and the Meyer capacitances are traversed region by
+    // region rather than skipped.
+    module drive = Sine_Drive<2.5, 2.5, 1Meg>()[v_in, gnd];
+
+    // 3. The complementary pair. W_p = 3 * W_n compensates the mobility ratio,
+    // which puts the trip point near mid-rail.
+    module MP = PMOS_2U<60u>()[v_in, v_out, vdd, vdd];
+    module MN = NMOS_2U<20u>()[v_in, v_out, gnd, gnd];
+
+    // 4. Load. 100 pF against a ~5 mA drive is deliberately heavy: the peak
+    // capacitive current the output demands (C*dv/dt = 1.6 mA at 1 MHz) is a
+    // third of what the devices can supply, so the output lags the static
+    // transfer curve and slews rather than tracking it — a switching test, not
+    // a DC sweep — while still reaching both rails at the ends of each swing.
+    C<100p>()[v_out, gnd];
+}

@@ -1,0 +1,53 @@
+import <semiconductors/mosfet> as dev;
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  BSS84 — -50 V / -130 mA P-channel MOSFET (SOT-23)
+//
+//  The standard complement to the BSS138, and the high-side switch in most
+//  small load-switch and reverse-polarity-protection circuits. Paired with an
+//  N-channel part it makes a CMOS inverter — see
+//  examples/MOSFET/cmos_inverter.hvr.
+//
+//  ── Signs ───────────────────────────────────────────────────────────────────
+//
+//  VTO is NEGATIVE, exactly as the datasheet prints it. KP, PHI and LAMBDA stay
+//  positive. That is SPICE's convention and the model implements the polarity
+//  internally with a type sign, so this card is a transcription rather than a
+//  translation. (An earlier revision of pmos.hvr wanted the threshold as a
+//  magnitude; it does not any more.)
+//
+//  Lumped-geometry card — W = L = 1, LD = 0, TOX = 0, so KP is the device
+//  transconductance in A/V^2 and the CG*O values are absolute farads. See
+//  stdlib/parts/mosfet/nmos/2N7000.hvr for that convention in full.
+//
+//  ── Fit ─────────────────────────────────────────────────────────────────────
+//
+//  VTO = -1.4    mid-range of the -0.8 to -1.5 V window
+//  KP  = 0.021   from Rds(on) = 6 Ohm at Vgs = -10 V: channel 1/(KP*8.6) is
+//                5.5 Ohm, RD+RS supplies the rest. The P-channel is several
+//                times weaker than the N-channel of the same die area because
+//                hole mobility is, which is the whole reason a CMOS inverter
+//                is drawn with a wider P device.
+//  RD  = 0.4
+//  RS  = 0.1
+//  LAMBDA = 0.02
+//
+//    Ciss = Cgs + Cgd + Cgb = 18p + 8p + 6p = 32 pF   (datasheet 32 pF)
+//    Coss = Cgd + Cds       =  8p + 20p     = 28 pF   (datasheet 28 pF)
+//    Crss = Cgd             =  8p           =  8 pF   (datasheet  8 pF)
+//
+//  GAMMA = 0, TT = 0, no breakdown — as for every discrete card here.
+// ─────────────────────────────────────────────────────────────────────────────
+
+analog module MBSS84<>()[wire gate, wire drain, wire source] {
+    module m = dev.PMOS<-1.4, 0.021, 0.0, 0.6, 0.02,  // VTO, KP, GAMMA, PHI, LAMBDA
+                        1.0, 1.0, 0.0,                // W, L, LD  (lumped)
+                        0.4, 0.1,                     // RD, RS
+                        0.0, 18p, 8p, 6p,             // TOX, CGSO, CGDO, CGBO
+                        1e-14, 1.0, 0.8,              // IS, N, PB
+                        20p, 20p, 0.0, 0.5,           // CBD, CBS, CJ, MJ
+                        0.0, 0.33, 0.5, 0.0,          // CJSW, MJSW, FC, TT
+                        0.0, 0.0, 0.0, 0.0,           // AD, ASRC, PD, PSRC
+                        0.026>()                      // VT
+                       [gate, drain, source];
+}

@@ -5,29 +5,7 @@
 
 .save(main.ac_in1, main.ac_in2, main.dc_out);
 .tran(0, 100m, 100u); // 100 ms run, 100 µs max step — 5 full cycles of 50 Hz
-
-// SOLVER NOTE — use .solver(bdf2) here, not ndf2.
-//
-// Under bdf2 this now produces the correct filtered DC: dc_out swings
-// 12.02 .. 22.53 V, which is a 22.5 V peak (24 V less two diode drops) decaying
-// through the 10 uF / 1 kOhm time constant between conduction pulses. A bridge
-// built from a plain Shockley diode gives 12.02 .. 22.52 V, so the model agrees
-// with the simple reference to three digits.
-//
-// Under ndf2 the same deck returns 0 .. 21.66 V — unfiltered, as though the
-// capacitor were absent. That is an ndf2 defect rather than a model or circuit
-// one: the identical netlist solves correctly under bdf2, and tightening ndf2's
-// tolerances by 1000x costs 100x the steps and returns the same wrong answer.
-//
-// FIXED 2026-08-10 — this deck used to stop converging partway through, at a
-// commutation instant, and no longer does: it now completes the full 100 ms in
-// 1476 steps with dc_out at 12.09 .. 22.53 V over the last cycle. The cause was
-// not this circuit and not the diode model. bdf2 re-formed its Jacobian only
-// after a step FAILED, so a single matrix survived 311 consecutive accepted
-// steps — across a full commutation of all four diodes — and Newton was left
-// converging linearly until the rate crossed 1. See the accept site in
-// runtime/solvers/bdf2.cpp.
-.solver(bdf2);
+.solver(ndf2);
 
 import <parts/diode> as parts;
 from <math> import sin;

@@ -1,0 +1,95 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  HVR Testbench — Common-Source N-MOSFET Amplifier
+//  Validates: Square-law saturation biasing, linear amplification, and phase
+//             inversion
+// ─────────────────────────────────────────────────────────────────────────────
+
+.save(main.m1_gate, main.m1_drain, main.v_in);
+.op;
+.tran(0, 100m, 10u); // 30 ms run, 10 µs max step (1 kHz sine shows 30 full cycles)
+.solver(ndf2);
+
+import <parts/mosfet/nmos>;
+from <math> import sin;
+
+// ═══════════════════════════════════════════════════════════════
+//  AC VOLTAGE SOURCE
+// ═══════════════════════════════════════════════════════════════
+
+analog module AC_Source<double dc_bias, double ac_amp, double freq>() [wire out, wire gnd] {
+    // Because this is ANALOG, the VM runs it continuously inside the matrix loop!
+    double v_sig = dc_bias + ac_amp * sin(2.0 * 3.14159265359 * freq * time);
+    voltage_source<>(v_sig)[out, gnd];
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  TOP-LEVEL CIRCUIT
+// ═══════════════════════════════════════════════════════════════
+//
+//  The BJT version of this deck (examples/BJT/npn_amp.hvr) is the same circuit
+//  with the same numbers where they can be the same, so the two can be read
+//  side by side. Two things genuinely differ, and both come from the device
+//  rather than from the topology:
+//
+//  1. The gate draws NO DC current. The BJT deck's Rb is a base-current
+//     limiter and its bias point moves with beta; here the divider is a pure
+//     voltage divider and sets V(gate) exactly, with no device parameter in it.
+//
+//  2. The source degeneration is doing more work. At Vov ~ 0.11 V a 50 mV shift
+//     in Vgs changes the drain current by roughly a factor of two, so the
+//     200 Ohm source resistor is not a refinement on top of a bias network —
+//     it IS the bias stability, and the divider only has to get the gate
+//     roughly right for the loop Vs = Id*200 to settle at ~0.95 mA.
+
+module main<>() []
+{
+    wire vcc, m1_gate, m1_drain, m1_source, v_in;
+
+    // 1. Power Supply Rail (20V DC)
+    voltage_source<20>()[vcc, gnd];
+
+    // 2. Input Source: 20 mV AC sine (1 kHz) on a 2.301 V DC pedestal.
+    //
+    // The pedestal biases nothing — the coupling capacitor blocks it and the
+    // divider below sets the gate. It is there so the capacitor sits at ZERO
+    // volts in the steady state, which matters for .op: the operating-point
+    // solve stamps a capacitor as alpha*C against a zero history (see
+    // vm_solve_dc_once, runtime/vm/vm.cpp), so a coupling cap behaves as a
+    // stiff conductance to whatever is on its other side rather than as an
+    // open. Left at 0 V DC it would drag the gate toward ground during .op,
+    // and the transient would then spend 14 ms (0.34 µF into the 35 kOhm
+    // divider) crawling back to the real bias. Matching the pedestal to the
+    // divider makes the operating point exact and the deck settled from t = 0.
+    module signal_source = AC_Source<2.301, 20m, 1k>()[v_in, gnd];
+
+    // 3. Bias network and load
+    // The divider puts the gate at 20 * 39k/(300k + 39k) = 2.301 V. With
+    // VTO = 2.0 V the device then finds the source voltage that closes the
+    // loop: Vs = Id*200 and Id = (KP/2)*(2.301 - 2.0 - Vs)^2, which settles at
+    // Id ~ 0.95 mA, Vov ~ 0.11 V, V(drain) ~ 10.5 V — mid-rail, and comfortably
+    // in saturation since Vds ~ 10.3 V is far above Vov.
+    R<300k>() [vcc, m1_gate];
+    R<39k>()  [m1_gate, gnd];
+    R<10k>()  [vcc, m1_drain];      // Rd - drain load resistor (sets the gain)
+    R<200>()  [m1_source, gnd];     // Rs - source degeneration, sets the bias
+
+    C<0.34u>() [v_in, m1_gate];     // AC coupling into the gate
+
+    // Note there is no emitter-bypass equivalent here, and that is deliberate.
+    // The BJT decks put a 16 µF from a 74 Ohm tap to ground to lift the AC gain
+    // above what the DC degeneration allows, but the same capacitor shorts that
+    // tap during .op — killing the degeneration at exactly the moment the bias
+    // is being solved, so the operating point comes out with the device hard on
+    // and the transient burns 20 ms recovering. Taking the degeneration
+    // straight (Rs = 200 Ohm, unbypassed) costs gain and buys an exact .op and
+    // a run that is in its steady state from the first timestep.
+    //
+    // Gain is then -Rd/(Rs + 1/gm). With gm = KP*Vov = 15.5 mS, 1/gm is
+    // 64 Ohm, so the prediction is -10k/264 = -37.9.
+
+    // 4. Transistor Under Test — 2N7000 from the parts library. The full
+    // Level-1 card (threshold, transconductance, channel-length modulation,
+    // ohmic RD/RS, the three gate capacitances and the intrinsic body diode)
+    // lives inside the part, so nothing has to be spelled out here.
+    module M1 = nmos.M2N7000<>() [m1_gate, m1_drain, m1_source];
+}

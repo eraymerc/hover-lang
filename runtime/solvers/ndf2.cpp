@@ -1,7 +1,9 @@
 #include "ndf2.hpp"
 #include "step_limits.hpp"
+#include "newton_core.hpp"
 #include "newton_trust_region.hpp"
 #include "step_trace.hpp"
+#include "fail_dump.hpp"
 #include "../vm/vm.hpp"
 #include "../vm/zcd.hpp"
 
@@ -16,18 +18,10 @@
 
 static const double NDF_KAPPA[2] = { -0.1850, -1.0 / 9.0 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// CONVERGENCE CHECK
-// ─────────────────────────────────────────────────────────────────────────────
-
-bool NDF2::has_converged(const Eigen::VectorXd &x_new, const Eigen::VectorXd &x_old) const {
-    for (int i = 0; i < x_new.size(); i++) {
-        double scale = atol + rtol * std::abs(x_new(i));
-        if (std::abs(x_new(i) - x_old(i)) > scale) return false;
-    }
-    return true;
-}
-
+// The convergence test lives in newton_core.hpp, shared with bdf2. NDF2 used to
+// carry its own, which scaled against x_new alone (unsafe across a zero
+// crossing) and used a plain `>` comparison that reads a NaN row as converged.
+//
 // ─────────────────────────────────────────────────────────────────────────────
 // RUN
 //
@@ -44,7 +38,9 @@ bool NDF2::has_converged(const Eigen::VectorXd &x_new, const Eigen::VectorXd &x_
 
 void NDF2::run(VM *vm) {
     if (max_dt == 0.0) max_dt = vm->time_step;
+    n_nodes = vm->solver->sys->num_nodes;
     RejectRun reject_run;   // bounds the back-off spiral — see step_limits.hpp
+    JacRefresh jac;         // within-step re-form policy — see newton_core.hpp
 
     int n = (int)vm->solver->last_solution.size();
     x_prev1 = vm->solver->last_solution;
@@ -84,6 +80,7 @@ void NDF2::run(VM *vm) {
         }
 
         vm->solver->sys->dt = dt;
+        jac.begin_step();
 
         // Order selection: order 1 until at least one full step of real
         // history exists (step_count >= 1, so x_prev2 is a genuine
@@ -95,15 +92,52 @@ void NDF2::run(VM *vm) {
         bool use_order2 = (step_count >= 1);
         order = use_order2 ? 2 : 1;
 
+        // THE KAPPA TERM IS SUBTRACTED, NOT ADDED — this sign was wrong here for
+        // as long as the solver has existed, and it is what made ndf2 produce
+        // confidently wrong DC answers on circuits bdf2 solves correctly.
+        //
+        // Derivation, order 2. The formula is
+        //
+        //   y_{n+1} - (4/3)y_n + (1/3)y_{n-1}
+        //     - k*(2/3)*(y_{n+1} - 2y_n + y_{n-1}) = (2/3)*h*f
+        //
+        // Multiply by 1.5/h and collect the y_{n+1} terms into alpha:
+        //
+        //   alpha = 1.5*(1 - (2/3)k)/h = (1.5 - k)/h
+        //   f = alpha*y_{n+1} - (1.5/h)*[ (4/3)y_n - (1/3)y_{n-1}
+        //                                 - (2/3)k*(2y_n - y_{n-1}) ]
+        //
+        // The companion model this engine solves is f = alpha*(y - x_blend), so
+        // x_blend is that bracket divided by (1 - (2/3)k) — with the kappa term
+        // carrying a MINUS, inherited from the minus on the left-hand side.
+        // Order 1 is the same derivation with alpha = (1-k)/h.
+        //
+        // THE TEST THAT CATCHES THIS is steady state, not kappa = 0. Setting
+        // kappa = 0 recovers BDF1/BDF2 whichever sign is written, which is why
+        // the check recorded in the comment above ("both reduce exactly to plain
+        // BDF1/BDF2 when kappa=0") passed while the formula was wrong. Instead
+        // put the circuit at rest, y_n = y_{n-1} = y: every capacitor current
+        // must be zero, so x_blend MUST equal y exactly. With the minus it does,
+        // identically in kappa. With the plus, order 2 gives
+        // y*(1 + (2/3)k)/(1 - (2/3)k) = 0.862*y at k = -1/9, and order 1 gives
+        // 0.688*y at k = -0.185 — the solver believes a capacitor at rest is
+        // discharging by 14% (or 31%) of its voltage every single step.
+        //
+        // Measured, that is exactly what it looked like: examples/Diode/
+        // rectifier.hvr returned 0.50 .. 22.18 V, an output with no filtering
+        // left in it, and examples/BJT/npn_amp.hvr sat at a collector of 0.21 V
+        // with its base at 0.91 V instead of 1.59 V — a DC bias error, not a
+        // transient one, which is the signature of a history blend that is
+        // systematically short.
         double kappa = NDF_KAPPA[order - 1];
         double alpha;
         if (order == 1) {
             alpha   = (1.0 - kappa) / dt;
-            x_blend = (x_prev1 + kappa * (2.0 * x_prev1 - x_prev2)) / (1.0 - kappa);
+            x_blend = (x_prev1 - kappa * (2.0 * x_prev1 - x_prev2)) / (1.0 - kappa);
         } else {
             alpha   = (1.5 - kappa) / dt;
             x_blend = ((4.0 / 3.0) * x_prev1 - (1.0 / 3.0) * x_prev2
-                        + kappa * (2.0 / 3.0) * (2.0 * x_prev1 - x_prev2))
+                        - kappa * (2.0 / 3.0) * (2.0 * x_prev1 - x_prev2))
                       / (1.0 - (2.0 / 3.0) * kappa);
         }
 
@@ -128,6 +162,16 @@ void NDF2::run(VM *vm) {
         for (int iter = 0; iter < max_iter; iter++) {
             iters++;
 
+            // Within-step Jacobian refresh — policy and measurements in
+            // newton_core.hpp. Holding J at the step's opening guess for all
+            // max_iter iterations is wrong for a device whose conductance moves
+            // orders of magnitude inside one step, and dt is not the knob for it.
+            if (jac.due(iter, conv.worst_ratio)) {
+                jacobian = vm_compute_jacobian(vm, x_guess);
+                vm->solver->g_dirty = 1;
+                jacobian_current_this_step = true;
+            }
+
             api_update_solution(vm->api, x_guess);
             vm_run_analog(vm);
             vm_run_phase_b(vm);
@@ -137,7 +181,12 @@ void NDF2::run(VM *vm) {
             const Eigen::VectorXd &x_new = solver_solve_rhs(
                 vm->solver, 1.0, x_blend, alpha, &correction, &jacobian);
 
-            if (has_converged(x_new, x_guess)) {
+            // Opens the refresh window; as in bdf2 this reads the ratio left by
+            // the previous convergence test, since it runs before this
+            // iteration's own.
+            if (iter == 0) jac.seed(conv.worst_ratio);
+
+            if (newton_converged(x_new, x_guess, n_nodes, rtol, atol, abstol, conv)) {
                 x_guess = x_new;
                 converged = true;
                 break;
@@ -191,10 +240,26 @@ void NDF2::run(VM *vm) {
             // rejection.
             if (reject_run.exhausted(vm->time_step)) {
                 fprintf(stderr, "[NDF2] FATAL: Failed to converge at t=%.3e\n", vm->time);
+                dump_convergence_row(vm, conv.worst_row, conv.worst_step, conv.worst_tol);
+                dump_failure(vm, "ndf2", dt, alpha, x_guess, x_blend);
                 break;
             }
             continue;
         }
+
+        // THE JACOBIAN IS RE-FORMED ONCE PER ACCEPTED STEP.
+        //
+        // Without this line jacobian_valid is cleared only when a step FAILS, so
+        // one Jacobian stays alive for as long as steps keep succeeding — across
+        // a diode commutation, where the very conductances the matrix is made of
+        // move from 1e-12 S to ~1 S. That is what this solver did until now, and
+        // unlike bdf2 (where the same defect showed up as a run that stalled and
+        // then failed) it showed up here as WRONG ANSWERS that completed
+        // cleanly: an unfiltered rectifier output and a BJT amplifier biased at
+        // the wrong operating point. See the policy note in ndf2.hpp for the
+        // measurements, and bdf2.cpp's accept site for why a stale Jacobian
+        // stays plausible while being wrong.
+        jacobian_valid = false;
 
         reject_run.clear();
         x_prev2 = x_prev1;

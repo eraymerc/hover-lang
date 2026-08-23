@@ -1,0 +1,271 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  HVR Testbench — H-Bridge DC/AC Inverter, 50 Hz from 20 kHz SPWM
+//  Validates: Sine-triangle PWM modulation, hard switching with dead-time,
+//             body-diode recirculation into an inductive filter, and LC
+//             reconstruction of the 50 Hz fundamental
+// ─────────────────────────────────────────────────────────────────────────────
+
+.save(main.bridge_a, main.bridge_b, main.out_p, main.out_n, main.v_ref);
+.op;
+// No .zcd. It is the natural fit for discrete gate edges and it is what
+// mosfet_h_bridge.hvr uses, but that deck switches twice in 400 ms while this
+// one switches 3200 times. Measured here: enabling it moves the failure point
+// from t = 1.02 ms back to t = 87 us, so the edge isolation costs far more than
+// it buys.
+.tran(0, 40m, 1u);   // 40 ms = two full 50 Hz cycles
+.solver(ndf2);
+
+import <parts/mosfet/nmos> as nfet;
+import <parts/mosfet/pmos> as pfet;
+from <math> import sin, floor;
+
+// ═══════════════════════════════════════════════════════════════
+//  SINE-TRIANGLE MODULATOR (digital)
+// ═══════════════════════════════════════════════════════════════
+//
+//  Bipolar SPWM, the textbook scheme:
+//
+//    ref = m * sin(2*pi*f_out*t)          the wanted output, normalised
+//    tri = a +/-1 triangle at f_sw        the carrier
+//    d   = ref - tri                      the comparator error
+//
+//  where d > 0 commands the (TL, BR) diagonal and d < 0 the (TR, BL) diagonal,
+//  so the bridge output is a train of +Vdc / -Vdc pulses whose local average
+//  tracks m*Vdc*sin(...). Everything above the carrier is then the filter's
+//  problem, and the carrier is 400x the output frequency precisely so that a
+//  modest LC can separate the two.
+//
+//  ── Dead-time ───────────────────────────────────────────────────────────────
+//
+//  A comparator alone would command one device off and its leg-mate on in the
+//  same instant. Real gates do not turn off instantly, and the overlap is a
+//  short across the supply through two transistors. So the comparison is split
+//  into two, `band` apart: a device is commanded on only once the error has
+//  passed the threshold with margin, which leaves both devices in a leg off
+//  while |d| < band.
+//
+//  The carrier slews at 4*f_sw per unit, so band = 0.05 is a dead time of
+//  0.05/(4*20k) = 625 ns on each edge — longer than the gate charge needs
+//  through 470 Ohm, and short enough (2.5% of the 50 µs period) not to distort
+//  the modulation appreciably.
+
+digital module SPWM<double vdc, double vgs_on, double f_out, double f_sw,
+                    double m, double band>
+(output double cmd_TL, output double cmd_BL,
+ output double cmd_TR, output double cmd_BR, output double v_ref) []
+{
+    double ref = m * sin(2.0 * 3.14159265359 * f_out * time);
+
+    // Unit-period sawtooth folded into a triangle on [-1, 1].
+    double ph   = time * f_sw;
+    double frac = ph - floor(ph);
+    double tri  = 4.0 * frac - 1.0;
+    if (frac >= 0.5) { tri = 3.0 - 4.0 * frac; }
+
+    double d = ref - tri;
+
+    double onTL = 0.0;
+    double onBL = 0.0;
+    double onTR = 0.0;
+    double onBR = 0.0;
+
+    if (d > band) {
+        onTL = 1.0;   // drive out_p positive: top-left + bottom-right
+        onBR = 1.0;
+    } else if (d < 0.0 - band) {
+        onTR = 1.0;   // drive out_p negative: top-right + bottom-left
+        onBL = 1.0;
+    }
+    // |d| <= band: all four off, and the filter inductors' current freewheels
+    // through whichever body diodes it forward-biases.
+
+    // High-side P-channel gates. These sit at the rail to turn OFF and are
+    // pulled DOWN by exactly vgs_on to turn on — not all the way to ground.
+    // Pulling them to ground would put the whole bus across the gate oxide,
+    // which destroys a real device (both parts here are rated +/-20 V Vgs) and
+    // is not something the model will represent faithfully either: the stdlib
+    // MOSFET clamps overdrive at 20 V for velocity saturation, so anything past
+    // that sits pinned against the clamp, where drain current stops depending on
+    // gate voltage at all. On real hardware this level shift is what a
+    // high-side gate driver IC is for.
+    cmd_TL = vdc - vgs_on * onTL;
+    cmd_TR = vdc - vgs_on * onTR;
+
+    // Low-side N-channel gates: vgs_on turns ON, 0 V turns OFF.
+    cmd_BL = vgs_on * onBL;
+    cmd_BR = vgs_on * onBR;
+
+    // Exported so the CSV carries the commanded waveform next to the achieved
+    // one — the whole claim of the deck is that these two match.
+    v_ref = ref * vdc;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  H-BRIDGE POWER STAGE (structural)
+// ═══════════════════════════════════════════════════════════════
+//
+//  Same shape as the stage in mosfet_h_bridge.hvr — complementary P-channel
+//  high side and N-channel low side, gate resistors metering the gate charge,
+//  and no flyback diodes because each device brings its own bulk-drain
+//  junction. Here those body diodes are load-bearing 3200 times over the run
+//  rather than twice: every dead-time window, in every switching period, hands
+//  the filter inductor's current to one of them.
+//
+//  ── Why the small-signal parts, and not the IRF540N/IRF9540N ────────────────
+//
+//  This deck runs on a 24 V bus at about 70 mA, so a 2N7000 and a BSS84 are the
+//  honest parts for it. But the choice is also what makes it SOLVE, and the
+//  reason is worth writing down.
+//
+//  A power MOSFET card is numerically vicious in a hard-switched loop. The
+//  IRF540N has RD = 12 mOhm sitting between the drain terminal and 205 pF of
+//  junction capacitance on the internal node — a time constant of 2.5
+//  picoseconds, seven orders of magnitude shorter than the 50 µs switching
+//  period. Add 100 ns of body-diode stored charge (TT) that has to be swept out
+//  every time the opposite device turns on into it, and every commutation is a
+//  stiff event the step controller can only chase by collapsing dt. Measured:
+//  the power-part version of this deck produces correct PWM, correct
+//  common-mode behaviour and correct filtering as far as t = 565 µs, and then
+//  fails to converge in the middle of a commutation.
+//
+//  The 2N7000 has RD = 0.8 Ohm against 20 pF — 16 ns, a far more workable
+//  separation from the switching period — and TT = 0, since a small-signal
+//  part's reverse recovery is neither specified nor significant at these
+//  currents. Nothing about the modulation, the dead-time, the recirculation or
+//  the filtering changes; only the conditioning does.
+
+module HBridge<double Rgate>
+(input double cmd_TL, input double cmd_BL,
+ input double cmd_TR, input double cmd_BR)
+[wire vcc, wire bridge_a, wire bridge_b]
+{
+    wire railTL, railBL, railTR, railBR;
+    wire gateTL, gateBL, gateTR, gateBR;
+
+    voltage_source<>(cmd_TL) [railTL, gnd];
+    voltage_source<>(cmd_BL) [railBL, gnd];
+    voltage_source<>(cmd_TR) [railTR, gnd];
+    voltage_source<>(cmd_BR) [railBR, gnd];
+
+    R<Rgate>() [railTL, gateTL];
+    R<Rgate>() [railBL, gateBL];
+    R<Rgate>() [railTR, gateTR];
+    R<Rgate>() [railBR, gateBR];
+
+    module mTL = pfet.MBSS84<>()  [gateTL, bridge_a, vcc];
+    module mTR = pfet.MBSS84<>()  [gateTR, bridge_b, vcc];
+
+    module mBL = nfet.M2N7000<>() [gateBL, bridge_a, gnd];
+    module mBR = nfet.M2N7000<>() [gateBR, bridge_b, gnd];
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  TOP-LEVEL TESTBENCH
+// ═══════════════════════════════════════════════════════════════
+//
+//    vdc ──┬─ MTL ─┬── bridge_a ──[14 mH]── out_p ──┬─ 1.4 µF ─┐
+//          │       │                                │          ├─ 68 Ohm ─ gnd
+//          │       │                             200 Ohm       │
+//          │       │                                │          │
+//          └─ MTR ─┴── bridge_b ──[14 mH]── out_n ──┴─ 1.4 µF ─┘
+//                  (low-side devices to gnd omitted from the sketch)
+//
+//  ── Filter ──────────────────────────────────────────────────────────────────
+//
+//  14 mH per leg is 28 mH differential, against 0.7 µF differential (two 1.4 µF
+//  in series), so the corner sits at 1/(2*pi*sqrt(28m*0.7u)) = 1.14 kHz — a
+//  factor of 23 above the 50 Hz output and a factor of 17 below the 20 kHz
+//  carrier. Second-order rolloff then puts the switching ripple down by about
+//  17^2 = 300x, which is what turns a +/-24 V square wave into a sine.
+//
+//  The load is chosen against the filter, not just against the power: the
+//  differential characteristic impedance sqrt(28m/0.7u) is 200 Ohm, so a
+//  200 Ohm load gives Q = 1 and the startup settles instead of ringing at
+//  1.1 kHz.
+//
+//  ── The common-mode damping leg, which is not optional ──────────────────────
+//
+//  The two filter capacitors meet at cm_mid, and cm_mid returns to ground
+//  through 68 Ohm, rather than being one capacitor straight across out_p/out_n.
+//  Differentially this is identical — 1.4 µF in series with 1.4 µF is 0.7 µF
+//  across the output, and differential current arrives at cm_mid from both
+//  sides and cancels, so the damping resistor carries none of it and dissipates
+//  nothing at 50 Hz. What it adds is an equation, and then damping, for the
+//  COMMON mode. Both are needed, and the deck fails without either:
+//
+//    With one capacitor straight across the output, every element on the output
+//    pair is differential, KCL forces i_L1 = -i_L2 identically, and the
+//    common-mode voltage has nothing left to fix it. It walks to the positive
+//    rail, and the solve dies.
+//
+//    With both capacitors grounded directly and no resistor, the common mode is
+//    well posed but completely undamped: 7 mH (the two inductors in parallel)
+//    against 2.8 µF (the two capacitors in parallel) is a 1.1 kHz tank with no
+//    resistance in it at all, because the load is purely differential. The
+//    operating point leaves the capacitors at 0 V while the bridge sits at a
+//    12 V common mode, so that tank is handed a 12 V step — and an undamped
+//    step response overshoots to exactly twice its target, which is the rail.
+//    The body diodes clamp there, the whole circuit goes nonlinear at once, and
+//    the solve dies.
+//
+//  68 Ohm is chosen against the common-mode characteristic impedance
+//  sqrt(7m/2.8u) = 50 Ohm, giving a damping ratio near 0.7 and cutting the
+//  overshoot from 100% to about 5%. This split-capacitor damping leg is
+//  standard on real LCL inverter filters, and for exactly this reason.
+//
+//  ── Expected result ─────────────────────────────────────────────────────────
+//
+//  Modulation index 0.8 on a 24 V bus gives a fundamental of 0.8 * 24 = 19.2 V
+//  peak, 13.6 V RMS, into 200 Ohm — about 68 mA RMS and 0.9 W. v_ref carries
+//  that target scaled to volts, so out_p - out_n should track it directly.
+
+module main<>() []
+{
+    wire vdc, bridge_a, bridge_b, out_p, out_n, cm_mid, snub_a, snub_b;
+    state double cmd_TL = 0, cmd_BL = 0, cmd_TR = 0, cmd_BR = 0;
+    state double v_ref = 0;
+
+    // 1. DC bus. 24 V leaves margin on the BSS84's -50 V rating; nothing here
+    // clamps an overshoot, since the models have no avalanche breakdown.
+    voltage_source<24>() [vdc, gnd];
+
+    // 2. Modulator: 50 Hz output, 20 kHz carrier, m = 0.8, 10 V gate drive.
+    module mod = SPWM<24, 10, 50, 20k, 0.8, 0.05>
+                 (cmd_TL, cmd_BL, cmd_TR, cmd_BR, v_ref) [];
+
+    // 3. Power stage, 470 Ohm gate resistors. Deliberately soft: 470 Ohm into
+    // ~60 pF of gate capacitance is a 30 ns edge, well inside the 625 ns dead
+    // time. A stiffer drive makes the commutation harder to resolve and buys
+    // nothing at 20 kHz, where switching loss is not what limits the design.
+    module bridge = HBridge<470>
+                    (cmd_TL, cmd_BL, cmd_TR, cmd_BR) [vdc, bridge_a, bridge_b];
+
+    // 4. LC output filter with the common-mode damping leg described above.
+    L<14m>()  [bridge_a, out_p];
+    L<14m>()  [bridge_b, out_n];
+    C<1.4u>() [out_p, cm_mid];
+    C<1.4u>() [out_n, cm_mid];
+    R<68>()   [cm_mid, gnd];
+    R<200>()  [out_p, out_n];
+
+    // 5. No snubber, deliberately — and this is the single thing that decides
+    // whether the deck runs at all.
+    //
+    // The obvious move on a hard-switched bridge is an RC snubber on each
+    // bridge node, and 100 Ohm + 1 nF was tried here first. It makes things
+    // much worse, for a reason worth understanding: during the dead time the
+    // bridge node is driven only by the filter inductor's current charging
+    // whatever capacitance hangs on it. With ~20 mA available and 1 nF of
+    // snubber, slewing the node across the 24 V bus takes 1.2 us — twice the
+    // 625 ns dead time. The node is therefore still stranded mid-swing when the
+    // incoming device turns on, which has to finish the transition abruptly:
+    // hard switching, by construction.
+    //
+    // Left bare, the node carries only the devices' own capacitance, about
+    // 60 pF, and the same 20 mA slews it across the bus in 72 ns — comfortably
+    // inside the dead time. The node arrives at the opposite rail on its own,
+    // its body diode picks up the current, and the incoming device then switches
+    // at nearly zero volts across it. That is soft (zero-voltage) switching, it
+    // is what a well-proportioned dead time is FOR, and it turns the stiffest
+    // event in the circuit into a mild one.
+}

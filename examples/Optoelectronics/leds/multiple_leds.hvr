@@ -13,7 +13,7 @@
 );
 .op;
 .tran(0, 5m, 50u);
-.solver(bdf2);
+.solver(ndf2);
 from <optoelectronics/leds> import LED, LED_RED, LED_GREEN;
 // ═══════════════════════════════════════════════════════════════
 //  TOP-LEVEL TESTBENCH — independent 5V/220ohm drive per LED

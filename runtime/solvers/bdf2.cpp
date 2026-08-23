@@ -1,4 +1,5 @@
 #include "bdf2.hpp"
+#include "newton_core.hpp"
 #include "newton_trust_region.hpp"
 #include "step_trace.hpp"
 #include "fail_dump.hpp"
@@ -9,75 +10,9 @@
 #include <cstdio>
 #include <cmath>
 
-// ─────────────────────────────────────────────────────────────────────────────
-// CONVERGENCE CHECK
-// ─────────────────────────────────────────────────────────────────────────────
-
-bool BDF2::has_converged(const Eigen::VectorXd &x_new, const Eigen::VectorXd &x_old) const {
-    // Scan every row rather than returning on the first failure, so the WORST
-    // offender is recorded rather than merely the lowest-numbered one. The extra
-    // work is one pass over a vector that was just computed by an LU solve.
-    //
-    // worst_ratio is the WEIGHTED NORM of the Newton step: the largest
-    // per-row |step| expressed in units of that row's own tolerance. It is
-    // therefore normalized so that "converged" is exactly worst_ratio <= 1,
-    // whatever mix of volts, amps and scales the rows carry. run()'s
-    // convergence-rate monitor consumes it, which is why it is a member and is
-    // now accumulated over EVERY row rather than only over failing ones.
-    bool ok     = true;
-    worst_ratio = 0.0;
-    worst_row   = -1;
-
-    for (int i = 0; i < x_new.size(); i++) {
-        // Rows below n_nodes are node voltages, the rest are branch currents.
-        double abs_tol = (i < n_nodes) ? atol : abstol;
-
-        // The relative term is measured against the LARGER of the two iterates,
-        // not against x_new alone. Using x_new alone is not safe across a zero
-        // crossing: a node stepping from 10 V to ~0 V has |x_new| ~ 0, so the
-        // scale collapses to abs_tol and a 10 V step is judged against a
-        // microvolt. A rectifier is a circuit whose entire behaviour is nodes
-        // crossing zero. trapezoidal.cpp and trapezoidal_fixed.cpp have always
-        // used this form for exactly this reason; bdf2, ndf2, euler_adaptive
-        // and gauss_siedel had drifted to the unsafe one.
-        double mag   = std::max(std::abs(x_new(i)), std::abs(x_old(i)));
-        double scale = abs_tol + rtol * mag;
-        double step  = std::abs(x_new(i) - x_old(i));
-
-        // NEGATED comparison, deliberately — do NOT "simplify" this back to
-        // `step > scale`. Every comparison against NaN is false, so `step >
-        // scale` REPORTS A NaN ROW AS CONVERGED: a solution vector containing
-        // NaN would satisfy every row, be committed to x_prev1, be logged, and
-        // advance time, with the FATAL path never firing and the NaN spreading
-        // through the rest of the run under the label "converged". Written as
-        // !(step <= scale), a NaN fails the row and the step is rejected, which
-        // is the only defensible reading of "we do not know that this is
-        // converged".
-        //
-        // Keep the verdict on this DIRECT comparison rather than deriving it
-        // from worst_ratio <= 1 below. The two look equivalent and are not: a
-        // row that has already blown up to infinity gives step = scale = inf
-        // and a ratio of inf/inf = NaN, which would poison worst_ratio and make
-        // the step unconvergeable forever. Deriving the verdict from the ratio
-        // broke examples/BJT/npn_amp.hvr at t = 0 for exactly that reason.
-        if (!(step <= scale)) {
-            ok = false;
-        }
-
-        // worst_ratio — the step in units of this row's own tolerance — is
-        // tracked separately and over EVERY row, converged ones included, so
-        // that it is a usable norm of the whole Newton step and not just of its
-        // failing part. Same negation, same NaN reason.
-        double ratio = step / scale;
-        if (!(ratio <= worst_ratio)) {
-            worst_ratio = ratio;
-            worst_row   = i;
-            worst_step  = step;
-            worst_tol   = scale;
-        }
-    }
-    return ok;
-}
+// The convergence test and the within-step Jacobian refresh policy now live in
+// newton_core.hpp, shared with ndf2, trapezoidal and euler_adaptive. Both were
+// written and measured here; the comments moved with the code.
 
 // ─────────────────────────────────────────────────────────────────────────────
 // RUN
@@ -87,12 +22,6 @@ bool BDF2::has_converged(const Eigen::VectorXd &x_new, const Eigen::VectorXd &x_
 // xBlend = (4/3)*xPrev1 - (1/3)*xPrev2 (BDF2 history blend), or xPrev1 alone
 // when priming.
 // ─────────────────────────────────────────────────────────────────────────────
-
-// Within-step Jacobian refresh policy. See the note at the check site in run().
-static const int    JAC_CHECK_PERIOD  = 8;      // iterations between progress checks
-static const int    MAX_JAC_REFRESH   = 6;      // per step, ceiling on extra sweeps
-static const double JAC_PROGRESS_FACTOR = 1e-2; // required drop in the weighted-step
-                                                // norm across one check period
 
 void BDF2::run(VM *vm) {
     if (max_dt == 0.0) max_dt = vm->time_step;
@@ -121,7 +50,7 @@ void BDF2::run(VM *vm) {
 
     long attempt = 0;   // counts ATTEMPTS, not accepted steps — see step_trace.hpp
     RejectRun reject_run;    // bounds the halving spiral — see step_limits.hpp
-    int  jac_refreshes = 0;  // within-step Jacobian re-forms spent this step
+    JacRefresh jac;          // within-step re-form policy — see newton_core.hpp
 
     while (vm->time < vm->end_time) {
         attempt++;
@@ -146,7 +75,7 @@ void BDF2::run(VM *vm) {
         }
 
         vm->solver->sys->dt = dt;
-        jac_refreshes = 0;
+        jac.begin_step();
         Eigen::VectorXd x_guess = x_prev1;
 
         bool converged   = false;
@@ -200,59 +129,18 @@ void BDF2::run(VM *vm) {
         // the deck it was written for. Evidently some models depend on the
         // limiter releasing during a rejection sequence. Do not re-apply
         // without understanding which, and why.
-        double eta_at_check = 0.0;   // worst_ratio at the last refresh checkpoint
         for (int iter = 0; iter < max_iter; iter++) {
             iters++;
 
-            // WITHIN-STEP JACOBIAN REFRESH.
-            //
-            // The per-accepted-step re-form below fixes a Jacobian that is stale
-            // ACROSS steps. It does nothing for one that goes stale WITHIN a
-            // step, and that is a separate, real failure — Modified Newton holds
-            // J fixed at x_prev1 for all max_iter iterations, so a device whose
-            // conductance moves by orders of magnitude between the initial guess
-            // and the solution is linearized at the wrong point for the entire
-            // solve.
-            //
-            // Measured on examples/Optoelectronics/phototransistor/optocoupler.hvr
-            // at t = 1.576 ms, the step where the red LED turns off: J was formed
-            // with the LED conducting 1.63 mA (g = 3.34e-2 S) and the step's own
-            // solution has it at 7.1e-7 A (g = 1.46e-5 S) — a 2280x change inside
-            // one 50 us step. The iteration still converges, because the fixed
-            // point of (G + alpha*C + J)x = B(x) + J*x is the true solution for
-            // any invertible J, but it converges LINEARLY at a contraction of
-            // 0.88: 100 iterations buy six orders where three iterations should
-            // buy twelve, and the step is abandoned still short of tolerance.
-            //
-            // Cutting dt cannot help here and measurably does not: the trace
-            // shows twenty successive halvings from 5e-5 to 1.5e-12, every one at
-            // the iteration ceiling with the identical 0.88 rate and the identical
-            // opening residual. The LED branch carries no capacitance, so alpha*C
-            // does not reach it and a smaller dt moves the target almost not at
-            // all. The stiffness is algebraic — it is the diode's exponential,
-            // not a time constant — and dt is simply the wrong knob.
-            //
-            // The trigger is progress, not rate. A rate monitor read from two
-            // consecutive iterations was tried before (see the note at the accept
-            // site) and bailed out during Newton's superlinear warm-up. Measuring
-            // over a window of JAC_CHECK_PERIOD iterations avoids that: a healthy
-            // step converges or dies well inside eight iterations, whereas a
-            // circuit crawling at 0.88 manages 0.88^8 = 0.36 against the 100x
-            // demanded here and is caught. The window is what makes this
-            // different from the monitor that did not work.
-            //
-            // Bounded to MAX_JAC_REFRESH per step because each refresh is a full
-            // O(nodes) perturbation sweep — the cost is what killed the earlier
-            // attempt to re-form on trust-region stagnation, which fired on
-            // ordinary healthy BJT steps.
-            if (iter > 0 && iter % JAC_CHECK_PERIOD == 0 && jac_refreshes < MAX_JAC_REFRESH) {
-                if (!(worst_ratio <= eta_at_check * JAC_PROGRESS_FACTOR)) {
-                    jacobian = vm_compute_jacobian(vm, x_guess);
-                    vm->solver->g_dirty = 1;
-                    jacobian_current_this_step = true;
-                    jac_refreshes++;
-                }
-                eta_at_check = worst_ratio;
+            // Within-step Jacobian refresh — the policy and the measurements
+            // behind it are in newton_core.hpp. Modified Newton holds J fixed at
+            // x_prev1 for the whole step, which is wrong for a device whose
+            // conductance moves orders of magnitude between the guess and the
+            // solution, and dt is not the knob that fixes it.
+            if (jac.due(iter, conv.worst_ratio)) {
+                jacobian = vm_compute_jacobian(vm, x_guess);
+                vm->solver->g_dirty = 1;
+                jacobian_current_this_step = true;
             }
 
             api_update_solution(vm->api, x_guess);
@@ -264,9 +152,14 @@ void BDF2::run(VM *vm) {
             const Eigen::VectorXd &x_new = solver_solve_rhs(
                 vm->solver, 1.0, x_blend, alpha, &correction, &jacobian);
 
-            if (iter == 0) eta_at_check = worst_ratio;
+            // Opens the refresh window. Note this reads the ratio left by the
+            // PREVIOUS convergence test — the last one of the previous attempt,
+            // since this runs before this iteration's test. That is what was
+            // measured and tuned against; it makes the first window's baseline
+            // a carried-over number rather than this step's own opening ratio.
+            if (iter == 0) jac.seed(conv.worst_ratio);
 
-            if (has_converged(x_new, x_guess)) {
+            if (newton_converged(x_new, x_guess, n_nodes, rtol, atol, abstol, conv)) {
                 x_guess = x_new;
                 converged = true;
                 break;
@@ -399,7 +292,7 @@ void BDF2::run(VM *vm) {
             step_trace("bdf2", attempt, vm->time, dt, iters, "reject");
             if (reject_run.exhausted(vm->time_step)) {
                 fprintf(stderr, "[BDF2] FATAL: Failed to converge at t=%.3e\n", vm->time);
-                dump_convergence_row(vm, worst_row, worst_step, worst_tol);
+                dump_convergence_row(vm, conv.worst_row, conv.worst_step, conv.worst_tol);
                 dump_failure(vm, "bdf2", dt, alpha, x_guess, x_blend);
                 break;
             }

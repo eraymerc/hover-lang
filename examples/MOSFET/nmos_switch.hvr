@@ -1,0 +1,107 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  HVR Testbench — Synchronous Low-Side Switch, Inductive Load
+//  Validates: Triode-region conduction, the INTRINSIC BODY DIODE catching an
+//             inductive turn-off, and the third-quadrant channel swap that
+//             shorts that diode out once the channel is enhanced
+// ─────────────────────────────────────────────────────────────────────────────
+
+.save(main.sw, main.i_sense, main.gate_h, main.gate_l);
+.op;    // Everything starts off, so this is a trivial (and exact) bias point.
+.zcd;   // The gate commands step discretely — isolate those edges rather than
+        // stepping across them.
+.tran(0, 300u, 50n);
+.solver(ndf2);
+
+import <parts/mosfet/nmos>;
+
+// ═══════════════════════════════════════════════════════════════
+//  GATE SEQUENCER (digital)
+// ═══════════════════════════════════════════════════════════════
+//
+//  Three phases, and the whole point of the deck is the boundary between the
+//  second and the third:
+//
+//    build     MH on, ML off      — current ramps into the inductor
+//    freewheel BOTH off           — the inductor keeps pushing; the only path
+//                                   left is ML's BODY DIODE, conducting from
+//                                   its source (ground) to its drain, so the
+//                                   switch node is dragged about a diode drop
+//                                   BELOW ground
+//    sync      MH off, ML on      — the channel is enhanced across that same
+//                                   diode. Current is still flowing backwards
+//                                   through it, drain-to-source negative, which
+//                                   is the third quadrant; the channel is a
+//                                   resistor there and shorts the diode out, so
+//                                   the switch node jumps back up toward ground
+//
+//  A model without the third-quadrant swap would leave the body diode carrying
+//  the current in phase three and report a full diode drop where a real
+//  synchronous rectifier reports tens of millivolts. That difference is the
+//  entire reason synchronous rectification exists, and it is directly readable
+//  off main.sw in the output CSV.
+
+digital module GateSeq<double t_off, double t_sync, double vgs_on, double vboost>
+(output double cmd_H, output double cmd_L) []
+{
+    cmd_H = 0.0;
+    cmd_L = 0.0;
+
+    if (time < t_off) {
+        // High side conducting. Its gate has to sit a full Vgs above the
+        // SWITCH node, which is itself near the supply — hence the boosted
+        // rail. A real N-channel high side needs a bootstrap or an isolated
+        // driver for exactly this reason; here it is simply a taller source.
+        cmd_H = vboost;
+    } else if (time < t_sync) {
+        // Dead time: both gates low. Nothing is commanded on, and the inductor
+        // current has to go somewhere.
+    } else {
+        cmd_L = vgs_on;
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  TOP-LEVEL CIRCUIT
+// ═══════════════════════════════════════════════════════════════
+//
+//      vdd ──┤ MH (IRF540N)
+//             ├── sw ──[200 µH]── i_sense ──[5 Ohm]── gnd
+//      gnd ──┤ ML (IRF540N)      <- device under test
+//
+//  Note what is NOT in this netlist: there is no flyback diode anywhere. The
+//  BJT bridge in examples/DCMotor/h_bridge.hvr needs four discrete ones and
+//  says so in its comments; a MOSFET carries its own, as the bulk-drain
+//  junction of the very device that opened the circuit.
+
+module main<>() []
+{
+    wire vdd, sw, i_sense, gate_h, gate_l, rail_h, rail_l;
+    state double gate_cmd_h = 0, gate_cmd_l = 0;
+
+    // 1. Supply
+    voltage_source<24>()[vdd, gnd];
+
+    // 2. Gate drive. 10 V of enhancement is what the IRF540N's Rds(on) is
+    // specified at; the high side gets 34 V so it still sees 10 V above a
+    // switch node sitting at the 24 V rail.
+    module seq = GateSeq<150u, 155u, 10.0, 34.0>(gate_cmd_h, gate_cmd_l)[];
+    voltage_source<>(gate_cmd_h)[rail_h, gnd];
+    voltage_source<>(gate_cmd_l)[rail_l, gnd];
+
+    // Series gate resistance. A MOSFET gate draws no DC current, so this costs
+    // nothing at rest — it exists so the gate charge has to flow through
+    // something finite and the Miller plateau is a real event with a duration
+    // rather than an instantaneous jump.
+    R<10>()[rail_h, gate_h];
+    R<10>()[rail_l, gate_l];
+
+    // 3. Power stage
+    module MH = nmos.MIRF540N<>()[gate_h, vdd, sw];
+    module ML = nmos.MIRF540N<>()[gate_l, sw,  gnd];
+
+    // 4. Inductive load: 200 µH into 5 Ohm, so 4.8 A at steady state and a
+    // 40 µs L/R time constant. i_sense is the junction between them, which
+    // makes the load current directly readable as V(i_sense)/5.
+    L<200u>()[sw, i_sense];
+    R<5>()   [i_sense, gnd];
+}

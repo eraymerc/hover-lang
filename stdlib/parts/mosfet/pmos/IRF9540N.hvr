@@ -1,0 +1,54 @@
+import <semiconductors/mosfet> as dev;
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  IRF9540N — -100 V / -23 A P-channel power MOSFET (TO-220)
+//
+//  The P-channel complement of the IRF540N, and the high-side switch in
+//  examples/MOSFET/mosfet_h_bridge.hvr. A complementary bridge is built from
+//  this pair specifically so the high-side gate can be driven against the
+//  supply rail with an ordinary ground-referenced signal — an all-N-channel
+//  bridge needs a bootstrapped or isolated driver for the same job.
+//
+//  VTO is NEGATIVE, as printed on the datasheet; KP, PHI and LAMBDA positive.
+//  See stdlib/parts/mosfet/pmos/BSS84.hvr on signs, and
+//  stdlib/parts/mosfet/nmos/2N7000.hvr on the lumped-geometry convention
+//  (W = L = 1, LD = 0, TOX = 0).
+//
+//  ── Fit ─────────────────────────────────────────────────────────────────────
+//
+//  VTO = -3.5    mid-range of the -2.0 to -4.0 V window
+//  KP  = 1.55    from Rds(on) = 117 mOhm at Vgs = -10 V, Id = -11 A: channel
+//                1/(KP*6.5) is 100 mOhm, RD+RS the remaining 17 mOhm. Note it
+//                is about a third of the IRF540N's KP for the same silicon
+//                area and voltage rating — the P-channel mobility penalty,
+//                which is why the P-side of a bridge runs hotter at equal
+//                current
+//  RD  = 0.015
+//  RS  = 0.002
+//  LAMBDA = 0.005
+//
+//    Ciss = Cgs + Cgd + Cgb = 1100p + 200p + 200p = 1500 pF  (datasheet 1500 pF)
+//    Coss = Cgd + Cds       =  200p + 350p        =  550 pF  (datasheet  550 pF)
+//    Crss = Cgd             =  200p               =  200 pF  (datasheet  200 pF)
+//
+//  Body diode: IS = 1f, N = 1.2 gives about 1.2 V at 11 A, matching the
+//  datasheet's 1.4 V typical Vsd once the RD drop is added. TT = 100n for the
+//  same reason as the IRF540N — this is the diode that carries the bridge's
+//  recirculation current during dead-time, so its slowness is part of the
+//  answer, not a detail.
+//
+//  GAMMA = 0. No avalanche, no thermal model, Vt fixed at 0.026 V.
+// ─────────────────────────────────────────────────────────────────────────────
+
+analog module MIRF9540N<>()[wire gate, wire drain, wire source] {
+    module m = dev.PMOS<-3.5, 1.55, 0.0, 0.6, 0.005,  // VTO, KP, GAMMA, PHI, LAMBDA
+                        1.0, 1.0, 0.0,                // W, L, LD  (lumped)
+                        15m, 2m,                      // RD, RS
+                        0.0, 1100p, 200p, 200p,       // TOX, CGSO, CGDO, CGBO
+                        1f, 1.2, 0.8,                 // IS, N, PB
+                        350p, 350p, 0.0, 0.5,         // CBD, CBS, CJ, MJ
+                        0.0, 0.33, 0.5, 100n,         // CJSW, MJSW, FC, TT
+                        0.0, 0.0, 0.0, 0.0,           // AD, ASRC, PD, PSRC
+                        0.026>()                      // VT
+                       [gate, drain, source];
+}

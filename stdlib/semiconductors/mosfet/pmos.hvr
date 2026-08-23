@@ -1,128 +1,244 @@
-from <math> import fabs;
-import <semiconductors> as Body;
+from <math> import fabs, sqrt, pnjlim, jexp, vcrit_of, q_dep;
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  P-Channel MOSFET — Level 1 (Shichman-Hodges) square law
+//  P-Channel MOSFET — SPICE Level 1 (Shichman-Hodges)
 //
-//  Polarity:
-//  Inverted relative to the NMOS. The device turns on when the GATE is pulled
-//  BELOW the source, and conventional current flows source -> drain. Every
-//  voltage below is therefore measured as source-referenced-downward (Vsg,
-//  Vsd) rather than drain-referenced-upward.
+//  The mirror of nmos.hvr, which carries the full explanation of every piece:
+//  the four-terminal core with its three-terminal wrapper, RD/RS and the
+//  intrinsic di/si nodes, fetlim/limvds limiting, the mode-before-threshold
+//  ordering, (1 + LAMBDA*Vds) in both regions, the two bulk junctions with
+//  GMIN, the Meyer capacitances, and why the old Rpar companion resistor is
+//  gone. Read that file first; only the polarity is discussed here.
 //
-//  Parameter sign convention:
-//  Vth is a MAGNITUDE — pass 0.7 for a device whose threshold is -0.7 V. Same
-//  choice pnp.hvr makes with Is/Bf/Br: keep every parameter positive and put
-//  the polarity in the equations, where it is visible, instead of in the
-//  caller's sign discipline. Kp and lambda are likewise positive.
+//  ── Parameter sign convention ───────────────────────────────────────────────
 //
-//  Everything else works exactly as in nmos.hvr, which carries the full
-//  explanation of each piece:
+//  VTO is passed NEGATIVE, exactly as it appears on a manufacturer's .model
+//  card for a P-channel part. KP, GAMMA, PHI and LAMBDA stay positive, also as
+//  on the card. This is a change from an earlier revision of this file, which
+//  asked for Vth as a magnitude; the point of using SPICE's parameter names is
+//  that a card transcribes without translation, and inventing a sign rule of
+//  our own would defeat that.
 //
-//    * nr_prev() per-iteration limiting (manual 13.1) — SPICE's fetlim on the
-//      gate drive and limvds on the channel voltage, scaled to the overdrive
-//      rather than to a thermal voltage, since a square law has no exponential
-//      scale of its own.
-//    * The Rpar companion resistor, which is REQUIRED, not an optimization:
-//      Hover's current_source stamps into B_static only and contributes no
-//      conductance, so the nonlinear loop is damped fixed-point rather than
-//      Newton, and a MOSFET in triode is not contractive without a linear
-//      conductance in G. Limiting bounds the excursion but cannot fix the
-//      divergence. Rpar supplies the conductance and is cancelled exactly by
-//      the residual source at convergence, so it is invisible in the answer
-//      and leaks nothing in cutoff. Set it near the device's Rds(on).
-//    * (1 + lambda*Vsd) applied in both regions, which makes Isd C1-continuous
-//      across the triode/saturation boundary.
-//    * The third-quadrant swap, re-referencing the overdrive to Vdg when the
-//      drain rises above the source.
+//  ── How the polarity is implemented ─────────────────────────────────────────
+//
+//  The same way SPICE does it: a type sign of -1 is applied to every terminal
+//  voltage and to VTO on the way in, the N-channel equations run unchanged in
+//  the resulting coordinates, and the resulting current is stamped in the
+//  reversed terminal order on the way out. So the device turns on when the gate
+//  is pulled BELOW the source, and conventional current flows source -> drain.
+//
+//  Concretely, every "_n" quantity below is source-referenced downward
+//  (V(source) - V(x)) rather than upward, and vto_n = -VTO is positive for any
+//  ordinary part. Nothing else in the model needs to know about polarity.
+//
+//  ── Bulk ────────────────────────────────────────────────────────────────────
+//
+//  The bulk is the n-well. Its junctions to the p-type source and drain conduct
+//  when those terminals rise ABOVE the well, which is the reverse of the NMOS —
+//  and with the well tied to the source (the PMOS wrapper below) the bulk-drain
+//  junction becomes the intrinsic body diode, clamping the drain to just above
+//  the source rail. That is exactly the high-side recirculation path in a
+//  bridge.
 // ─────────────────────────────────────────────────────────────────────────────
 
-analog module PMOS<double Kp,     double W,      double L,
-                   double Vth,    double lambda, double Rpar,
-                   double Cgs,    double Cgd,    double Cdb>
-    [wire gate, wire drain, wire source]
+analog module PMOS4<double VTO,  double KP,   double GAMMA, double PHI, double LAMBDA,
+                    double W,    double L,    double LD,
+                    double RD,   double RS,
+                    double TOX,  double CGSO, double CGDO,  double CGBO,
+                    double IS,   double N,    double PB,
+                    double CBD,  double CBS,  double CJ,    double MJ,
+                    double CJSW, double MJSW, double FC,    double TT,
+                    double AD,   double ASRC, double PD,    double PSRC,
+                    double VT>()
+    [wire gate, wire drain, wire source, wire bulk]
 {
-    double K = Kp * W / L;
+    wire di, si;
 
-    // Source-referenced, so both are positive in normal conduction. vsd_true
-    // is what the Rpar resistor stamps, so the residual source must reference
-    // it rather than the limited copy for the two to cancel at convergence.
-    double vsg_true = V(source) - V(gate);
-    double vsd_true = V(source) - V(drain);
+    R<RD>() [drain,  di];
+    R<RS>() [source, si];
 
-    double vsg_old = nr_prev(V(source) - V(gate));
-    double vsd_old = nr_prev(V(source) - V(drain));
+    double Leff = L - 2.0 * LD;
+    double Beta = KP * W / Leff;
 
-    // fetlim, mirrored: bound proportional to overdrive, 2 V floor.
-    double dvg_max = 2.0 * fabs(vsg_old - Vth) + 2.0;
-    double dvg     = vsg_true - vsg_old;
-    if (dvg >  dvg_max) { dvg =  dvg_max; }
-    if (dvg < -dvg_max) { dvg = -dvg_max; }
-    double vsg = vsg_old + dvg;
+    double COX = 0.0;
+    if (TOX > 0.0) { COX = 3.4531e-11 * W * Leff / TOX; }
 
-    // limvds, mirrored.
-    double dvd_max = 2.0 * fabs(vsd_old) + 2.0;
-    double dvd     = vsd_true - vsd_old;
+    double nvt   = N * VT;
+    double is_j  = IS;
+    if (is_j <= 0.0) { is_j = 1.0e-14; }
+    double vcrit = vcrit_of(is_j, nvt);
+
+    // Threshold in the flipped coordinates: positive for an ordinary P-channel
+    // card, which is what the N-channel equations below expect.
+    double vto_n = 0.0 - VTO;
+
+    // ── limvds, and the mode it selects ─────────────────────────────────────
+    double vds_true = V(si) - V(di);
+    double vds_old  = nr_prev(V(si) - V(di));
+
+    double dvd_max = 2.0 * fabs(vds_old) + 2.0;
+    double dvd     = vds_true - vds_old;
     if (dvd >  dvd_max) { dvd =  dvd_max; }
     if (dvd < -dvd_max) { dvd = -dvd_max; }
-    double vsd = vsd_old + dvd;
+    double vds = vds_old + dvd;
 
-    // Forward orientation: source above drain, overdrive measured at source.
     double flip = 1.0;
-    double vch  = vsd;
-    double vov  = vsg - Vth;
+    if (vds < 0.0) { flip = -1.0; }
 
-    // Reverse (third-quadrant) orientation: the physical source is the drain
-    // terminal, so the overdrive re-references to Vdg = Vsg - Vsd.
-    if (vsd < 0.0) {
-        flip = -1.0;
-        vch  = 0.0 - vsd;
-        vov  = vsg - vsd - Vth;
+    // ── Threshold with body effect ──────────────────────────────────────────
+    double vbs_eff = V(si) - V(bulk);
+    if (flip < 0.0) { vbs_eff = V(di) - V(bulk); }
+
+    double sqphi = sqrt(PHI);
+    double sarg  = sqphi;
+    if (vbs_eff <= 0.0) {
+        sarg = sqrt(PHI - vbs_eff);
+    } else {
+        sarg = sqphi / (1.0 + vbs_eff / (2.0 * PHI));
     }
+    double von = vto_n + GAMMA * (sarg - sqphi);
 
-    // Physical bound on overdrive (velocity saturation); also covers the first
-    // iteration, before nr_prev() has any NR history to report.
-    if (vov > 20.0) { vov = 20.0; }
+    // ── fetlim ──────────────────────────────────────────────────────────────
+    double vgs_true = V(si) - V(gate);
+    double vgs_old  = nr_prev(V(si) - V(gate));
 
-    double isd = 0.0;
-    if (vov > 0.0) {
-        if (vch < vov) {
-            // Triode
-            isd = K * (vov * vch - 0.5 * vch * vch) * (1.0 + lambda * vch);
+    double dvg_max = 2.0 * fabs(vgs_old - von) + 2.0;
+    double dvg     = vgs_true - vgs_old;
+    if (dvg >  dvg_max) { dvg =  dvg_max; }
+    if (dvg < -dvg_max) { dvg = -dvg_max; }
+    double vgs = vgs_old + dvg;
+
+    // ── Channel current ─────────────────────────────────────────────────────
+    double vch  = vds * flip;
+    double vgst = vgs - von;
+    if (flip < 0.0) { vgst = vgs - vds - von; }
+
+    if (vgst > 20.0) { vgst = 20.0; }
+
+    double vdsat = vgst;
+    if (vdsat < 0.0) { vdsat = 0.0; }
+
+    double cdrain = 0.0;
+    if (vgst > 0.0) {
+        double betap = Beta * (1.0 + LAMBDA * vch);
+        if (vch < vdsat) {
+            cdrain = betap * vch * (vgst - 0.5 * vch);   // triode
         } else {
-            // Saturation
-            isd = 0.5 * K * vov * vov * (1.0 + lambda * vch);
+            cdrain = 0.5 * betap * vgst * vgst;          // saturation
         }
     }
-    isd = isd * flip;
+    cdrain = cdrain * flip;
 
-    // Linear part into G, residual into B. Terminal order is [source, drain]
-    // here — the mirror of the NMOS — so a positive isd means current flowing
-    // source -> drain through the channel, which is the PMOS's on-state.
-    double ires = isd - vsd_true / Rpar;
-    R<Rpar>() [source, drain];
-    current_source<>(ires) [source, drain];
+    // Reversed terminal order relative to the NMOS: a positive cdrain is
+    // current flowing source -> drain through the channel, the PMOS on-state.
+    current_source<>(cdrain) [si, di];
 
-    // Fixed parasitics. Same roles as the NMOS: Cgd is the Miller capacitance.
-    C<Cgs>() [gate,  source];
-    C<Cgd>() [gate,  drain];
-    C<Cdb>() [drain, source];
+    // ── Bulk junctions ──────────────────────────────────────────────────────
+    // Forward voltages are measured terminal-above-well, the reverse of the
+    // NMOS, and the currents flow out of the terminal into the well.
+    double vbs_l = pnjlim(V(si) - V(bulk), nr_prev(V(si) - V(bulk)), nvt, vcrit);
+    double vbd_l = pnjlim(V(di) - V(bulk), nr_prev(V(di) - V(bulk)), nvt, vcrit);
 
-    // Intrinsic body diode, reversed relative to the NMOS: the n-well bulk is
-    // tied to the source (cathode) and the p-drain is the anode, so it conducts
-    // on V(drain) > V(source) — clamping the drain to just above the source
-    // rail, which is exactly the high-side recirculation path in a bridge.
-    //
-    // Same generic power-body-junction parameters as the NMOS, and for the same
-    // reason: this is the transistor's own junction, not a part number. See
-    // nmos.hvr for what each number is doing.
-    module bodydiode = Body.Diode<1n, 1.6,          // Is, N
-                                  20m,              // Rs
-                                  0.0,              // Ikf
-                                  0.0, 2.0,         // Isr, Nr
-                                  0.0, 0.0,         // Bv, Ibv (avalanche not modelled)
-                                  100p, 0.7, 0.5, 0.5,  // Cjo, Vj, M, Fc
-                                  100n,             // Tt
-                                  0.026>()          // Vt
-                                 [drain, source];
+    double ibs = is_j * (jexp(vbs_l, nvt) - 1.0);
+    double ibd = is_j * (jexp(vbd_l, nvt) - 1.0);
+
+    double ibs_g = ibs + 1.0e-12 * vbs_l;
+    double ibd_g = ibd + 1.0e-12 * vbd_l;
+    current_source<>(ibs_g) [si, bulk];
+    current_source<>(ibd_g) [di, bulk];
+
+    double cbd_eff = CBD;
+    if (cbd_eff <= 0.0) { cbd_eff = CJ * AD; }
+    double cbs_eff = CBS;
+    if (cbs_eff <= 0.0) { cbs_eff = CJ * ASRC; }
+
+    // Raw, unlimited voltages — see nmos.hvr and diode.hvr for why.
+    double vbs_raw = V(si) - V(bulk);
+    double vbd_raw = V(di) - V(bulk);
+
+    double qbs = q_dep(vbs_raw, cbs_eff,     PB, MJ,   FC)
+               + q_dep(vbs_raw, CJSW * PSRC, PB, MJSW, FC)
+               + TT * ibs;
+    double qbd = q_dep(vbd_raw, cbd_eff,   PB, MJ,   FC)
+               + q_dep(vbd_raw, CJSW * PD, PB, MJSW, FC)
+               + TT * ibd;
+
+    double icbs = ddt(qbs);
+    double icbd = ddt(qbd);
+    current_source<>(icbs) [si, bulk];
+    current_source<>(icbd) [di, bulk];
+
+    // ── Gate capacitance: overlaps + Meyer ──────────────────────────────────
+    // Capacitors are symmetric, so the overlaps are spelled exactly as in the
+    // NMOS.
+    C<CGSO * W>()              [gate, source];
+    C<CGDO * W>()              [gate, drain];
+    C<CGBO * (L - 2.0 * LD)>() [gate, bulk];
+
+    double vgd = V(si) - V(gate) - (V(si) - V(di));   // = Vdg, the flipped Vgd
+    double vgb = V(bulk) - V(gate);
+
+    double capgs = 0.0;
+    double capgd = 0.0;
+    double capgb = 0.0;
+
+    if (vgst <= 0.0 - PHI) {
+        capgb = 0.5 * COX;
+    } else if (vgst <= 0.0 - 0.5 * PHI) {
+        capgb = 0.0 - vgst * COX / (2.0 * PHI);
+    } else if (vgst <= 0.0) {
+        capgb = 0.0 - vgst * COX / (2.0 * PHI);
+        capgs = vgst * COX / (1.5 * PHI) + COX / 3.0;
+    } else {
+        if (vch >= vdsat) {
+            capgs = COX / 3.0;
+        } else {
+            double vddif  = 2.0 * vdsat - vch;
+            double vddif1 = vdsat - vch;
+            double vddif2 = vddif * vddif;
+            capgd = COX * (1.0 - vdsat * vdsat / vddif2) / 3.0;
+            capgs = COX * (1.0 - vddif1 * vddif1 / vddif2) / 3.0;
+        }
+    }
+
+    double qgs = capgs * vgs_true;
+    double qgd = capgd * vgd;
+    double qgb = capgb * vgb;
+
+    double igs = ddt(qgs);
+    double igd = ddt(qgd);
+    double igb = ddt(qgb);
+
+    // Reversed pairs, matching the flipped coordinates the charges were
+    // written in.
+    current_source<>(igs) [si,   gate];
+    current_source<>(igd) [di,   gate];
+    current_source<>(igb) [bulk, gate];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Three-terminal wrapper: n-well tied to source. See nmos.hvr's wrapper.
+// ─────────────────────────────────────────────────────────────────────────────
+
+analog module PMOS<double VTO,  double KP,   double GAMMA, double PHI, double LAMBDA,
+                   double W,    double L,    double LD,
+                   double RD,   double RS,
+                   double TOX,  double CGSO, double CGDO,  double CGBO,
+                   double IS,   double N,    double PB,
+                   double CBD,  double CBS,  double CJ,    double MJ,
+                   double CJSW, double MJSW, double FC,    double TT,
+                   double AD,   double ASRC, double PD,    double PSRC,
+                   double VT>()
+    [wire gate, wire drain, wire source]
+{
+    module m = PMOS4<VTO, KP, GAMMA, PHI, LAMBDA,
+                     W, L, LD,
+                     RD, RS,
+                     TOX, CGSO, CGDO, CGBO,
+                     IS, N, PB,
+                     CBD, CBS, CJ, MJ,
+                     CJSW, MJSW, FC, TT,
+                     AD, ASRC, PD, PSRC,
+                     VT>()
+                    [gate, drain, source, source];
 }

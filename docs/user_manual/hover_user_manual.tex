@@ -157,42 +157,71 @@ Directives appear at the top level, outside any module, and start with
 \subsection{.tran — Transient Analysis}
 
 \begin{lstlisting}
-.tran(start, stop, step/min_step, max_step);
+.tran(start, stop, t_step);
 \end{lstlisting}
 
 \begin{center}
-\begin{tabular}{@{} L{3cm} L{9cm} @{}}
+\begin{tabular}{@{} L{2.4cm} L{9.6cm} @{}}
   \toprule
   \textbf{Argument} & \textbf{Description} \\
   \midrule
-  \code{start} & Start time (currently always 0) \\
-  \code{stop}  & End time \\
-  \code{step/min\_step}  & Timestep on fixed solvers, minimum step size on adaptive solvers (\(dt\))\\
-  \code{max\_step} & Max step size on adaptive solvers, not compulsory on fixed solvers \\
+  \code{start}  & Start time (currently always 0) \\
+  \code{stop}   & End time \\
+  \code{t\_step} & The \textbf{largest} step the simulation may take. On a
+                   fixed-step solver every step is exactly \code{t\_step}; on a
+                   variable-step solver it is the ceiling \(max\_dt\), and the
+                   controller may go below it but never above. \\
   \bottomrule
 \end{tabular}
 \end{center}
 
 \begin{lstlisting}
-.tran(0, 40m, 1u); // 0 to 40 ms, 1 us steps -> 40 000 points
+.tran(0, 40m, 1u); // 0 to 40 ms, steps of at most 1 us
 \end{lstlisting}
 
-\textbf{Known gap, 2026-08-10.} On adaptive solvers \code{min\_step} is not
-currently enforced. The runtime uses an internal floor of \code{1e-12}\,s, so
-a deck asking for 1\,\textmu s steps may still be driven six orders below
-that when a step will not converge. Wiring the declared minimum through was
-implemented and reverted: it broke both BJT amplifier examples at
-\(t = 0\), and lowering their \code{min\_step} to 100\,ns and then 1\,ns did
-not help --- a bipolar cold start genuinely needs picosecond steps for a few
-steps before it settles. Enforcing it therefore needs to be a floor the
-solver may cross for a bounded number of consecutive steps, not an absolute
-one. Until then, treat \code{min\_step} as the step the solver \emph{starts}
-from rather than a guaranteed lower bound.
+\textbf{One step-size argument, one meaning.} \code{.tran} takes exactly three
+arguments. There is no separate \code{max\_step}, and there is no
+minimum-step argument.
 
-Raising \code{min\_step} and \code{max\_step} is nonetheless a useful first
-response to a circuit that will not converge: the companion conductance of
-every capacitor scales as \(C/dt\), so very small steps make the matrix
-progressively harder to solve rather than easier.
+\textbf{You do not choose the starting step.} The solver picks it with SPICE's
+first-timestep rule, \(\min(\code{t\_step},\ \code{stop}/50)/10\), and grows
+from there. If that opening step will not converge the solver halves it and
+retries --- repeatedly, and likewise for the DC operating point, which retries
+with progressively more damping before it will report failure. So a
+\code{t\_step} that is slightly too coarse for the first microsecond of a
+circuit costs a few retries, not a failed run.
+
+\textbf{There is no lower bound on \(dt\), by design.} Enforcing one was
+implemented and reverted: it broke both BJT amplifier examples at \(t = 0\)
+even when set as low as 1\,ns, because a bipolar cold start genuinely needs
+picosecond steps for a few steps before it settles. Any bound loose enough to
+allow that is too loose to bound anything. Runaway back-off is instead limited
+internally, relative to where the back-off began, which needs no number from
+the deck.
+
+\textbf{Migrating from the four-argument form.} \code{.tran(start, stop, tstep,
+max\_step)} was accepted until 2026-08-11, where \code{tstep} was the
+\emph{initial} step rather than a minimum. Drop the third argument and keep the
+fourth:
+
+\begin{lstlisting}
+.tran(0, 50m, 1u, 50u);   // old
+.tran(0, 50m, 50u);       // new -- identical ceiling
+\end{lstlisting}
+
+A four-argument \code{.tran} is a compile error carrying this same instruction,
+never a silent reinterpretation. The old \code{tstep} is not worth preserving:
+on a variable-step solver it only set where the run started, and within roughly
+35 steps every adaptive solver had grown to \code{max\_step} anyway. Its one
+lasting effect was the \emph{phase} of the time grid --- which is why
+\code{optocoupler.hvr} used to fail at \code{tstep = 0.1u} and complete at
+\code{1u} with identical step sizes throughout, purely because one alignment
+landed a step across an LED's turn-off and the other did not.
+
+\textbf{Raising \code{t\_step} remains a useful first response} to a circuit
+that will not converge: the companion conductance of every capacitor scales as
+\(C/dt\), so very small steps make the matrix progressively harder to solve
+rather than easier.
 
 \subsection{.save — Signal Logging}
 
@@ -319,6 +348,15 @@ and a fifth argument \code{abstol} was appended for currents, defaulting to
 SPICE's \code{1e-12}\,A. Existing decks are unaffected in their voltage
 behaviour; branch currents are now held to a tighter tolerance than before,
 which can change iteration counts.
+
+\textbf{Which solvers honour the split, 2026-08-11.} \code{abstol} applies to
+\code{bdf2}, \code{ndf2}, \code{trapezoidal} and \code{euler\_adaptive}, which
+share one convergence test and split the solution vector by row. On
+\code{gauss\_siedel} and \code{trapezoidal\_fixed} argument 5 is ignored and
+argument 2 still applies to every row, as everywhere before this change; on
+\code{euler\_fixed}, which runs no Newton loop, no tolerance argument applies at
+all. Ignoring an argument the active method does not use is SPICE
+\code{.OPTIONS} behaviour and is never an error.
 
 \subsubsection*{Solvers}
 Implicit solvers treat the circuit as a Differential-Algebraic system and
