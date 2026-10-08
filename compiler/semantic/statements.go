@@ -45,8 +45,8 @@ func (a *Analyzer) checkStatement(stmt ast.Statement) {
 			// A wire or variable sharing a name with a circuit element would
 			// make V(x)/I(x)/.save(x) ambiguous. Caught here for the precise
 			// line number; the elaborator repeats the check across the whole
-			// flattened design, since semantic analysis only walks the entry
-			// file and never sees imported modules.
+			// flattened design, since semantic analysis walks one file at a
+			// time and never sees a module's instantiated children.
 			if prev, ok := a.currentScope.Resolve(decl.Name); ok && prev.Type.IsElement() {
 				a.addError(node, fmt.Sprintf(
 					"'%s' collides with a circuit element of the same name declared in this module",
@@ -60,6 +60,9 @@ func (a *Analyzer) checkStatement(stmt ast.Statement) {
 		}
 		a.checkExpression(node.Left)
 		a.checkExpression(node.Right)
+	case *ast.ExpressionStatement:
+		// A bare call like `f(p.x);` — checked like any other expression.
+		a.checkExpression(node.Expression)
 	case *ast.BlockStatement:
 		parent := a.currentScope
 		a.currentScope = NewScope(parent)

@@ -1,8 +1,10 @@
 package loader
 
-// SelectedSymbol is one name in a `from <path> import a, b as c;` list.
-// Declared here rather than reused from the ast package on purpose: the
-// loader runs before anything is parsed and must not depend on the AST.
+import ast "hover/compiler/ast"
+
+// SelectedSymbol is one name in a `from <path> import a, b as c;` list,
+// copied from the parsed ast.ImportedSymbol so ImportEntry's callers get the
+// same shape whether or not they hold the AST.
 type SelectedSymbol struct {
 	Name  string // as declared in the imported file
 	Alias string // local binding; "" means bind under Name
@@ -64,6 +66,13 @@ type LoadResult struct {
 
 	// Sources maps an absolute file path to its raw text content.
 	Sources map[string]string
+
+	// Programs, ParseErrors and TokenCounts hold each file's single parse
+	// (the loader reads imports from it). ParseErrors[path] is empty for a
+	// file that parsed cleanly; Programs[path] is set either way.
+	Programs    map[string]*ast.Program
+	ParseErrors map[string][]string
+	TokenCounts map[string]int
 
 	// Imports maps an absolute file path to the list of imports that file
 	// declared, each already resolved to a directory and its files.

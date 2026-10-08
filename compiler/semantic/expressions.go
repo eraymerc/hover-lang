@@ -152,6 +152,14 @@ func (a *Analyzer) checkExpression(exp ast.Expression) ast.Type {
 			a.checkExpression(arg)
 		}
 		return ast.TDouble
+	case *ast.ArrayExpression:
+		// Walked for the elements' sake (undeclared names, and the
+		// IsFieldAccess tag codegen needs for {p.x, ...}); the literal's own
+		// type comes from the declaration it initializes.
+		for _, el := range node.Elements {
+			a.checkExpression(el)
+		}
+		return ast.TUnknown
 	case *ast.StructLiteralExpression:
 		info, ok := a.structs[node.TypeName]
 		if !ok {

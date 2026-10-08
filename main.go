@@ -5,11 +5,8 @@ import (
 	"hover/compiler/ast"
 	codegen "hover/compiler/codegen"
 	"hover/compiler/elaborator"
-	"hover/compiler/lexer"
 	"hover/compiler/loader"
-	"hover/compiler/parser"
 	"hover/compiler/semantic"
-	"hover/compiler/token"
 	"hover/hpm"
 	"os"
 	"os/exec"
@@ -193,6 +190,64 @@ func machineInstalledPackageNames() []string {
 	return names
 }
 
+// analyzeFile runs semantic analysis on one loaded file, with the names that
+// file can see registered first — the same per-file scope the elaborator
+// builds (elaborator/scope.go buildFunctionScopes):
+//
+//   - its own functions, so a function may be called above its declaration;
+//   - every function in sibling files of its directory, bare (an import
+//     loads a whole directory, so siblings of an imported file are loaded);
+//   - its own imports: selected names under their local spelling, whole
+//     directories as Qualifier.name.
+//
+// Structs are one flat namespace; each file's are registered at most once
+// (the file's own are registered by the walk itself), so importing one
+// directory twice doesn't read as a duplicate declaration.
+//
+// Real visibility is still enforced by the elaborator; this only has to keep
+// the semantic pass from calling a reachable function "undeclared".
+func analyzeFile(path string, loadResult *loader.LoadResult, files map[string]*elaborator.ImportedFile) []string {
+	a := semantic.NewAnalyzer()
+	a.RegisterImportedFunctions(files[path].Program)
+
+	structsDone := map[string]bool{path: true}
+	registerStructs := func(p string) {
+		if !structsDone[p] {
+			structsDone[p] = true
+			a.RegisterImportedStructs(files[p].Program)
+		}
+	}
+
+	dir := filepath.Dir(path)
+	for _, p := range loadResult.LoadOrder {
+		if p != path && filepath.Dir(p) == dir {
+			registerStructs(p)
+			a.RegisterImportedFunctions(files[p].Program)
+		}
+	}
+
+	for _, imp := range loadResult.Imports[path] {
+		for _, p := range imp.Files {
+			f, ok := files[p]
+			if !ok {
+				continue
+			}
+			registerStructs(p)
+			if imp.Selective {
+				locals := make(map[string]string, len(imp.Selected))
+				for _, sym := range imp.Selected {
+					locals[sym.Name] = sym.Local()
+				}
+				a.RegisterSelectedFunctions(f.Program, locals)
+			} else {
+				a.RegisterAliasedFunctions(imp.Qualifier, f.Program)
+			}
+		}
+	}
+
+	return a.Analyze(files[path].Program)
+}
+
 func main() {
 	// Dispatched before the version banner: hpm has its own output, and a
 	// stray "Hover v0.8.0" on stdout would land in anything parsing it.
@@ -258,26 +313,15 @@ func main() {
 	fmt.Printf("[Loader] OK — %d file(s) loaded\n", len(loadResult.LoadOrder))
 
 	// ── 1+2. Lex + Parse every loaded file ────────────────────────────────────
-	// Each file is tokenized and parsed completely independently — this is
-	// what keeps line/column numbers in error messages accurate per file,
-	// rather than shifted by however much text came before it in some
-	// merged blob.
+	// The loader already parsed each file — independently, which is what
+	// keeps line/column numbers in error messages accurate per file — to
+	// read its imports from the AST. Report and use those parses here.
 	importedFiles := make(map[string]*elaborator.ImportedFile, len(loadResult.LoadOrder))
 	parseFailed := false
 	for _, path := range loadResult.LoadOrder {
-		source := loadResult.Sources[path]
-
-		l := lexer.New(source)
-		var tokens []token.Token
-		for {
-			tok := l.NextToken()
-			tokens = append(tokens, tok)
-			if tok.Type == token.EOF {
-				break
-			}
-		}
-
-		program, parseErrors := parser.Parse(tokens)
+		program := loadResult.Programs[path]
+		parseErrors := loadResult.ParseErrors[path]
+		tokenCount := loadResult.TokenCounts[path]
 		if len(parseErrors) > 0 {
 			parseFailed = true
 			fmt.Printf("[Parser] %d syntax error(s) in %s:\n", len(parseErrors), path)
@@ -303,10 +347,10 @@ func main() {
 		}
 
 		if path == loadResult.EntryPath {
-			fmt.Printf("[Lexer]  %d tokens from %s\n", len(tokens), path)
+			fmt.Printf("[Lexer]  %d tokens from %s\n", tokenCount, path)
 			fmt.Printf("[Parser] OK — %d top-level statements\n", len(program.Statements))
 		} else {
-			fmt.Printf("[Lexer]  %d tokens from %s (imported)\n", len(tokens), path)
+			fmt.Printf("[Lexer]  %d tokens from %s (imported)\n", tokenCount, path)
 		}
 	}
 
@@ -327,54 +371,21 @@ func main() {
 	}
 
 	// ── 3. Semantic Check ────────────────────────────────────────────────────
-	// Semantic analysis runs on the entry file's own AST only. Imported
-	// files are analyzed implicitly through the elaborator's resolution —
-	// a module/function that doesn't exist in an aliased import surfaces
-	// as an elaboration error ("undeclared module") rather than a semantic
-	// one, since semantic.Analyzer has no concept of cross-file imports.
-
-	analyzer := semantic.NewAnalyzer()
-	// Make functions from the entry file's own imports (e.g. sin from
-	// <math>) visible to the entry-file-only semantic pass. Real visibility
-	// is still enforced by the elaborator; this only prevents false
-	// "undeclared" errors.
-	//
-	// An import names a directory, so this walks every file in it — the
-	// declarations of sibling files are one namespace, and which file inside
-	// the directory happened to declare a function is not something the
-	// importing side knows or should care about.
-	for _, imp := range loadResult.Imports[loadResult.EntryPath] {
-		for _, path := range imp.Files {
-			f, ok := importedFiles[path]
-			if !ok {
-				continue
-			}
-			// Struct types are a single flat, non-alias-qualified namespace
-			// (see RegisterImportedStructs) — registered the same way
-			// regardless of whether the import itself is selective or
-			// aliased/qualified.
-			analyzer.RegisterImportedStructs(f.Program)
-			switch {
-			case imp.Selective:
-				// Only the names actually asked for, under their local spelling.
-				locals := make(map[string]string, len(imp.Selected))
-				for _, sym := range imp.Selected {
-					locals[sym.Name] = sym.Local()
-				}
-				analyzer.RegisterSelectedFunctions(f.Program, locals)
-			default:
-				// Whole-directory imports are qualified, so functions are
-				// registered as Qualifier.name rather than as bare globals.
-				analyzer.RegisterAliasedFunctions(imp.Qualifier, f.Program)
+	// Every loaded file is checked, each against its own scope — imported
+	// files get the same checks as the entry file, and the one AST
+	// annotation semantic makes (IsFieldAccess, which codegen relies on to
+	// emit struct field reads) is set everywhere. See analyzeFile.
+	semanticFailed := false
+	for _, path := range loadResult.LoadOrder {
+		if errors := analyzeFile(path, loadResult, importedFiles); len(errors) > 0 {
+			semanticFailed = true
+			fmt.Printf("[Semantic] %d error(s) in %s:\n", len(errors), path)
+			for _, e := range errors {
+				fmt.Println(" ", e)
 			}
 		}
 	}
-
-	if errors := analyzer.Analyze(entryProgram); len(errors) > 0 {
-		fmt.Printf("[Semantic] %d error(s):\n", len(errors))
-		for _, e := range errors {
-			fmt.Println(" ", e)
-		}
+	if semanticFailed {
 		os.Exit(1)
 	}
 	fmt.Println("[Semantic] OK")
