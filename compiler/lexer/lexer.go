@@ -261,7 +261,7 @@ func (l *Lexer) readNumber() string {
 	// 0.01p — and without it the lexer stopped at the digits, handed the
 	// parser a stray identifier, and produced a cascade of syntax errors
 	// nowhere near the real mistake.
-	if l.ch == 'M' && l.peekChar() == 'e' {
+	if strings.HasPrefix(l.input[l.position:], "Meg") {
 		l.readChar() // M
 		l.readChar() // e
 		l.readChar() // g

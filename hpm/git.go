@@ -118,26 +118,43 @@ func FetchGit(ctx context.Context, name, url, ref, expectHash string) (FetchResu
 // a valid --branch argument and pinning to a commit is the point: a tag can
 // be moved, a commit cannot.
 func gitFetchRef(ctx context.Context, url, ref, dir string) error {
+	// url and ref come from manifests and lockfiles we didn't write, and git
+	// parses options even after positional args — `rev = "--upload-pack=…"`
+	// would run a command. Refuse them outright; the `--` below is a backstop.
+	if strings.HasPrefix(url, "-") {
+		return fmt.Errorf("invalid git url %q: must not start with '-'", url)
+	}
+	if strings.HasPrefix(ref, "-") {
+		return fmt.Errorf("invalid git rev %q: must not start with '-'", ref)
+	}
+
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err
 	}
 	if _, err := runGit(ctx, dir, "init", "--quiet"); err != nil {
 		return err
 	}
-	if _, err := runGit(ctx, dir, "remote", "add", "origin", url); err != nil {
+	if _, err := runGit(ctx, dir, "remote", "add", "--", "origin", url); err != nil {
 		return err
 	}
 
 	if ref == "" {
-		if _, err := runGit(ctx, dir, "fetch", "--depth", "1", "--quiet", "origin", "HEAD"); err != nil {
+		if _, err := runGit(ctx, dir, "fetch", "--depth", "1", "--quiet", "--", "origin", "HEAD"); err != nil {
 			return err
 		}
-	} else if _, err := runGit(ctx, dir, "fetch", "--depth", "1", "--quiet", "origin", ref); err != nil {
+	} else if _, err := runGit(ctx, dir, "fetch", "--depth", "1", "--quiet", "--", "origin", ref); err != nil {
 		// A server with uploadpack.allowReachableSHA1InWant disabled refuses
 		// a bare sha. Fall back to fetching everything and resolving locally
 		// — slower, but the alternative is telling the user their perfectly
 		// valid commit pin is unsupported.
-		if _, err2 := runGit(ctx, dir, "fetch", "--quiet", "--tags", "origin"); err2 != nil {
+		//
+		// Only for a sha: the checkout below then names the sha itself and
+		// fails if it isn't there. A tag or branch would check out
+		// FETCH_HEAD, which after this fallback is just the default branch.
+		if !looksLikeSHA(ref) {
+			return err
+		}
+		if _, err2 := runGit(ctx, dir, "fetch", "--quiet", "--tags", "--", "origin"); err2 != nil {
 			return err
 		}
 	}

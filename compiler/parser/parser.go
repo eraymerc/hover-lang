@@ -109,7 +109,12 @@ func (p *parser) expect(t token.Type) bool {
 }
 
 func (p *parser) addError(msg string) {
-	p.errors = append(p.errors, fmt.Sprintf("Error at line %d, col %d: %s", p.currentToken().Line, p.currentToken().Column, msg))
+	e := fmt.Sprintf("Error at line %d, col %d: %s", p.currentToken().Line, p.currentToken().Column, msg)
+	// Nested Pratt levels can each reject the same token; report it once.
+	if n := len(p.errors); n > 0 && p.errors[n-1] == e {
+		return
+	}
+	p.errors = append(p.errors, e)
 }
 
 // parseType parses a type signature like "unsigned int", "double*", or

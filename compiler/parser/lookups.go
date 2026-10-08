@@ -19,8 +19,8 @@ const (
 	shift_bp                     // <<, >>
 	sum_bp                       // +, -
 	product_bp                   // *, /
-	power_bp                     // **
 	prefix_bp                    // -X, !X, ~X
+	power_bp                     // ** (above prefix: -x**2 is -(x**2); right-assoc, see parse_binary_expr)
 	call_bp                      // function(), array[], path.
 )
 
@@ -94,7 +94,7 @@ func init() {
 
 	leftDenotedLookup[token.LPAREN] = parse_call_expr
 	leftDenotedLookup[token.LBRACKET] = parse_index_expr
-	leftDenotedLookup[token.DOT] = parse_binary_expr // Using binary for simple path access a.b
+	leftDenotedLookup[token.DOT] = parse_binary_expr       // Using binary for simple path access a.b
 	leftDenotedLookup[token.LBRACE] = parse_struct_literal // TypeName{field: expr, ...}
 }
 

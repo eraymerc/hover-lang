@@ -23,7 +23,11 @@ func (p *parser) parse_expression(bp binding_power) ast.Expression {
 		if infixFn == nil {
 			return leftExp
 		}
+		startPos := p.pos // WATCHDOG: a handler that rejects its token without consuming it would spin here
 		leftExp = infixFn(p, leftExp, getBindingPower(p.currentTokenType()))
+		if p.pos == startPos {
+			return leftExp
+		}
 	}
 
 	return leftExp
@@ -77,6 +81,11 @@ func parse_array_literal(p *parser) ast.Expression {
 func parse_binary_expr(p *parser, left ast.Expression, bp binding_power) ast.Expression {
 	expr := &ast.BinaryExpression{Token: p.currentToken(), Operator: p.currentToken().Literal, Left: left}
 	p.nextToken()
+	if expr.Token.Type == token.POW {
+		// Right-associative: 2**3**2 is 2**(3**2). One below power_bp is
+		// prefix_bp, so the exponent may also be unary (2**-1).
+		bp--
+	}
 	expr.Right = p.parse_expression(bp)
 	return expr
 }
@@ -105,7 +114,7 @@ func parse_index_expr(p *parser, left ast.Expression, bp binding_power) ast.Expr
 func parse_struct_literal(p *parser, left ast.Expression, bp binding_power) ast.Expression {
 	id, ok := left.(*ast.IdentifierExpression)
 	if !ok {
-		p.addError("struct literal must be prefixed by a type name")
+		p.addError("unexpected '{' after an expression (struct literals are written TypeName{...}; missing ';'?)")
 		return left
 	}
 	expr := &ast.StructLiteralExpression{Token: p.nextToken(), TypeName: id.Value} // consume '{'

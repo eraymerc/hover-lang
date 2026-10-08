@@ -727,9 +727,9 @@ Bitwise operators manipulate the underlying binary representations of data.
   \textbf{Operators} & \textbf{Description} \\
   \midrule
   \code{f()}, \code{a[]} & Function call, array subscript \\
+  \code{**} & Power (right-associative) \\
   \code{-x}, \code{!x}, \code{\textasciitilde x} & Unary minus, logical NOT, bitwise NOT \\
   \code{\&x}, \code{*x} & Address-of, dereference (unary) \\
-  \code{**} & Power \\
   \code{*}, \code{/}, \code{\%} & Multiplicative \\
   \code{+}, \code{-} & Additive \\
   \code{<<}, \code{>>} & Bitwise shift \\
@@ -743,6 +743,10 @@ Bitwise operators manipulate the underlying binary representations of data.
   \bottomrule
 \end{tabular}
 \end{center}
+
+As in mathematics, \code{**} binds tighter than unary minus and groups from the
+right: \code{-x**2} is $-(x^2)$, \code{2**3**2} is $2^9 = 512$, and
+\code{2**-1} is $0.5$. Write \code{(-x)**2} to square a negated value.
 
 %% ── 6. Variables & State ────────────────────────────────────────────────────
 \section{Variables \& State}

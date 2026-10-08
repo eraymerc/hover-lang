@@ -24,7 +24,7 @@ docs/hovercraft-issues.md
 
 # Session notes kept for Claude to re-read; local only, not part of the project.
 memories/
-
+docs/
 # Python driver library
 __pycache__/
 *.py[cod]

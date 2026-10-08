@@ -202,6 +202,9 @@ func (m *Manifest) validate() error {
 
 	names := map[string]bool{}
 	for _, ix := range m.Indexes {
+		if err := validIndexName(ix.Name); err != nil {
+			return err
+		}
 		if names[ix.Name] {
 			return fmt.Errorf("index %q is declared twice", ix.Name)
 		}

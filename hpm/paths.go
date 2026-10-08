@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 const (
@@ -81,7 +82,14 @@ func IndexRoot() (string, error) {
 }
 
 // IndexDir is the clone directory for one named index.
+//
+// The name is checked here, not only where it is read, because the result
+// is renamed over and RemoveAll'd: a name of ".." would make that ~/.hover
+// itself.
 func IndexDir(name string) (string, error) {
+	if err := validPackageName(name); err != nil {
+		return "", fmt.Errorf("%s", strings.ReplaceAll(err.Error(), "package name", "index name"))
+	}
 	root, err := IndexRoot()
 	if err != nil {
 		return "", err

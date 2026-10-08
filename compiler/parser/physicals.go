@@ -63,7 +63,8 @@ func (p *parser) parseModuleStatement() ast.Statement {
 			p.expect(token.IDENT)
 			if p.currentTokenType() == token.ASSIGN {
 				p.nextToken()
-				arg.Value = p.parse_expression(default_bp)
+				// comparison_bp so the closing '>' isn't read as greater-than (as in parseArgList)
+				arg.Value = p.parse_expression(comparison_bp)
 			}
 			stmt.StaticArgs = append(stmt.StaticArgs, arg)
 			if p.currentTokenType() == token.COMMA {

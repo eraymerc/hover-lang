@@ -19,6 +19,8 @@ package main
 import (
 	"archive/zip"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"hover/compiler/loader"
@@ -156,6 +158,7 @@ func runSetup() {
 
 type zigDownload struct {
 	Tarball string `json:"tarball"`
+	Shasum  string `json:"shasum"`
 }
 
 // downloadZig fetches ziglang.org's download index, resolves the tarball
@@ -203,7 +206,7 @@ func downloadZig(version, key, destDir string) error {
 	}
 
 	fmt.Printf("[Setup] Downloading %s...\n", dl.Tarball)
-	archivePath, err := downloadToTemp(dl.Tarball)
+	archivePath, err := downloadToTemp(dl.Tarball, dl.Shasum)
 	if err != nil {
 		return err
 	}
@@ -259,7 +262,9 @@ func fetchZigIndex() (map[string]map[string]json.RawMessage, error) {
 	return idx, nil
 }
 
-func downloadToTemp(url string) (string, error) {
+// downloadToTemp saves url to a temp file and, when wantSHA256 is non-empty,
+// refuses it unless it hashes to that value.
+func downloadToTemp(url, wantSHA256 string) (string, error) {
 	resp, err := http.Get(url)
 	if err != nil {
 		return "", fmt.Errorf("downloading %s: %w", url, err)
@@ -275,9 +280,15 @@ func downloadToTemp(url string) (string, error) {
 	}
 	defer f.Close()
 
-	if _, err := io.Copy(f, resp.Body); err != nil {
+	h := sha256.New()
+	if _, err := io.Copy(io.MultiWriter(f, h), resp.Body); err != nil {
 		os.Remove(f.Name())
 		return "", fmt.Errorf("saving download: %w", err)
+	}
+	if got := hex.EncodeToString(h.Sum(nil)); wantSHA256 != "" && !strings.EqualFold(got, wantSHA256) {
+		f.Close() // Windows can't remove an open file
+		os.Remove(f.Name())
+		return "", fmt.Errorf("downloading %s: checksum mismatch (expected sha256 %s, got %s)", url, wantSHA256, got)
 	}
 	return f.Name(), nil
 }

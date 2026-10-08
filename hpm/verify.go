@@ -3,6 +3,7 @@ package hpm
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"sort"
 	"sync"
@@ -142,13 +143,16 @@ func probeUpstream(ctx context.Context, p LockedPackage) error {
 	if err != nil {
 		return err
 	}
+	if err := checkURLScheme(p.URL); err != nil {
+		return err
+	}
 	body, err := httpGet(ctx, p.URL)
 	if err != nil {
 		return err
 	}
 	defer body.Close()
 
-	root, err := ExtractArchive(body, format, staging)
+	root, err := ExtractArchive(io.LimitReader(body, maxDownloadBytes+1), format, staging)
 	if err != nil {
 		return fmt.Errorf("upstream archive is corrupt: %w", err)
 	}
