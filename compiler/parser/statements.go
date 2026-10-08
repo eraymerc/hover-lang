@@ -1,9 +1,19 @@
 package parser
 
 import (
+	"fmt"
 	ast "hover/compiler/ast"
 	token "hover/compiler/token"
 )
+
+// builtinVars are the simulator values codegen reads straight from the VM
+// (vm->time, vm->time_step) wherever the name appears, so a variable of the
+// same name would be written but never read back. Declaring or assigning
+// one is rejected here, where every file — imports included — passes.
+var builtinVars = map[string]string{
+	"time": "the simulation time",
+	"dt":   "the simulation time step",
+}
 
 // ==========================================
 // MASTER ROUTER
@@ -80,6 +90,9 @@ func (p *parser) parseExpressionOrAssignment() ast.Statement {
 
 	// If the next token is '=', it's an assignment
 	if p.currentTokenType() == token.ASSIGN {
+		if id, ok := expr.(*ast.IdentifierExpression); ok && builtinVars[id.Value] != "" {
+			p.addError(fmt.Sprintf("cannot assign to built-in '%s' (%s)", id.Value, builtinVars[id.Value]))
+		}
 		assignTok := p.nextToken() // Consume '='
 		right := p.parse_expression(default_bp)
 		p.expect(token.SEMI)
@@ -104,6 +117,9 @@ func (p *parser) parseLocalDecl() ast.Statement {
 	for {
 		decl := &ast.VarDecl{}
 		decl.Name = p.currentToken().Literal
+		if desc := builtinVars[decl.Name]; desc != "" && !stmt.Type.IsWire() {
+			p.addError(fmt.Sprintf("'%s' is built-in (%s) and can't be declared as a variable — pick another name", decl.Name, desc))
+		}
 		p.expect(token.IDENT)
 
 		if p.currentTokenType() == token.ASSIGN {

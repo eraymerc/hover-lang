@@ -1603,6 +1603,11 @@ arise for node reads.
 \end{tabular}
 \end{center}
 
+Because \code{time} and \code{dt} are read-only, declaring a variable with
+either name (\code{double dt = 1u;}) or assigning to one (\code{dt = 1u;}) is a
+compile error. A function parameter may still use the name; inside that
+function it refers to the argument.
+
 %% ── 14. Simulation Run Order ────────────────────────────────────────────────
 \section{Simulation Run Order}
 
