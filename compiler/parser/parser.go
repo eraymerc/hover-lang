@@ -175,11 +175,29 @@ func (p *parser) parseArgList(open token.Type, close token.Type) []ast.Expressio
 		exprBP = comparison_bp
 	}
 
-	args = append(args, p.parse_expression(exprBP))
+	args = append(args, p.parseArg(close, exprBP))
 	for p.currentTokenType() == token.COMMA {
 		p.nextToken()
-		args = append(args, p.parse_expression(exprBP))
+		args = append(args, p.parseArg(close, exprBP))
 	}
 	p.expect(close)
 	return args
+}
+
+// parseArg parses one list entry. `IDENT = expr` is a named argument, legal
+// only in a static <...> list; anywhere else it is reported here, because the
+// expression parser would otherwise trip over the bare '=' with a message that
+// says nothing about named arguments.
+func (p *parser) parseArg(close token.Type, exprBP binding_power) ast.Expression {
+	if p.currentTokenType() == token.IDENT && p.peekTokenType(1) == token.ASSIGN {
+		nameTok := p.nextToken()
+		p.nextToken() // consume '='
+		value := p.parse_expression(exprBP)
+		if close != token.GT {
+			p.addError(fmt.Sprintf("named argument '%s=' is only allowed inside <...> (static parameters)",
+				nameTok.Literal))
+		}
+		return &ast.NamedArgExpression{Token: nameTok, Name: nameTok.Literal, Value: value}
+	}
+	return p.parse_expression(exprBP)
 }

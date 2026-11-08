@@ -2,6 +2,7 @@
 
 #include <Eigen/Dense>
 #include <string>
+#include <vector>
 #include <unordered_map>
 #include <stdexcept>
 
@@ -63,6 +64,21 @@ struct VM {
     // ── Feature flags ────────────────────────────────────────────────────────
     int zcd_enabled;
     int op_enabled;
+
+    // ── .ac small-signal sweep ───────────────────────────────────────────────
+    // Set by sim.cpp only for a deck with .ac; sim.cpp's main then calls
+    // vm_run_ac itself, and vm_run only if the deck also has .tran. (vm_run
+    // does not dispatch to vm_run_ac: an extra call there changed how the
+    // compiler optimised the transient loop it inlines, and decks without .ac
+    // stopped reproducing their previous output bit for bit.)
+    int    ac_sweep     = 1;      // 0 = lin (ac_points total), 1 = dec, 2 = oct (points per)
+    int    ac_points    = 0;
+    double ac_fstart    = 0.0;
+    double ac_fstop     = 0.0;
+    std::vector<std::string> ac_nodes;     // .save'd MNA nodes
+    std::vector<std::string> ac_branches;  // .save'd branch currents (element names)
+    int    ac_skipped_signals = 0;         // .save'd logic signals: no AC meaning
+    int    op_converged = 0;               // set by vm_solve_op
 
     // ── Phase function pointers ───────────────────────────────────────────────
     // Set by generated sim.cpp — no ElaboratedProgram needed at runtime.
@@ -128,6 +144,14 @@ const Eigen::MatrixXd& vm_compute_jacobian(VM *vm, Eigen::VectorXd &x_guess);
 // ─────────────────────────────────────────────────────────────────────────────
 
 void vm_solve_op(VM *vm);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AC SMALL-SIGNAL SWEEP — full DC operating point, linearise once, then solve
+// (G + J + jwC) X = B_ac per frequency; writes ac_output.csv (Re/Im columns).
+// Returns false (and writes nothing) if the operating point did not converge.
+// ─────────────────────────────────────────────────────────────────────────────
+
+bool vm_run_ac(VM *vm);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MAIN RUN LOOP

@@ -48,6 +48,10 @@ func (g *generator) emitHvrParamGlobals() {
 
 // emitLibraryMain is emitMain's --hovercraft branch.
 func (g *generator) emitLibraryMain(cfg simConfig, strategyStruct string) error {
+	if cfg.acEnabled {
+		return fmt.Errorf(".ac is not supported with --hovercraft (the library API steps a transient); " +
+			"build the deck without --hovercraft to run the AC sweep")
+	}
 	g.raw(`#include "hvr_runtime.hpp"`)
 	g.raw(`#include "hovercraft.h"`)
 	g.raw(`#include <cstring>`)

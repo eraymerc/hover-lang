@@ -51,6 +51,18 @@ type simConfig struct {
 	zcdEnabled bool
 	opEnabled  bool
 
+	// tranPresent is whether the deck wrote .tran at all. A deck with neither
+	// .tran nor .ac keeps the historical default transient (tEnd/tStep above);
+	// a deck with only .ac runs just the AC sweep.
+	tranPresent bool
+
+	// .ac(sweep, points, f_start, f_stop) — see parseACDirective.
+	acEnabled bool
+	acSweep   int // 0 = lin, 1 = dec, 2 = oct (runtime VM::ac_sweep)
+	acPoints  int
+	acFStart  string // C++ double literals
+	acFStop   string
+
 	// rtol/atol/maxIter/abstol are .solver(...)'s optional 2nd-5th arguments.
 	//
 	// 2026-08-10: atol became the VOLTAGE tolerance and abstol was added as the
@@ -217,6 +229,12 @@ func (g *generator) parseSimConfig() (simConfig, error) {
 			}
 			cfg.tEnd = fmt.Sprintf("%.17g", tEnd)
 			cfg.tStep = fmt.Sprintf("%.17g", tStep)
+			cfg.tranPresent = true
+		}
+		if d.Name == "ac" {
+			if err := parseACDirective(d, &cfg); err != nil {
+				return cfg, err
+			}
 		}
 		if d.Name == "solver" && len(d.Args) >= 1 {
 			// The solver name is a bare identifier ("bdf2"); anything else
@@ -255,6 +273,63 @@ func (g *generator) parseSimConfig() (simConfig, error) {
 		return cfg, saveErr
 	}
 	return cfg, nil
+}
+
+// parseACDirective reads
+//
+//	.ac(dec, 100, 1k, 1G);   // points per decade
+//	.ac(oct, 20, 1k, 1G);    // points per octave
+//	.ac(lin, 1000, 0, 1M);   // points in total
+//
+// SPICE's argument order. The excitation is not here: it is ac= / ac_phase=
+// on the sources themselves. A malformed .ac is a hard error, never a silent
+// no-op.
+func parseACDirective(d *ast.DirectiveStatement, cfg *simConfig) error {
+	if cfg.acEnabled {
+		return fmt.Errorf(".ac(...) given more than once")
+	}
+	if len(d.Args) != 4 {
+		return fmt.Errorf(".ac(...) takes 4 arguments (sweep, points, f_start, f_stop), e.g. "+
+			"`.ac(dec, 100, 1k, 1G);` — got %d", len(d.Args))
+	}
+	sweep := d.Args[0].String()
+	switch sweep {
+	case "lin":
+		cfg.acSweep = 0
+	case "dec":
+		cfg.acSweep = 1
+	case "oct":
+		cfg.acSweep = 2
+	default:
+		return fmt.Errorf(".ac(...)'s 1st argument must be dec, oct or lin, got '%s'", sweep)
+	}
+	pts, err := directiveNumber("ac", d.Args[1])
+	if err != nil {
+		return err
+	}
+	if pts < 1 || pts != float64(int(pts)) {
+		return fmt.Errorf(".ac(...)'s 2nd argument (points) must be a whole number >= 1, got %g", pts)
+	}
+	f0, err := directiveNumber("ac", d.Args[2])
+	if err != nil {
+		return err
+	}
+	f1, err := directiveNumber("ac", d.Args[3])
+	if err != nil {
+		return err
+	}
+	if cfg.acSweep == 0 {
+		if f0 < 0 || f1 < f0 {
+			return fmt.Errorf(".ac(lin, ...) needs 0 <= f_start <= f_stop, got %g and %g", f0, f1)
+		}
+	} else if f0 <= 0 || f1 < f0 {
+		return fmt.Errorf(".ac(%s, ...) needs 0 < f_start <= f_stop, got %g and %g", sweep, f0, f1)
+	}
+	cfg.acEnabled = true
+	cfg.acPoints = int(pts)
+	cfg.acFStart = fmt.Sprintf("%.17g", f0)
+	cfg.acFStop = fmt.Sprintf("%.17g", f1)
+	return nil
 }
 
 // parseOptionalSolverArg reads .solver(...)'s argument at index idx (1 =

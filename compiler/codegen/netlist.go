@@ -126,10 +126,16 @@ func (g *generator) emitStampCall(phys elaborator.PhysicalObject) {
 	case "voltage_source", "v":
 		g.line("{ int br = sys->resolve_branch(%s); stamp_voltage_source(sys, %s, %s, %s, br); }",
 			name, node(0), node(1), param(0))
+		if ac, ph, ok := acExcitation(phys); ok {
+			g.line("stamp_ac_voltage(sys, sys->resolve_branch(%s), %.17g, %.17g);", name, ac, ph)
+		}
 
 	case "current_source", "i":
 		g.line("stamp_current_source(sys, %s, %s, %s, %s);",
 			node(0), node(1), param(0), name)
+		if ac, ph, ok := acExcitation(phys); ok {
+			g.line("stamp_ac_current(sys, %s, %s, %.17g, %.17g);", node(0), node(1), ac, ph)
+		}
 
 	case "vccs", "g":
 		g.line("stamp_vccs(sys, %s, %s, %s, %s, %s);",
@@ -162,4 +168,13 @@ func (g *generator) emitStampCall(phys elaborator.PhysicalObject) {
 		g.line("{ int sens = sys->resolve_branch(%s); int br = sys->resolve_branch(%s); stamp_ccvs(sys, %s, %s, sens, %s, br); }",
 			cStr(phys.SenseElement), name, node(0), node(1), param(0))
 	}
+}
+
+// acExcitation returns a source's ac= magnitude and ac_phase= (degrees), and
+// whether there is any excitation to stamp. Both are named <...> parameters
+// folded to numbers by the elaborator (bindPrimitiveArgs); absent means 0.
+func acExcitation(phys elaborator.PhysicalObject) (mag, phaseDeg float64, ok bool) {
+	mag = phys.Parameters["ac"]
+	phaseDeg = phys.Parameters["ac_phase"]
+	return mag, phaseDeg, mag != 0
 }

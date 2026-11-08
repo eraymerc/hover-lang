@@ -53,17 +53,9 @@ func (e *Elaborator) flattenModule(mod *ast.ModuleDeclStatement, prefix string, 
 				continue
 			}
 
-			if len(s.StaticArgs) != len(target.StaticArgs) {
-				e.errors = append(e.errors, fmt.Sprintf("Line %d: parameter mismatch for module '%s' (expected %d, got %d)",
-					s.Line(), s.ModuleName, len(target.StaticArgs), len(s.StaticArgs)))
+			childParams, ok := e.bindStaticArgs(s, target, params)
+			if !ok {
 				continue
-			}
-
-			childParams := make(map[string]float64)
-			for i, arg := range s.StaticArgs {
-				if i < len(target.StaticArgs) {
-					childParams[target.StaticArgs[i].Name] = e.evalStatic(arg, params)
-				}
 			}
 
 			expectedPorts := len(target.PhysPorts) + len(target.LogicArgs)
@@ -110,8 +102,8 @@ func (e *Elaborator) flattenModule(mod *ast.ModuleDeclStatement, prefix string, 
 				nodes = append(nodes, e.mangleNode(n.String(), prefix, ports))
 			}
 			pMap := make(map[string]float64)
-			for i, arg := range s.StaticArgs {
-				pMap[fmt.Sprintf("param%d", i)] = e.evalStatic(arg, params)
+			if !e.bindPrimitiveArgs(s, params, pMap) {
+				continue
 			}
 
 			// Capture the controlling logic signal for driven primitives.

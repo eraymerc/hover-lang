@@ -46,6 +46,7 @@ struct System {
     // ── RHS vectors ──────────────────────────────────────────────────────────
     Eigen::VectorXd B_static;   // permanent forces (DC sources, driven values)
     Eigen::VectorXd B_dynamic;  // scratch RHS rebuilt every timestep solve
+    Eigen::VectorXcd B_ac;      // .ac small-signal excitation (ac= / ac_phase= on sources)
 
     // ── Dimensions ───────────────────────────────────────────────────────────
     int num_nodes;      // N   — KCL rows
@@ -107,6 +108,7 @@ struct System {
         C        = Eigen::MatrixXd::Zero(size, size);
         B_static = Eigen::VectorXd::Zero(size);
         B_dynamic= Eigen::VectorXd::Zero(size);
+        B_ac     = Eigen::VectorXcd::Zero(size);
         node_names.reserve(num_nodes_);
     }
 
@@ -208,6 +210,7 @@ inline void system_finalize(System *sys) {
     sys->C        = Eigen::MatrixXd::Zero(sys->size, sys->size);
     sys->B_static = Eigen::VectorXd::Zero(sys->size);
     sys->B_dynamic= Eigen::VectorXd::Zero(sys->size);
+    sys->B_ac     = Eigen::VectorXcd::Zero(sys->size);
 }
 
 // Set the DC-operating-point source-stepping scale. Rewrites the

@@ -27,6 +27,13 @@ void stamp_voltage_source(System *sys, int n1, int n2, double voltage, int branc
 // I: current source — directly into B_static, records for later update
 void stamp_current_source(System *sys, int n1, int n2, double current, const char *name);
 
+// .ac excitation of an independent source (its ac= / ac_phase= parameters).
+// Only B_ac is touched; DC and transient never read it. Same orientation as
+// the source's own stamp: the voltage source's branch row, and for the current
+// source -I at n1, +I at n2.
+void stamp_ac_voltage(System *sys, int branch_idx, double mag, double phase_deg);
+void stamp_ac_current(System *sys, int n1, int n2, double mag, double phase_deg);
+
 // VCCS (G element): I_out = gm * (V_nc1 - V_nc2), pure G stamp
 void stamp_vccs(System *sys, int n1, int n2, int nc1, int nc2, double gm);
 

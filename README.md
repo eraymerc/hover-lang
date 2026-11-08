@@ -6,4 +6,4 @@ Hover is a mixed-systems co-simulation language that combines logic (software-st
 
 https://hover-lang.org/
 
-### 🚧 Status: v0.8 (Under Development)
+### 🚧 Status: v0.9 (Under Development)

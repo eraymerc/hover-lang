@@ -1,4 +1,6 @@
 #include "matrices.hpp"
+#include <cmath>
+#include <complex>
 
 // ─────────────────────────────────────────────────────────────────────────────
 // INTERNAL HELPER
@@ -96,6 +98,20 @@ void stamp_current_source(System *sys, int n1, int n2, double current, const cha
     if (n1 >= 0) sys->B_static(n1) -= current;
     if (n2 >= 0) sys->B_static(n2) += current;
     sys->register_current_source(name, n1, n2, current);
+}
+
+static std::complex<double> ac_phasor(double mag, double phase_deg) {
+    return std::polar(mag, phase_deg * M_PI / 180.0);
+}
+
+void stamp_ac_voltage(System *sys, int branch_idx, double mag, double phase_deg) {
+    sys->B_ac(branch_idx) += ac_phasor(mag, phase_deg);
+}
+
+void stamp_ac_current(System *sys, int n1, int n2, double mag, double phase_deg) {
+    const std::complex<double> i = ac_phasor(mag, phase_deg);
+    if (n1 >= 0) sys->B_ac(n1) -= i;
+    if (n2 >= 0) sys->B_ac(n2) += i;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

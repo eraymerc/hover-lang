@@ -1,5 +1,5 @@
 # Local development pin: examples compile against the stdlib working tree in
-# ../stdlib, not the published v0.8 tarball, so stdlib edits are exercised by
+# ../stdlib, not the published v0.9 tarball, so stdlib edits are exercised by
 # the example decks without publishing anything. Same sentinel-hash trick as
 # tester_stdlib/ (see memories/local-stdlib-test-loop.md) — the lockfile
 # points at a cache entry that is a symlink into ../stdlib.
@@ -8,4 +8,4 @@ name = "hover-examples"
 version = "0.0.0"
 
 [dependencies]
-stdlib = "0.8.0"
+stdlib = "0.9.0"

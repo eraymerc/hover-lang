@@ -106,7 +106,7 @@
   \vspace*{1.5cm}
   \includegraphics[width=12cm]{figures/hover_logo_4b.png}\par
   \vspace{1cm}
-  {\Huge\bfseries Hover v0.7.0 Language Manual\par}
+  {\Huge\bfseries Hover v0.9.0 Language Manual\par}
   \vspace{0.6cm}
   \rule{0.5\linewidth}{1pt}\par
   \vspace{0.4cm}
@@ -317,6 +317,47 @@ the transient, so the waveform begins at the settled operating point.
 \textbf{When to use:} any circuit with a well-defined DC bias point —
 amplifiers, filters, motor drives. Omit \code{.op} only when the startup
 transient itself is the subject of the simulation.
+
+\subsection{.ac --- Small-Signal AC Analysis}
+
+\begin{lstlisting}
+.ac(dec, 100, 1k, 1G);    // points per decade
+.ac(oct, 20, 1k, 1G);     // points per octave
+.ac(lin, 1000, 0, 1Meg);  // points in total
+\end{lstlisting}
+
+Solves the circuit linearised around its DC operating point at every
+frequency of the sweep: $(G + J + j\omega C)\,X = B_{ac}$, where $J$ is the
+Jacobian of every nonlinear model at the operating point. The operating
+point is the full \code{.op} one (capacitors charged, inductors carrying DC)
+whether or not the deck says \code{.op}. Charges written with \code{ddt()}
+linearise automatically, so junction capacitances need no extra work.
+
+\textbf{Excitation} is never in the directive: it is the \code{ac} and
+\code{ac\_phase} (degrees) named parameters of the independent sources
+(Section~\ref{sec:namedargs}). Both default to 0, so an unmarked source is a
+plain DC source in the sweep.
+
+\begin{lstlisting}
+current_source<0, ac=1>()[gnd, die];     // 1 A into die: V(die) = Z(f)
+voltage_source<2.5, ac=1>()[fb, gnd];    // 2.5 V bias + 1 V small signal
+voltage_source<ac=1>(v_sig)[in, gnd];    // driven source + AC excitation
+\end{lstlisting}
+
+For a source driven from \code{()}, the expression's dependence on node
+voltages and currents enters the linearisation through $J$; its dependence on
+\code{time} is frozen at its $t=0$ value (a \code{cos} source freezes at its
+peak, an \code{if (time > t0)} step before the step) and is \textit{not} an
+excitation --- only \code{ac=} is. \code{ac} and \code{ac\_phase} are static:
+they may only appear inside \code{<\dots>}.
+
+\textbf{Output} goes to \code{ac\_output.csv}: a \code{Freq} column, then a
+\code{.re} and \code{.im} column for every \code{.save}d node and branch
+current (e.g. \code{main.die.re}, \code{main.die.im}). Logic signals have no
+small-signal value and are left out. A deck with both \code{.ac} and
+\code{.tran} runs the sweep first and the transient after it, unaffected; a
+deck with only \code{.ac} runs no transient. \code{.ac} is not available with
+\code{--hovercraft}.
 \newpage
 \subsection{.solver --- Solver Type}
 \begin{lstlisting}
@@ -1055,6 +1096,26 @@ module ctrl   = PI<>(measurement, ctrl_sig)[];
 
 \code{module instance\_name =} is mandatory, except for physical primitives.
 
+\subsubsection{Named Parameters and Defaults}
+\label{sec:namedargs}
+
+Static parameters may be given by name, and a declaration may give them
+defaults. Positional arguments come first, then \code{name=value}; each
+parameter is bound once, and an unbound parameter takes its default (an
+error if it has none). A default may use earlier parameters.
+
+\begin{lstlisting}
+module RC<double R, double C = 1u, double tau = R * C>()[wire i, wire o] { ... }
+
+module r1 = RC<1k>()[v, a];              // C = 1u
+module r2 = RC<1k, C=2u>()[v, b];
+module r3 = RC<C=10n, R=10k>()[v, c];
+\end{lstlisting}
+
+Named arguments are only valid inside \code{<\dots>}. Among the physical
+primitives only the independent sources take named parameters:
+\code{ac} and \code{ac\_phase} (see \code{.ac}).
+
 \subsection{Execution Order}
 
 Each timestep, Phase~A executes logic domains in a fixed causal order:
@@ -1209,8 +1270,8 @@ Section~\ref{sec:namedelements}.
   \code{R}              & \code{<resistance>}  & \code{[n+, n-]}              & Resistor \\
   \code{L}              & \code{<inductance>}  & \code{[n+, n-]}              & Inductor \\
   \code{C}              & \code{<capacitance>} & \code{[n+, n-]}              & Capacitor \\
-  \code{voltage\_source} & \code{<dc\_value>}   & \code{[n+, n-]}              & Ideal voltage source \\
-  \code{current\_source} & \code{<dc\_value>}   & \code{[n+, n-]}              & Ideal current source \\
+  \code{voltage\_source} & \code{<dc\_value, ac=, ac\_phase=>}   & \code{[n+, n-]}              & Ideal voltage source \\
+  \code{current\_source} & \code{<dc\_value, ac=, ac\_phase=>}   & \code{[n+, n-]}              & Ideal current source \\
   \code{VCCS}           & \code{<gm>}          & \code{[n+, n-, nc+, nc-]}    & Voltage-controlled current source, \(I = g_m \cdot V(nc\!+\!,nc\!-\!)\) \\
   \code{VCVS}           & \code{<k>}           & \code{[n+, n-, nc+, nc-]}    & Voltage-controlled voltage source, \(V = k \cdot V(nc\!+\!,nc\!-\!)\) \\
   \code{CCCS}           & \code{<beta>}        & \code{[n+, n-, sense]}       & Current-controlled current source, \(I = \beta \cdot I(sense)\) \\

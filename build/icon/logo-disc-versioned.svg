@@ -43,5 +43,5 @@
               <circle cx="154" cy="62" r="7" fill="#ffd21e" stroke="#000" stroke-width="4"></circle>
             </g>
             <text x="180" y="238" text-anchor="middle" font-family="&#39;Archivo Black&#39;, sans-serif" font-size="66" fill="#f2ead2" stroke="#0d1745" stroke-width="9" stroke-linejoin="round" paint-order="stroke" transform="skewX(-9) translate(42,0)">HOVER</text>
-            <text x="180" y="278" text-anchor="middle" font-family="&#39;Space Mono&#39;, monospace" font-weight="700" font-size="34" letter-spacing="10" fill="#ffd21e" stroke="#0d1745" stroke-width="2" stroke-linejoin="round" paint-order="stroke" style="font-weight: 800; font-size: 34px; overflow: visible">v0.8.1</text>
+            <text x="180" y="278" text-anchor="middle" font-family="&#39;Space Mono&#39;, monospace" font-weight="700" font-size="34" letter-spacing="10" fill="#ffd21e" stroke="#0d1745" stroke-width="2" stroke-linejoin="round" paint-order="stroke" style="font-weight: 800; font-size: 34px; overflow: visible">0.9.0</text>
         </svg>

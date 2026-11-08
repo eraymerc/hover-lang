@@ -80,7 +80,7 @@ directories (`math`, `semiconductors`, `optoelectronics`,
 and `<stdlib/math>` name the same directory and both work. Releases do not
 bundle it: a fresh install must run `hover --setup` once, with network
 access, before any `import <...>` resolves. The version installed is the one
-built for your compiler — hover 0.8.x asks the index for `^0.8.0`, so stdlib
+built for your compiler — hover 0.9.x asks the index for `^0.9.0`, so stdlib
 patch releases reach you without a new compiler.
 
 A project may pin its own:

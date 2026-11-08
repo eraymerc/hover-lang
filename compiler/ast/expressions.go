@@ -26,6 +26,21 @@ func (i *IdentifierExpression) TokenLiteral() string { return i.Token.Literal }
 func (i *IdentifierExpression) Line() int            { return i.Token.Line }
 func (i *IdentifierExpression) String() string       { return i.Value }
 
+// NamedArgExpression is `name = value` inside a static <...> argument list:
+// `RC<tau=1m>()`, `voltage_source<2.5, ac=1>()`. The parser only produces it
+// there; the elaborator binds it (to a module's declared static parameter, or
+// to a primitive's ac / ac_phase) and it never reaches codegen.
+type NamedArgExpression struct {
+	Token token.Token // the name's token
+	Name  string
+	Value Expression
+}
+
+func (n *NamedArgExpression) expressionNode()      {}
+func (n *NamedArgExpression) TokenLiteral() string { return n.Token.Literal }
+func (n *NamedArgExpression) Line() int            { return n.Token.Line }
+func (n *NamedArgExpression) String() string       { return n.Name + "=" + n.Value.String() }
+
 type BinaryExpression struct {
 	Token    token.Token
 	Left     Expression

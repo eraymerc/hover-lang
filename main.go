@@ -16,10 +16,10 @@ import (
 )
 
 // Version is this compiler's release. It is also what decides which standard
-// library `--setup` installs: hover 0.8.x asks the index for "^0.8.0", so the
+// library `--setup` installs: hover 0.9.x asks the index for "^0.9.0", so the
 // stdlib you get is always the one built for your compiler, while still
 // picking up stdlib patch releases without a new compiler.
-const Version = "0.8.0"
+const Version = "0.9.0"
 
 const usage = `Usage: ./hover <filename.hvr> [options]
        ./hover hpm <command> [arguments]
@@ -250,7 +250,7 @@ func analyzeFile(path string, loadResult *loader.LoadResult, files map[string]*e
 
 func main() {
 	// Dispatched before the version banner: hpm has its own output, and a
-	// stray "Hover v0.8.0" on stdout would land in anything parsing it.
+	// stray "Hover v0.9.0" on stdout would land in anything parsing it.
 	if invokedAsHPM() {
 		os.Exit(hpm.Run(os.Args[1:]))
 	}

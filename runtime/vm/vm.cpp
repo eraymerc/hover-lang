@@ -347,7 +347,7 @@ static bool op_relax_to_dc(VM *vm, Eigen::VectorXd &x_guess) {
     return true;
 }
 
-static bool vm_solve_dc_once(VM *vm) {
+static bool vm_solve_dc_once(VM *vm, bool relax) {
     int n = vm->solver->sys->size;
     Eigen::VectorXd zero_history = Eigen::VectorXd::Zero(n);
     Eigen::VectorXd x_guess      = Eigen::VectorXd::Zero(n);
@@ -397,10 +397,10 @@ static bool vm_solve_dc_once(VM *vm) {
     // the loop above returns early or throws, so this cannot leak.
     system_set_source_alpha(vm->solver->sys, 1.0);
 
-    // Only with .op: without it the run deliberately starts from uncharged
-    // reactive elements (the bias point above), which is what decks without
-    // the directive have always got.
-    if (vm->op_enabled && !op_failed && !op_relax_to_dc(vm, x_guess)) {
+    // Only with .op (or for .ac, which needs the true DC point): without it the
+    // run deliberately starts from uncharged reactive elements (the bias point
+    // above), which is what decks without the directive have always got.
+    if (relax && !op_failed && !op_relax_to_dc(vm, x_guess)) {
         op_failed = 1;
     }
 
@@ -443,18 +443,18 @@ static bool vm_solve_dc_once(VM *vm) {
 // ─────────────────────────────────────────────────────────────────────────────
 static const int OP_DAMPING_RETRIES = 4;
 
-static void vm_solve_dc(VM *vm) {
+static bool vm_solve_dc(VM *vm, bool relax) {
     const double dt_restore = vm->time_step;
 
     for (int attempt = 0; attempt <= OP_DAMPING_RETRIES; attempt++) {
-        if (vm_solve_dc_once(vm)) {
+        if (vm_solve_dc_once(vm, relax)) {
             if (attempt > 0) {
                 printf("[VM] OP converged after %d damping retr%s (dt %.3e -> %.3e)\n",
                        attempt, attempt == 1 ? "y" : "ies", dt_restore, vm->time_step);
             }
             vm->time_step = dt_restore;
             printf("[VM] OP complete\n");
-            return;
+            return true;
         }
         if (attempt < OP_DAMPING_RETRIES) {
             vm->time_step *= 0.5;
@@ -468,11 +468,12 @@ static void vm_solve_dc(VM *vm) {
                     "damping retries; the transient is starting from an "
                     "unconverged bias.\n", OP_DAMPING_RETRIES);
     printf("[VM] OP complete\n");
+    return false;
 }
 
 void vm_solve_op(VM *vm) {
     printf("[VM] Solving DC operating point...\n");
-    vm_solve_dc(vm);
+    vm->op_converged = vm_solve_dc(vm, vm->op_enabled);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -529,7 +530,7 @@ void vm_boot(VM *vm) {
     } else {
         printf("[VM] No .op directive — solving bias point; capacitors and inductors start uncharged (add .op; for the DC operating point)\n");
     }
-    vm_solve_dc(vm);
+    vm_solve_dc(vm, vm->op_enabled);
 }
 
 void vm_run_until(VM *vm, double target_time) {

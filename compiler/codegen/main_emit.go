@@ -233,6 +233,17 @@ func (g *generator) emitMain() error {
 	g.line("vm.jacobian_scratch = Eigen::MatrixXd::Zero(sys.size, sys.size);")
 	g.line("vm.base_b_scratch   = Eigen::VectorXd::Zero(sys.size);")
 	g.raw("")
+	if cfg.acEnabled {
+		g.line("// .ac small-signal sweep")
+		g.line("vm.ac_sweep     = %d;", cfg.acSweep)
+		g.line("vm.ac_points    = %d;", cfg.acPoints)
+		g.line("vm.ac_fstart    = %s;", cfg.acFStart)
+		g.line("vm.ac_fstop     = %s;", cfg.acFStop)
+		g.line("vm.ac_nodes     = {%s};", quotedList(cfg.saveMNANodes))
+		g.line("vm.ac_branches  = {%s};", quotedList(cfg.saveBranchCurrents))
+		g.line("vm.ac_skipped_signals = %d;", len(cfg.saveVMSignals))
+		g.raw("")
+	}
 
 	g.line("// Phase function pointers")
 	g.line("vm.phase_structural = phase_structural;")
@@ -256,7 +267,16 @@ func (g *generator) emitMain() error {
 	g.line("vm.strategy = &strategy;")
 	g.raw("")
 
-	g.line("vm_run(&vm);")
+	if cfg.acEnabled {
+		// AC first; then the transient only if the deck asked for one (a deck
+		// with .ac alone skips the default transient).
+		g.line("vm_run_ac(&vm);")
+		if cfg.tranPresent {
+			g.line("vm_run(&vm);")
+		}
+	} else {
+		g.line("vm_run(&vm);")
+	}
 	g.line("return 0;")
 
 	g.pop()
