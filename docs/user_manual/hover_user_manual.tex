@@ -307,9 +307,12 @@ reaching steady state.
 With \code{.op}, the solver uses source stepping: the supply voltages and
 driven sources are scaled from 5\,\% to 100\,\% in twelve alpha steps. At
 each alpha level, up to 500 Newton-Raphson iterations are run with a
-0.05\,V per-iteration damping limit. The converged solution at
-$\alpha = 1.0$ is committed as the initial condition for the transient,
-so the waveform begins at the settled operating point.
+0.05\,V per-iteration damping limit. The solution at $\alpha = 1.0$ is
+then relaxed to DC (pseudo-transient continuation: the step is grown
+geometrically up to $10^{12}$\,s with the history anchored at the previous
+answer), so capacitors charge to their DC voltages and inductors carry
+their DC currents. The result is committed as the initial condition for
+the transient, so the waveform begins at the settled operating point.
 
 \textbf{When to use:} any circuit with a well-defined DC bias point —
 amplifiers, filters, motor drives. Omit \code{.op} only when the startup

@@ -6,7 +6,9 @@
 
 .save(main.motor_a, main.motor_b, main.omega_node, main.loadCmd,
       main.cmd_TL, main.cmd_BL, main.cmd_TR, main.cmd_BR);
-.op;    // Settle the bridge/motor bias point before the switching sequence.
+// No .op: this is a startup run. .op would relax the rotor-inertia cap and
+// winding inductance to DC too, so the motor would start already spinning.
+// Junction bias is still solved without it (same Newton, uncharged C/L).
 .zcd;   // HBridgeControl's outputs step discretely at t_switch +/- deadtime --
         // this isolates those edges instead of stepping across them.
 .tran(0, 400m, 20u);

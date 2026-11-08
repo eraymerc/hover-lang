@@ -2,6 +2,7 @@
 #include "zcd.hpp"
 #include "../solvers/newton_trust_region.hpp"
 #include "../solvers/step_limits.hpp"
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 
@@ -226,12 +227,130 @@ static int op_converged(const Eigen::VectorXd &x_new,
 // which is not the same bias the transient met), and h_bridge's BDF2 then
 // failed 17us in instead of running 198ms. The 1/dt alpha*C diagonal is
 // damping the old loop implicitly relied on; keep it, keep zero history.
+// op_newton — one damped Newton solve of
+//     G x + alpha_c C (x - history) = B(x)
+// starting from x_guess, which holds the answer on success. Shared by the
+// source-stepping ladder (history = 0) and the .op pseudo-transient
+// continuation below (history = the previous rung's answer).
+static bool op_newton(VM *vm, Eigen::VectorXd &x_guess,
+                      const Eigen::VectorXd &history, double alpha_c,
+                      int *iters, double *worst, int *worst_row) {
+    const int n = vm->solver->sys->size;
+    Eigen::MatrixXd jacobian;
+    Eigen::VectorXd correction(n);
+    *iters = 0; *worst = 0.0; *worst_row = -1;
+
+    for (int iter = 0; iter < 500; iter++) {
+        *iters = iter + 1;
+        // update, NOT peek: pnjlim/nr_prev semantics require that a
+        // rejected candidate leaves prev_solution == current iterate —
+        // the "limiter releases during rejection" behaviour some stdlib
+        // models depend on (tried-and-reverted record: bdf2.cpp:171-194).
+        api_update_solution(vm->api, x_guess);
+        vm_run_analog(vm);
+        vm_run_phase_b(vm);
+
+        jacobian = vm_compute_jacobian(vm, x_guess);
+        // J folds into G_eff only inside solver_factorize
+        // (engine.cpp:44-48), and last_alpha does not change within a
+        // rung — without g_dirty the LU would reuse a stale Jacobian.
+        vm->solver->g_dirty = 1;
+        correction = jacobian * x_guess;
+
+        const Eigen::VectorXd &x_new = solver_solve_rhs(
+            vm->solver, 1.0, history, alpha_c, &correction, &jacobian);
+
+        if (op_converged(x_new, x_guess, 1e-3, 1e-6)) {
+            x_guess = x_new;
+            return true;
+        }
+        *worst = 0.0; *worst_row = -1;
+        for (int i = 0; i < n; i++) {
+            double d2 = std::abs(x_new(i) - x_guess(i));
+            if (!(d2 <= *worst)) { *worst = d2; *worst_row = i; }
+        }
+
+        // The ±0.05 per-component alias cap, accepted BLINDLY as before.
+        //
+        // Residual-scored variants (strict decrease, then a 5% uphill
+        // band) were tried here and rejected: the raw residual mixes
+        // units and scales wildly (h_bridge's rows span equilibration
+        // scales 2^1..2^39), so scoring failed decks the blind cap
+        // passes (h_bridge worst-rung walked INTO a frozen non-solution
+        // state — op_converged checks step size, not residual, and a
+        // shrunken cap makes every later rung "converge" falsely — while
+        // protecting nothing: the period-2 limit cycles this scoring was
+        // meant to break needed kilovolt steps to truncate, and those
+        // only existed because driven sources sat at FULL strength from
+        // alpha=0.05. With the alpha ladder applied at stamp time, the
+        // cycling precondition is gone — redled/multiple_leds converge
+        // their OP cleanly under the blind cap. limitcycle.
+        for (int i = 0; i < n; i++) {
+            double delta = x_new(i) - x_guess(i);
+            if (delta >  0.05) delta =  0.05;
+            if (delta < -0.05) delta = -0.05;
+            x_guess(i) += delta;
+        }
+    }
+    return false;
+}
+
+// op_relax_to_dc — the .op pseudo-transient continuation.
+//
+// The source ladder above solves with a ZERO history anchor at alpha = 1/dt,
+// so every capacitor is a dt/C resistor to 0 V and every inductor a L/dt
+// resistor: what it returns is the state one tiny backward-Euler step after
+// an all-zero start, not a DC operating point. Measured: 2.5 V - 0.1 ohm -
+// 1 uF gave V(cap) = 5 mV and -25 A of charging current at t = 0.1 ns, with
+// "OP complete" printed.
+//
+// Re-anchoring the history at the current answer changes that: the C term
+// is then alpha_c C (x - x_prev), which vanishes at a steady state, so the
+// fixed point of these rungs is the true DC solution whatever alpha_c is.
+// alpha_c only decides how far one rung moves, and dt grows geometrically to
+// DT_END so the last rung is DC for any realistic time constant (1 uF on a
+// lone GMIN of 1e-12 is tau = 1e6 s). Starting from the damped ladder's
+// answer and walking dt up keeps the 1/dt damping that decks with hidden
+// companion inductances (h_bridge's BJTs) rely on for the first solve.
+//
+// A rung that does not converge is usually a big move hitting the ±0.05
+// per-iteration cap (500 iterations = 25 V), so it is retried with a smaller
+// dt growth before giving up.
+static bool op_relax_to_dc(VM *vm, Eigen::VectorXd &x_guess) {
+    const double DT_END = 1e12;
+    double dt   = vm->time_step;
+    double grow = 10.0;
+    int    rungs = 0, iters = 0, worst_row = -1;
+    double worst = 0.0;
+    Eigen::VectorXd x_try;
+
+    while (dt < DT_END) {
+        const double dt_try = std::min(dt * grow, DT_END);
+        const Eigen::VectorXd history = x_guess;
+        x_try = x_guess;
+        if (op_newton(vm, x_try, history, 1.0 / dt_try, &iters, &worst, &worst_row)) {
+            x_guess = x_try;
+            dt      = dt_try;
+            grow    = std::min(grow * 2.0, 10.0);
+            rungs++;
+        } else {
+            grow = std::sqrt(grow);
+            if (grow < 1.05) {
+                fprintf(stderr, "[VM] OP: capacitors/inductors did not reach DC steady "
+                                "state (stalled at dt=%.3e, worst step %.3e on row %d)\n",
+                        dt, worst, worst_row);
+                return false;
+            }
+        }
+    }
+    printf("[VM] OP relaxed to DC steady state (%d rungs)\n", rungs);
+    return true;
+}
+
 static bool vm_solve_dc_once(VM *vm) {
     int n = vm->solver->sys->size;
     Eigen::VectorXd zero_history = Eigen::VectorXd::Zero(n);
     Eigen::VectorXd x_guess      = Eigen::VectorXd::Zero(n);
-    Eigen::MatrixXd jacobian;
-    Eigen::VectorXd correction(n);
     int    op_iters = 0, op_worst_row = -1, op_failed = 0;
     double op_worst = 0.0;
 
@@ -255,62 +374,9 @@ static bool vm_solve_dc_once(VM *vm) {
         double alpha = alphas[k];
         system_set_source_alpha(vm->solver->sys, alpha);
 
-        op_iters = 0;
-        bool rung_converged = false;
-        for (int iter = 0; iter < 500; iter++) {
-            op_iters = iter + 1;
-            // update, NOT peek: pnjlim/nr_prev semantics require that a
-            // rejected candidate leaves prev_solution == current iterate —
-            // the "limiter releases during rejection" behaviour some stdlib
-            // models depend on (tried-and-reverted record: bdf2.cpp:171-194).
-            api_update_solution(vm->api, x_guess);
-            vm_run_analog(vm);
-            vm_run_phase_b(vm);
-
-            jacobian = vm_compute_jacobian(vm, x_guess);
-            // J folds into G_eff only inside solver_factorize
-            // (engine.cpp:44-48), and last_alpha does not change within a
-            // rung — without g_dirty the LU would reuse a stale Jacobian.
-            vm->solver->g_dirty = 1;
-            correction = jacobian * x_guess;
-
-            const Eigen::VectorXd &x_new = solver_solve_rhs(
-                vm->solver, 1.0, zero_history, /*alpha*/1.0 / vm->time_step,
-                &correction, &jacobian);
-
-            if (op_converged(x_new, x_guess, 1e-3, 1e-6)) {
-                x_guess = x_new;
-                rung_converged = true;
-                break;
-            }
-            op_worst = 0.0; op_worst_row = -1;
-            for (int i = 0; i < n; i++) {
-                double d2 = std::abs(x_new(i) - x_guess(i));
-                if (!(d2 <= op_worst)) { op_worst = d2; op_worst_row = i; }
-            }
-
-            // The ±0.05 per-component alias cap, accepted BLINDLY as before.
-            //
-            // Residual-scored variants (strict decrease, then a 5% uphill
-            // band) were tried here and rejected: the raw residual mixes
-            // units and scales wildly (h_bridge's rows span equilibration
-            // scales 2^1..2^39), so scoring failed decks the blind cap
-            // passes (h_bridge worst-rung walked INTO a frozen non-solution
-            // state — op_converged checks step size, not residual, and a
-            // shrunken cap makes every later rung "converge" falsely — while
-            // protecting nothing: the period-2 limit cycles this scoring was
-            // meant to break needed kilovolt steps to truncate, and those
-            // only existed because driven sources sat at FULL strength from
-            // alpha=0.05. With the alpha ladder applied at stamp time, the
-            // cycling precondition is gone — redled/multiple_leds converge
-            // their OP cleanly under the blind cap. limitcycle.
-            for (int i = 0; i < n; i++) {
-                double delta = x_new(i) - x_guess(i);
-                if (delta >  0.05) delta =  0.05;
-                if (delta < -0.05) delta = -0.05;
-                x_guess(i) += delta;
-            }
-        }
+        bool rung_converged = op_newton(vm, x_guess, zero_history,
+                                        1.0 / vm->time_step,
+                                        &op_iters, &op_worst, &op_worst_row);
         // Report the truth. This used to print "complete" unconditionally,
         // whether the rung had converged in three iterations or exhausted all
         // 500 without ever getting close — so a failed operating point was
@@ -330,6 +396,13 @@ static bool vm_solve_dc_once(VM *vm) {
     // api_set_voltage_source calls must stamp at full strength. Nothing in
     // the loop above returns early or throws, so this cannot leak.
     system_set_source_alpha(vm->solver->sys, 1.0);
+
+    // Only with .op: without it the run deliberately starts from uncharged
+    // reactive elements (the bias point above), which is what decks without
+    // the directive have always got.
+    if (vm->op_enabled && !op_failed && !op_relax_to_dc(vm, x_guess)) {
+        op_failed = 1;
+    }
 
     api_update_solution(vm->api, x_guess);
     vm_run_analog(vm);
@@ -454,7 +527,7 @@ void vm_boot(VM *vm) {
     if (vm->op_enabled) {
         printf("[VM] Solving DC operating point...\n");
     } else {
-        printf("[VM] No .op directive — solving DC bias point (same Newton as .op)\n");
+        printf("[VM] No .op directive — solving bias point; capacitors and inductors start uncharged (add .op; for the DC operating point)\n");
     }
     vm_solve_dc(vm);
 }
