@@ -49,7 +49,12 @@ void Trapezoidal::run(VM *vm) {
         double dt = vm->time_step;
         // End this step on the next clock tick if it would cross one. Local
         // to the step: the controller's own preferred step is untouched.
-        if (!vm->clocks.empty()) dt = vm_limit_step(vm, dt);
+        if (!vm->clocks.empty()) {
+            dt = vm_limit_step(vm, dt);
+            // A tick changes the circuit's inputs: take this step as Backward
+            // Euler, as after a zero crossing, so stiff modes do not ring.
+            if (vm_tick_due(vm)) force_euler = true;
+        }
         bool zcd_triggered = false;
 
         // 1. ZCD Breakpoint Detection

@@ -10,14 +10,6 @@
 #include <cstdio>
 #include <cmath>
 
-// ─────────────────────────────────────────────────────────────────────────────
-// SHAMPINE'S NDF KAPPA COEFFICIENTS
-// Shampine & Reichelt, "The MATLAB ODE Suite," SIAM J. Sci. Comput. 18 (1997).
-// Index 0 = order 1, index 1 = order 2 (the only two implemented here).
-// ─────────────────────────────────────────────────────────────────────────────
-
-static const double NDF_KAPPA[2] = { -0.1850, -1.0 / 9.0 };
-
 // The convergence test lives in newton_core.hpp, shared with bdf2. NDF2 used to
 // carry its own, which scaled against x_new alone (unsafe across a zero
 // crossing) and used a plain `>` comparison that reads a NaN row as converged.
@@ -25,15 +17,9 @@ static const double NDF_KAPPA[2] = { -0.1850, -1.0 / 9.0 };
 // ─────────────────────────────────────────────────────────────────────────────
 // RUN
 //
-// order 1 (NDF1): alpha = (1-k1)/h,
-//                 x_blend = [y_n + k1*(2y_n - y_{n-1})] / (1-k1)
-// order 2 (NDF2): alpha = (1.5-k2)/h,
-//                 x_blend = [(4/3)y_n - (1/3)y_{n-1} + k2*(2/3)*(2y_n - y_{n-1})]
-//                           / (1 - (2/3)*k2)
-//
-// Both reduce exactly to plain BDF1/BDF2 when kappa=0, confirming the
-// derivation against the known special case before trusting the kappa-
-// weighted general form.
+// BDF1 with one history point, NDF1 with two, NDF2 with three, all on the
+// actual (variable) step grid. Coefficients and the derivation, including why
+// NDF2's correction needs the QUADRATIC predictor: bdf_history.hpp.
 // ─────────────────────────────────────────────────────────────────────────────
 
 void NDF2::run(VM *vm) {
@@ -43,14 +29,11 @@ void NDF2::run(VM *vm) {
     JacRefresh jac;         // within-step re-form policy — see newton_core.hpp
 
     int n = (int)vm->solver->last_solution.size();
-    x_prev1 = vm->solver->last_solution;
-    x_prev2 = vm->solver->last_solution;
+    hist.reset(vm->solver->last_solution);
 
     Eigen::VectorXd correction(n);
     Eigen::VectorXd x_blend(n);
 
-    int step_count = 0;
-    int order = 1; // starts at order 1, promotes to order 2 once history exists and convergence is fast
 
     Eigen::MatrixXd jacobian;
     bool jacobian_valid = false;
@@ -67,7 +50,7 @@ void NDF2::run(VM *vm) {
             dt = vm_limit_step(vm, dt);
             // A tick at this step's start changes the circuit's inputs: do not
             // integrate across it with pre-tick history (see vm_tick_due).
-            if (vm_tick_due(vm)) step_count = 0;
+            if (vm_tick_due(vm)) hist.restart();
         }
 
         if (vm->zcd_enabled) {
@@ -81,7 +64,7 @@ void NDF2::run(VM *vm) {
                 dt = vm_isolate_zero_crossing(vm, checkpoint, dt);
                 vm_restore_state(vm, checkpoint);
                 vm->time_step = dt;
-                step_count = 0;
+                hist.restart();
             } else {
                 vm_restore_state(vm, checkpoint);
             }
@@ -90,66 +73,16 @@ void NDF2::run(VM *vm) {
         vm->solver->sys->dt = dt;
         jac.begin_step();
 
-        // Order selection: order 1 until at least one full step of real
-        // history exists (step_count >= 1, so x_prev2 is a genuine
-        // previous-previous point, not just a duplicate of x_prev1 from
-        // initialization), then promote to order 2. This is a simplified
-        // stand-in for MATLAB's actual error-estimator-driven order
-        // selection — see ndf2.hpp for why the full scheme isn't
-        // implemented here.
-        bool use_order2 = (step_count >= 1);
-        order = use_order2 ? 2 : 1;
-
-        // THE KAPPA TERM IS SUBTRACTED, NOT ADDED — this sign was wrong here for
-        // as long as the solver has existed, and it is what made ndf2 produce
-        // confidently wrong DC answers on circuits bdf2 solves correctly.
-        //
-        // Derivation, order 2. The formula is
-        //
-        //   y_{n+1} - (4/3)y_n + (1/3)y_{n-1}
-        //     - k*(2/3)*(y_{n+1} - 2y_n + y_{n-1}) = (2/3)*h*f
-        //
-        // Multiply by 1.5/h and collect the y_{n+1} terms into alpha:
-        //
-        //   alpha = 1.5*(1 - (2/3)k)/h = (1.5 - k)/h
-        //   f = alpha*y_{n+1} - (1.5/h)*[ (4/3)y_n - (1/3)y_{n-1}
-        //                                 - (2/3)k*(2y_n - y_{n-1}) ]
-        //
-        // The companion model this engine solves is f = alpha*(y - x_blend), so
-        // x_blend is that bracket divided by (1 - (2/3)k) — with the kappa term
-        // carrying a MINUS, inherited from the minus on the left-hand side.
-        // Order 1 is the same derivation with alpha = (1-k)/h.
-        //
-        // THE TEST THAT CATCHES THIS is steady state, not kappa = 0. Setting
-        // kappa = 0 recovers BDF1/BDF2 whichever sign is written, which is why
-        // the check recorded in the comment above ("both reduce exactly to plain
-        // BDF1/BDF2 when kappa=0") passed while the formula was wrong. Instead
-        // put the circuit at rest, y_n = y_{n-1} = y: every capacitor current
-        // must be zero, so x_blend MUST equal y exactly. With the minus it does,
-        // identically in kappa. With the plus, order 2 gives
-        // y*(1 + (2/3)k)/(1 - (2/3)k) = 0.862*y at k = -1/9, and order 1 gives
-        // 0.688*y at k = -0.185 — the solver believes a capacitor at rest is
-        // discharging by 14% (or 31%) of its voltage every single step.
-        //
-        // Measured, that is exactly what it looked like: examples/Diode/
-        // rectifier.hvr returned 0.50 .. 22.18 V, an output with no filtering
-        // left in it, and examples/BJT/npn_amp.hvr sat at a collector of 0.21 V
-        // with its base at 0.91 V instead of 1.59 V — a DC bias error, not a
-        // transient one, which is the signature of a history blend that is
-        // systematically short.
-        double kappa = NDF_KAPPA[order - 1];
+        // Order by available history (bdf_history.hpp). THE KAPPA SIGN NOTE
+        // that lived here — the correction is SUBTRACTED; with a plus, a
+        // capacitor at rest read as discharging 14-31 % per step and the
+        // rectifier and npn_amp settled at wrong DC points — still holds, and
+        // the steady-state test it recommends (y_n = y_{n-1} = y must give
+        // x_blend == y) is satisfied by the new formulas identically in kappa.
         double alpha;
-        if (order == 1) {
-            alpha   = (1.0 - kappa) / dt;
-            x_blend = (x_prev1 - kappa * (2.0 * x_prev1 - x_prev2)) / (1.0 - kappa);
-        } else {
-            alpha   = (1.5 - kappa) / dt;
-            x_blend = ((4.0 / 3.0) * x_prev1 - (1.0 / 3.0) * x_prev2
-                        - kappa * (2.0 / 3.0) * (2.0 * x_prev1 - x_prev2))
-                      / (1.0 - (2.0 / 3.0) * kappa);
-        }
+        hist.ndf(hist.usable_order(dt, 3), dt, alpha, x_blend);
 
-        Eigen::VectorXd x_guess = x_prev1;
+        Eigen::VectorXd x_guess = hist.y[0];
         bool converged = false;
         int  iters = 0;
         bool jacobian_current_this_step = false;
@@ -228,7 +161,7 @@ void NDF2::run(VM *vm) {
             reject_run.note(dt);
             vm->time_step *= 0.5;
             step_trace("ndf2", attempt, vm->time, dt, iters, "reject");
-            // NOTE: step_count is deliberately NOT reset here. An earlier
+            // NOTE: the history is deliberately NOT restarted here. An earlier
             // version reset it to 0 on every convergence failure, which
             // forced an order-2 -> order-1 demotion alongside the dt cut
             // every single time — confirmed by direct instrumentation to
@@ -240,9 +173,9 @@ void NDF2::run(VM *vm) {
             // alone already addresses "this dt was too large for the
             // current Jacobian/nonlinearity" — there's no separate reason
             // a failure should also imply "the order-2 formula itself was
-            // wrong," and x_prev1/x_prev2 remain perfectly valid history
+            // wrong," and the history remains perfectly valid
             // regardless of how this particular attempt's dt choice
-            // turned out. Order falls back to 1 only when step_count is
+            // turned out. Order falls back to 1 only when the history is
             // genuinely reset elsewhere (ZCD re-priming after a detected
             // discontinuity), not as a side effect of ordinary step
             // rejection.
@@ -270,15 +203,13 @@ void NDF2::run(VM *vm) {
         jacobian_valid = false;
 
         reject_run.clear();
-        x_prev2 = x_prev1;
-        x_prev1 = x_guess;
+        hist.accept(x_guess, dt);
 
         solver_advance_time(vm->solver, x_guess);
         vm->time += dt;
         logger_log_step(&vm->logger, vm->time, vm->solver->sys, vm->solver->last_solution);
         if (vm->phase_log) vm->phase_log(vm);
         logger_log_signals(&vm->logger, vm->values);
-        step_count++;
 
         if (iters <= 5) {
             vm->time_step *= 1.2;

@@ -3,6 +3,7 @@
 #include <Eigen/Dense>
 #include "../vm/solver_strategy.hpp"
 #include "newton_core.hpp"
+#include "bdf_history.hpp"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // NDF2
@@ -30,9 +31,10 @@
 // The order-1 NDF reduces to:
 //   y_{n+1} - y_n - kappa_1*(y_{n+1} - 2y_n + y_{n-1}) = h*f(t_{n+1}, y_{n+1})
 //
-// The order-2 NDF:
-//   y_{n+1} - (4/3)y_n + (1/3)y_{n-1} - kappa_2*(2/3)*(y_{n+1} - 2y_n + y_{n-1})
-//     = (2/3)*h*f(t_{n+1}, y_{n+1})
+// The order-2 NDF (constant step; the correction is the THIRD difference —
+// see bdf_history.hpp for the variable-step form and the bug this replaced):
+//   y_{n+1} - (4/3)y_n + (1/3)y_{n-1}
+//     - kappa_2*(y_{n+1} - 3y_n + 3y_{n-1} - y_{n-2}) = (2/3)*h*f(t_{n+1}, y_{n+1})
 //
 // Real MATLAB ode15s is variable-order, automatically selecting among
 // orders 1-5 based on observed convergence and error behavior. This
@@ -82,7 +84,7 @@ struct NDF2 : SolverStrategy {
     bool is_adaptive() const override { return true; }
 
 private:
-    Eigen::VectorXd x_prev1, x_prev2;
+    BdfHistory hist;  // y_n, y_{n-1}, y_{n-2} and their step lengths
 
     // Row index where branch currents start; everything below it is a node
     // voltage. Captured in run() so the convergence test can pick the right

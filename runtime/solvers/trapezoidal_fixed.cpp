@@ -38,7 +38,13 @@ void TrapezoidalFixed::run(VM *vm) {
     double alpha_trap  = 2.0 / vm->time_step;
     double alpha_euler = 1.0 / vm->time_step;
 
+    // A step that starts on a clock tick is a Backward Euler step — SPICE's
+    // rule at breakpoints. The trapezoidal rule is A-stable but not L-stable:
+    // restarted from inputs a tick has just changed, its stiff modes ring at
+    // full amplitude, sign flipping every step, and never decay. One BE step
+    // damps them. (At t = 0 the bias point already is a BE step — see vm_boot.)
     while (vm->time < vm->end_time) {
+        const bool tick = !vm->clocks.empty() && vm_tick_due(vm);
         api_update_solution(vm->api, vm->solver->last_solution);
         vm_run_digital(vm);
         vm_run_phase_b(vm);
@@ -66,7 +72,7 @@ void TrapezoidalFixed::run(VM *vm) {
             vm->solver->g_dirty = 0; // Reuse previous LU factorization
         }
 
-        bool using_euler = false;
+        bool using_euler = tick;
 
         for (int iter = 0; iter < max_iter; iter++) {
             api_update_solution(vm->api, x_guess);

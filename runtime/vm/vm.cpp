@@ -403,7 +403,10 @@ static bool vm_solve_dc_once(VM *vm, bool relax) {
 
     // Only with .op (or for .ac, which needs the true DC point): without it the
     // run deliberately starts from uncharged reactive elements (the bias point
-    // above), which is what decks without the directive have always got.
+    // above), which is what decks without the directive have always got. That
+    // bias point is one backward-Euler step of vm->time_step from an all-zero
+    // history — i.e. the state at t = time_step, not at t = 0 — and vm_boot
+    // accounts for it as such (see the t = 0 row there).
     if (relax && !op_failed && !op_relax_to_dc(vm, x_guess)) {
         op_failed = 1;
     }
@@ -447,7 +450,10 @@ static bool vm_solve_dc_once(VM *vm, bool relax) {
 // ─────────────────────────────────────────────────────────────────────────────
 static const int OP_DAMPING_RETRIES = 4;
 
-static bool vm_solve_dc(VM *vm, bool relax) {
+// step_used (optional) receives the time_step the final attempt solved with:
+// without .op that is the length of the backward-Euler step the bias point
+// represents, which vm_boot books as elapsed time.
+static bool vm_solve_dc(VM *vm, bool relax, double *step_used = nullptr) {
     const double dt_restore = vm->time_step;
 
     for (int attempt = 0; attempt <= OP_DAMPING_RETRIES; attempt++) {
@@ -456,6 +462,7 @@ static bool vm_solve_dc(VM *vm, bool relax) {
                 printf("[VM] OP converged after %d damping retr%s (dt %.3e -> %.3e)\n",
                        attempt, attempt == 1 ? "y" : "ies", dt_restore, vm->time_step);
             }
+            if (step_used) *step_used = vm->time_step;
             vm->time_step = dt_restore;
             printf("[VM] OP complete\n");
             return true;
@@ -467,6 +474,7 @@ static bool vm_solve_dc(VM *vm, bool relax) {
         }
     }
 
+    if (step_used) *step_used = vm->time_step;
     vm->time_step = dt_restore;
     fprintf(stderr, "[VM] WARNING: DC operating point did not converge after %d "
                     "damping retries; the transient is starting from an "
@@ -538,7 +546,58 @@ void vm_boot(VM *vm) {
     } else {
         printf("[VM] No .op directive — solving bias point; capacitors and inductors start uncharged (add .op; for the DC operating point)\n");
     }
-    vm_solve_dc(vm, vm->op_enabled);
+    double bias_step = 0.0;
+    vm_solve_dc(vm, vm->op_enabled, &bias_step);
+
+    // THE FIRST ROWS. Every solver logs a step only after advancing time, so
+    // the state the run starts from has to be logged here or it appears
+    // nowhere — the CSV used to open with the end of a step labelled t = 0.
+    //
+    // With .op the bias point IS the t = 0 state (a DC solution consumes no
+    // time): it is the t = 0 row and the transient starts from it at t = 0.
+    //
+    // Without .op the bias point is not a t = 0 state. It is one backward-
+    // Euler step of bias_step from an all-zero history — the sources switched
+    // on at t = 0, the capacitors and inductors starting uncharged — so it is
+    // the state at t = bias_step, and booking it as t = 0 put the whole run
+    // one step late. It is logged at t = bias_step and the transient continues
+    // from there. The t = 0 row before it is the circuit at rest (t = 0-,
+    // every node and branch at 0), as SPICE prints for a run started without
+    // an operating point. For that row the stateless passes (module, analog)
+    // are re-evaluated against the zero solution so I() columns and signals
+    // derived from V()/I() agree with it; digital signals keep the values
+    // their first pass computed, which is what holds over the first step.
+    // Both passes are then re-run against the bias point, so the rest of the
+    // run sees exactly what it saw before.
+    //
+    // (Solving the bias with a vanishingly small step instead, to get a true
+    // t = 0+ state, works for linear capacitors but breaks every ddt()-built
+    // junction charge: their hidden 1 H inductor would be pinned at 0 A
+    // against a q(V) that is not 0, and npn_amp diverged within 31 ns.)
+    //
+    // A library reset (HVR_reset_sim) reboots, and gets its own first rows.
+    auto log_row = [vm](const Eigen::VectorXd &x) {
+        logger_log_step(&vm->logger, vm->time, vm->solver->sys, x);
+        if (vm->phase_log) vm->phase_log(vm);
+        logger_log_signals(&vm->logger, vm->values);
+    };
+    if (vm->op_enabled) {
+        log_row(vm->solver->last_solution);
+    } else {
+        auto stateless_passes = [vm] {
+            if (vm->phase_structural) vm->phase_structural(vm);
+            if (vm->phase_analog)     vm->phase_analog(vm);
+        };
+        const Eigen::VectorXd bias = vm->api->last_solution;
+        vm->api->last_solution.setZero();
+        stateless_passes();
+        vm->time = 0.0;
+        log_row(vm->api->last_solution);
+        vm->api->last_solution = bias;
+        stateless_passes();
+        vm->time = bias_step;
+        log_row(vm->solver->last_solution);
+    }
 }
 
 void vm_run_until(VM *vm, double target_time) {

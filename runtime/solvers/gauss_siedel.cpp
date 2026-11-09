@@ -43,7 +43,12 @@ bool GaussSiedel::has_converged(const Eigen::VectorXd &x_new, const Eigen::Vecto
 void GaussSiedel::run(VM *vm) {
     const double damping_factor = 0.05;
 
-    while (vm->time <= vm->end_time) {
+    // Runs until the next step would overshoot end_time by more than half a
+    // step — not `time <= end_time`, which took one step past the end, and
+    // whose answer flipped with the rounding accumulated in `time += dt`.
+    // Each row is logged AFTER time advances, so it carries the time its
+    // solution belongs to; the t = 0 row is the initial state (vm_boot).
+    while (vm->time < vm->end_time - 0.5 * vm->time_step) {
         double dt = vm_check_zero_crossing(vm, vm->time_step);
         double alpha = 1.0 / dt;
 
@@ -83,10 +88,9 @@ void GaussSiedel::run(VM *vm) {
         }
 
         solver_advance_time(vm->solver, x_guess);
+        vm->time += dt;
         logger_log_step(&vm->logger, vm->time, vm->solver->sys, vm->solver->last_solution);
         if (vm->phase_log) vm->phase_log(vm);
         logger_log_signals(&vm->logger, vm->values);
-
-        vm->time += dt;
     }
 }

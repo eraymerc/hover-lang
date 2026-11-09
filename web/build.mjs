@@ -42,6 +42,7 @@ const EXAMPLES = [
   { id: 'nmos_amp', title: 'NMOS common-source amplifier', file: 'examples/MOSFET/nmos_amp.hvr' },
   { id: 'cmos_inverter', title: 'CMOS inverter', file: 'examples/MOSFET/cmos_inverter.hvr' },
   { id: 'led_ammeter', title: 'White LED with an ammeter', file: 'examples/Optoelectronics/leds/white_led_ammeter.hvr' },
+  { id: 'optocoupler', title: 'Optocoupler', file: 'examples/Optoelectronics/phototransistor/optocoupler.hvr' },
   { id: 'pid', title: 'PID controller (10 kHz clock)', file: 'examples/PIDController/pid_controller.hvr' },
 ];
 

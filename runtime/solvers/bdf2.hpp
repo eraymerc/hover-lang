@@ -3,6 +3,7 @@
 #include <Eigen/Dense>
 #include "../vm/solver_strategy.hpp"
 #include "newton_core.hpp"
+#include "bdf_history.hpp"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // BDF2
@@ -69,7 +70,7 @@ struct BDF2 : SolverStrategy {
     bool is_adaptive() const override { return true; }
 
 private:
-    Eigen::VectorXd x_prev1, x_prev2;
+    BdfHistory hist;  // y_n, y_{n-1}, y_{n-2} and their step lengths
 
     // Row index where branch currents start; everything below it is a node
     // voltage. Captured in run() so the convergence test can pick the right

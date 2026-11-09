@@ -25,7 +25,12 @@
 
 
 void EulerFixed::run(VM *vm) {
-    while (vm->time <= vm->end_time) {
+    // Runs until the next step would overshoot end_time by more than half a
+    // step — not `time <= end_time`, which took one step past the end, and
+    // whose answer flipped with the rounding accumulated in `time += dt`.
+    // Each row is logged AFTER time advances, so it carries the time its
+    // solution belongs to; the t = 0 row is the initial state (vm_boot).
+    while (vm->time < vm->end_time - 0.5 * vm->time_step) {
         double dt = vm_check_zero_crossing(vm, vm->time_step);
         
         // FIX: Sync the timestep so the MNA engine uses the correct alpha
@@ -39,6 +44,7 @@ void EulerFixed::run(VM *vm) {
         vm_run_phase_b(vm);
 
         solver_step(vm->solver);
+        vm->time += dt;
 
         logger_log_step(&vm->logger, vm->time,
                         vm->solver->sys,
@@ -46,7 +52,5 @@ void EulerFixed::run(VM *vm) {
         
         if (vm->phase_log) vm->phase_log(vm);
         logger_log_signals(&vm->logger, vm->values);
-
-        vm->time += dt;
     }
 }

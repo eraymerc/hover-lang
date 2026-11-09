@@ -18,9 +18,8 @@
 // RUN
 //
 // Mirrors Go: func (s *BDF2) Run(vm *VM)
-// 2nd order BDF: alpha = 1.5/dt on steady steps, 1.0/dt on the primer step.
-// xBlend = (4/3)*xPrev1 - (1/3)*xPrev2 (BDF2 history blend), or xPrev1 alone
-// when priming.
+// 2nd order BDF on the actual (variable) step grid; BDF1 when there is no
+// usable history. Coefficients: bdf_history.hpp.
 // ─────────────────────────────────────────────────────────────────────────────
 
 void BDF2::run(VM *vm) {
@@ -28,13 +27,10 @@ void BDF2::run(VM *vm) {
     n_nodes = vm->solver->sys->num_nodes;
 
     int n = (int)vm->solver->last_solution.size();
-    x_prev1 = vm->solver->last_solution;
-    x_prev2 = vm->solver->last_solution;
+    hist.reset(vm->solver->last_solution);
 
     Eigen::VectorXd correction(n);
     Eigen::VectorXd x_blend(n);
-
-    int step_count = 0;
 
     // Jacobian carries over across steps, exactly as ode15s does ("it is
     // natural to retain a copy of the Jacobian matrix... ode15s will
@@ -62,7 +58,7 @@ void BDF2::run(VM *vm) {
             dt = vm_limit_step(vm, dt);
             // A tick at this step's start changes the circuit's inputs: do not
             // integrate across it with pre-tick history (see vm_tick_due).
-            if (vm_tick_due(vm)) step_count = 0;
+            if (vm_tick_due(vm)) hist.restart();
         }
 
         if (vm->zcd_enabled) {
@@ -76,7 +72,7 @@ void BDF2::run(VM *vm) {
                 dt = vm_isolate_zero_crossing(vm, checkpoint, dt);
                 vm_restore_state(vm, checkpoint);
                 vm->time_step = dt;
-                step_count = 0;
+                hist.restart();
             } else {
                 vm_restore_state(vm, checkpoint);
             }
@@ -84,17 +80,11 @@ void BDF2::run(VM *vm) {
 
         vm->solver->sys->dt = dt;
         jac.begin_step();
-        Eigen::VectorXd x_guess = x_prev1;
+        Eigen::VectorXd x_guess = hist.y[0];
 
         bool converged   = false;
-        bool is_priming  = (step_count == 0);
-        double alpha     = is_priming ? (1.0 / dt) : (1.5 / dt);
-
-        if (is_priming) {
-            x_blend = x_prev1;
-        } else {
-            x_blend = (4.0 / 3.0) * x_prev1 - (1.0 / 3.0) * x_prev2;
-        }
+        double alpha;
+        hist.bdf(hist.usable_order(dt, 2), dt, alpha, x_blend);
 
         int iters = 0;
         bool jacobian_current_this_step = false;
@@ -251,8 +241,8 @@ void BDF2::run(VM *vm) {
             if (!jacobian_current_this_step) {
                 // Attribute the failure to the Jacobian, not the step
                 // size: invalidate it so the next attempt re-forms it,
-                // and retry at the SAME dt and the SAME step_count/history
-                // (x_prev1/x_prev2 untouched) — this is a Jacobian retry,
+                // and retry at the SAME dt and the SAME history (hist
+                // untouched) — this is a Jacobian retry,
                 // not a step rejection, so BDF2's multistep history should
                 // not be discarded.
                 jacobian_valid = false;
@@ -296,7 +286,16 @@ void BDF2::run(VM *vm) {
             // means this needs a better-founded test, not a tuned constant.
             reject_run.note(dt);
             vm->time_step *= 0.5;
-            step_count = 0;
+            // Restart at BDF1. With the variable-step coefficients
+            // (bdf_history.hpp) a halved step would still be a valid BDF2 step,
+            // and dropping the restart was tried — it broke
+            // examples/DCMotor/h_bridge.hvr (FATAL at t = 202 ms). There a
+            // rejection marks a discontinuity the solver was not told about
+            // (LoadTorque's friction jump as omega crosses zero, sorunlar
+            // item 14), and BDF2 extrapolating history from across that jump
+            // keeps failing where BDF1 recovers. ndf2 does not restart here;
+            // see its note for the cost on smooth circuits.
+            hist.restart();
             step_trace("bdf2", attempt, vm->time, dt, iters, "reject");
             if (reject_run.exhausted(vm->time_step)) {
                 fprintf(stderr, "[BDF2] FATAL: Failed to converge at t=%.3e\n", vm->time);
@@ -354,15 +353,13 @@ void BDF2::run(VM *vm) {
         jacobian_valid = false;
 
         reject_run.clear();
-        x_prev2 = x_prev1;
-        x_prev1 = x_guess;
+        hist.accept(x_guess, dt);
 
         solver_advance_time(vm->solver, x_guess);
         vm->time += dt;
         logger_log_step(&vm->logger, vm->time, vm->solver->sys, vm->solver->last_solution);
         if (vm->phase_log) vm->phase_log(vm);
         logger_log_signals(&vm->logger, vm->values);
-        step_count++;
 
         if (iters <= 5) {
             vm->time_step *= 1.2;
