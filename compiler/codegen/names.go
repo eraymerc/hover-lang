@@ -135,10 +135,10 @@ func (g *generator) resolveIdent(name string, logic elaborator.LogicObject) stri
 	}
 	// Special keywords
 	if name == "time" {
-		return "vm->time"
+		return "sim.time()"
 	}
 	if name == "dt" {
-		return "vm->time_step"
+		return "sim.dt()"
 	}
 	// Local variable
 	return mangle(logic.Prefix + "." + name)

@@ -75,7 +75,7 @@ LLVM_WINDRES ?= llvm-windres
 #
 #   1. Go builds the CLI:  GOOS=<os> GOARCH=<arch> go build -o /dev/null .
 #   2. Zig builds the runtime, since the user compiles it locally:
-#      zig c++ -std=c++17 -Iruntime -Iruntime/Eigen -target <arch>-<os> \
+#      zig c++ -std=c++20 -Iruntime -Iruntime/Eigen -target <arch>-<os> \
 #          -c runtime/mna/engine.cpp -o /tmp/t.o
 #   3. The user can OBTAIN Zig there — i.e. ziglang.org's download index
 #      lists an <arch>-<os> host build. Without it `hover --setup` has no
@@ -309,13 +309,16 @@ stdlib-archives:
 # Mirrors what `hover --setup` does on a user's machine, but with warnings
 # enabled: users see -w, maintainers should not.
 
+# Must match cxxStd in runtimebuild.go — the standard users' runtimes are
+# built with.
+CXX_STD    := -std=c++20
 CHECK_DIR  := $(RUNTIME_DIR)/build/check
 CHECK_SRCS := $(shell find $(RUNTIME_DIR) -name '*.cpp' -not -path '$(RUNTIME_DIR)/build/*')
 CHECK_OBJS := $(patsubst $(RUNTIME_DIR)/%.cpp,$(CHECK_DIR)/%.o,$(CHECK_SRCS))
 
 $(CHECK_DIR)/%.o: $(RUNTIME_DIR)/%.cpp
 	@mkdir -p $(dir $@)
-	$(ZIG) c++ -std=c++17 -O3 -Wall -Wextra \
+	$(ZIG) c++ $(CXX_STD) -O3 -Wall -Wextra \
 		-I$(RUNTIME_DIR) -I$(RUNTIME_DIR)/Eigen -MMD -MP -c $< -o $@
 
 check-runtime: $(CHECK_OBJS)

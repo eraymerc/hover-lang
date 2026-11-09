@@ -50,7 +50,7 @@ func (g *generator) emitFunctions() {
 // return type carry their full declared shape (arrays decay to pointers as
 // parameters, exactly like C; an array return degrades to the element type).
 func (g *generator) emitForwardDecl(cName string, fn *ast.FuncDeclStatement) {
-	params := []string{"VM *vm"}
+	params := []string{"hvr::Sim &sim"}
 	for _, p := range fn.Parameters {
 		params = append(params, g.hoverTypeOf(p.Type).cParamDecl(p.Name))
 	}
@@ -74,7 +74,7 @@ func (g *generator) emitOneFunction(fn *elaborator.FunctionInfo) {
 		File:   fn.File,
 	}
 
-	params := []string{"VM *vm"}
+	params := []string{"hvr::Sim &sim"}
 	for _, p := range decl.Parameters {
 		params = append(params, g.hoverTypeOf(p.Type).cParamDecl(p.Name))
 		fnLogic.Ports[p.Name] = fn.CName + "." + p.Name

@@ -205,9 +205,9 @@ func (g *generator) emitExpr(expr ast.Expression, logic elaborator.LogicObject) 
 				}
 				net := resolveNet(netName, logic)
 				if g.usingPrevAPI {
-					return fmt.Sprintf(`api_V_prev(vm->api, %s)`, cStr(net)), CDouble
+					return fmt.Sprintf(`sim.V_prev(%s)`, cStr(net)), CDouble
 				}
-				return fmt.Sprintf(`api_V(vm->api, %s)`, cStr(net)), CDouble
+				return fmt.Sprintf(`sim.V(%s)`, cStr(net)), CDouble
 			}
 			return "0.0", CDouble
 		case "I":
@@ -234,9 +234,9 @@ func (g *generator) emitExpr(expr ast.Expression, logic elaborator.LogicObject) 
 					return "0.0", CDouble
 				}
 				if g.usingPrevAPI {
-					return fmt.Sprintf(`api_I_prev(vm->api, %s)`, cStr(elem)), CDouble
+					return fmt.Sprintf(`sim.I_prev(%s)`, cStr(elem)), CDouble
 				}
-				return fmt.Sprintf(`api_I(vm->api, %s)`, cStr(elem)), CDouble
+				return fmt.Sprintf(`sim.I(%s)`, cStr(elem)), CDouble
 			}
 			g.errors = append(g.errors, "I() requires a circuit element name, e.g. I(vsense)")
 			return "0.0", CDouble
@@ -408,7 +408,7 @@ func (g *generator) emitUserFunctionCall(fnName string, argExprs []ast.Expressio
 		}
 
 		cName := fmt.Sprintf("/* UNRESOLVED_FUNCTION_%s */ %s", mangle(fnName), mangle(fnName))
-		args := []string{"vm"}
+		args := []string{"sim"}
 		for _, arg := range argExprs {
 			argCode, _ := g.emitExpr(arg, logic)
 			args = append(args, argCode)
@@ -419,7 +419,7 @@ func (g *generator) emitUserFunctionCall(fnName string, argExprs []ast.Expressio
 	fnDecl := info.Decl
 	args := []string{}
 	if !fnDecl.IsExtern {
-		args = append(args, "vm") // extern C funcs take no VM
+		args = append(args, "sim") // extern C funcs take no Sim
 	}
 	for i, arg := range argExprs {
 		argCode, argType := g.emitExpr(arg, logic)

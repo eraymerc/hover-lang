@@ -10,31 +10,12 @@ import (
 // SMALL UTILITIES
 // ─────────────────────────────────────────────────────────────────────────────
 
-func boolToInt(b bool) int {
-	if b {
-		return 1
-	}
-	return 0
-}
-
-// quotedList joins names into a comma-separated list of C string literals,
-// suitable for a std::vector<std::string> initializer list.
-func quotedList(names []string) string {
-	if len(names) == 0 {
-		return ""
-	}
-	quoted := make([]string, len(names))
-	for i, n := range names {
-		quoted[i] = `"` + n + `"`
-	}
-	return strings.Join(quoted, ", ")
-}
-
 // knownSolvers lists every Hover .solver(...) name this compiler actually
-// supports, mapped to its C++ SolverStrategy struct name. This is the only
-// place that mapping is allowed to live — solverStructName below is a thin
-// wrapper that also enforces "unknown name is a hard error", not a
-// silent fallback.
+// supports, mapped to its C++ SolverStrategy struct name. Generated code
+// selects a solver by its Hover name (hvr::Sim::set_solver), so the runtime
+// recognizes the same names — runtime/hvr_sim/hvr_sim.cpp must list exactly these.
+// solverStructName below is a thin wrapper that also enforces "unknown name
+// is a hard error", not a silent fallback.
 var knownSolvers = map[string]string{
 	"euler_fixed":       "EulerFixed",
 	"euler_adaptive":    "EulerAdaptive",
@@ -91,7 +72,8 @@ var solverFields = map[string]struct {
 // all — there is no "emit but make it a no-op" option in C++ for a
 // nonexistent struct member, so the only correct behavior is to never
 // reference it in generated code.
-func (g *generator) emitSolverTuningOverrides(strategyStruct string, cfg simConfig) {
+func (g *generator) emitSolverTuningOverrides(cfg simConfig) {
+	strategyStruct, _ := solverStructName(cfg.solverType)
 	fields, known := solverFields[strategyStruct]
 	if !known {
 		// Should not happen — solverStructName only ever returns names
@@ -104,13 +86,13 @@ func (g *generator) emitSolverTuningOverrides(strategyStruct string, cfg simConf
 	}
 
 	if cfg.rtol.present && fields.rtol {
-		g.line("strategy.rtol = %s;", cfg.rtol.value)
+		g.line("sim.set_rtol(%s);", cfg.rtol.value)
 	}
 	if cfg.atol.present && fields.atol {
-		g.line("strategy.atol = %s;", cfg.atol.value)
+		g.line("sim.set_atol(%s);", cfg.atol.value)
 	}
 	if cfg.maxIter.present && fields.maxIter {
-		g.line("strategy.max_iter = (int)(%s);", cfg.maxIter.value)
+		g.line("sim.set_max_iter((int)(%s));", cfg.maxIter.value)
 	}
 	// .tran's t_step IS max_dt on a variable-step solver — always emitted, with
 	// no "was it given" test, because t_step is not optional. The runtime's
@@ -118,10 +100,10 @@ func (g *generator) emitSolverTuningOverrides(strategyStruct string, cfg simConf
 	// fires for these solvers; it is kept only for a strategy constructed
 	// directly in C++ (hovercraft, tests) rather than through a .tran.
 	if fields.maxDt {
-		g.line("strategy.max_dt = %s;", cfg.tStep)
+		g.line("sim.set_max_dt(%s);", cfg.tStep)
 	}
 	if cfg.abstol.present && fields.abstol {
-		g.line("strategy.abstol = %s;", cfg.abstol.value)
+		g.line("sim.set_abstol(%s);", cfg.abstol.value)
 	}
 
 	// NOTE — THERE IS NO min_dt TO EMIT, AND .tran's t_step MUST NOT BECOME ONE.

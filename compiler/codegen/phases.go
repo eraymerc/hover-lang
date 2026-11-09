@@ -23,9 +23,9 @@ import (
 // emitted flat, one after another.
 func (g *generator) emitPhaseByDomain(domain token.Type, fnName string) {
 	g.raw(fmt.Sprintf("// ── %s ─────────────────────────────────────────────────────────────────────", strings.ToUpper(fnName)))
-	g.raw(fmt.Sprintf("static void %s(VM *vm) {", fnName))
+	g.raw(fmt.Sprintf("static void %s(hvr::Sim &sim) {", fnName))
 	g.push()
-	g.line("(void)(vm);")
+	g.line("(void)sim;")
 
 	// All variables are file-scope globals — no C blocks needed.
 	// Emit statements flat; use comments to mark module boundaries.
@@ -85,10 +85,11 @@ func (g *generator) emitPhaseLog(vmSignals, branchCurrents []string) {
 	}
 
 	g.raw(`// ── PHASE LOG — publish saved values into vm->values for logger ──────────────`)
-	g.raw(`static void phase_log(VM *vm) {`)
+	g.raw(`static void phase_log(hvr::Sim &sim) {`)
 	g.push()
+	g.line("(void)sim;")
 	for _, elem := range branchCurrents {
-		g.line(`vm->values[%s] = api_I(vm->api, %s);`,
+		g.line(`sim.set_value(%s, sim.I(%s));`,
 			cStr(branchCurrentColumn(elem)), cStr(elem))
 	}
 	for _, sig := range vmSignals {
@@ -107,7 +108,7 @@ func (g *generator) emitPhaseLog(vmSignals, branchCurrents []string) {
 			g.line(`// skipped: %s is an array/pointer/struct (not scalar-loggable)`, sig)
 			continue
 		}
-		g.line(`vm->values[%s] = %s;`, cStr(sig), emitCast(mangled, ht.elem, CDouble))
+		g.line(`sim.set_value(%s, %s);`, cStr(sig), emitCast(mangled, ht.elem, CDouble))
 	}
 	g.pop()
 	g.raw(`}`)
@@ -157,15 +158,15 @@ func (g *generator) emitStateVarSnapshot() {
 	g.raw(`// ── STATE SNAPSHOT — save 'state' variables into vm->values ─────────────────`)
 	g.raw(`// Used by vm_save_state (snapshot.cpp) so ZCD probes and rejected solver`)
 	g.raw(`// steps can actually be rolled back — see emitStateVarSnapshot in codegen.`)
-	g.raw(`static void save_state_vars(VM *vm) {`)
+	g.raw(`static void save_state_vars(hvr::Sim &sim) {`)
 	g.push()
-	g.line("(void)(vm);")
+	g.line("(void)sim;")
 	for _, mangled := range mangledNames {
 		ht := g.typeOf(mangled)
 		if ht.isArray() || ht.isPointer() || ht.elem == CStruct {
 			continue
 		}
-		g.line(`vm->values[%s] = %s;`, cStr(dottedNames[mangled]), emitCast(mangled, ht.elem, CDouble))
+		g.line(`sim.set_value(%s, %s);`, cStr(dottedNames[mangled]), emitCast(mangled, ht.elem, CDouble))
 	}
 	g.pop()
 	g.raw(`}`)
@@ -180,15 +181,15 @@ func (g *generator) emitStateVarSnapshot() {
 	// scalar `state` variable is — a known limitation of this first
 	// version of struct support, not a silently-wrong cast.
 	g.raw(`// ── STATE SNAPSHOT — restore 'state' variables from vm->values ──────────────`)
-	g.raw(`static void restore_state_vars(VM *vm) {`)
+	g.raw(`static void restore_state_vars(hvr::Sim &sim) {`)
 	g.push()
-	g.line("(void)(vm);")
+	g.line("(void)sim;")
 	for _, mangled := range mangledNames {
 		ht := g.typeOf(mangled)
 		if ht.isArray() || ht.isPointer() || ht.elem == CStruct {
 			continue
 		}
-		g.line(`%s = %s;`, mangled, emitCast(fmt.Sprintf(`vm->values[%s]`, cStr(dottedNames[mangled])), CDouble, ht.elem))
+		g.line(`%s = %s;`, mangled, emitCast(fmt.Sprintf(`sim.value(%s)`, cStr(dottedNames[mangled])), CDouble, ht.elem))
 	}
 	g.pop()
 	g.raw(`}`)
@@ -201,7 +202,7 @@ func (g *generator) emitStateVarSnapshot() {
 // input wired to a Hover signal rather than a compile-time constant.
 func (g *generator) emitPhaseB() {
 	g.raw(`// ── PHASE B — STAMP DRIVEN SOURCES ──────────────────────────────────────────`)
-	g.raw(`static void phase_b(VM *vm) {`)
+	g.raw(`static void phase_b(hvr::Sim &sim) {`)
 	g.push()
 
 	for _, phys := range g.prog.Physicals {
@@ -218,9 +219,9 @@ func (g *generator) emitPhaseB() {
 		castSig := emitCast(sig, sigType, CDouble)
 		switch strings.ToLower(phys.Type) {
 		case "voltage_source":
-			g.line(`api_set_voltage_source(vm->api, %s, %s);`, cStr(name), castSig)
+			g.line(`sim.set_voltage_source(%s, %s);`, cStr(name), castSig)
 		case "current_source", "i":
-			g.line(`api_set_current_source(vm->api, %s, %s);`, cStr(name), castSig)
+			g.line(`sim.set_current_source(%s, %s);`, cStr(name), castSig)
 		}
 	}
 

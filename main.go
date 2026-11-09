@@ -577,7 +577,7 @@ func main() {
 
 	compileArgs := []string{
 		"c++",
-		"-std=c++17",
+		cxxStd,
 		"-O3",
 		"-w",
 	}

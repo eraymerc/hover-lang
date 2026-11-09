@@ -317,7 +317,7 @@ func PackageOf(importPath string, isSystem bool) string {
 // in Go and Python; recursing would make `import <semiconductors>` silently
 // pull in every device model in the tree.
 func HvrFilesIn(dir string) ([]string, error) {
-	entries, err := os.ReadDir(dir)
+	entries, err := readDir(dir)
 	if err != nil {
 		return nil, err
 	}

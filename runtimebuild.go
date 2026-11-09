@@ -36,6 +36,13 @@ const runtimeLibName = "libhover_runtime.a"
 // of failing later with unresolved C++ symbols.
 const zigStampName = ".zig-version"
 
+// cxxStd is the C++ standard for everything hover compiles: the runtime
+// archive, every sim.cpp, and the link-cache warm-up. One constant because
+// all three must agree — the warm-up only pays off if its flags match a real
+// compile, and the runtime and sim.cpp share headers. The Makefile's
+// check-runtime target mirrors it as CXX_STD.
+const cxxStd = "-std=c++20"
+
 // runtimeBuildDir is where compiled objects and the final archive live,
 // alongside the shipped sources.
 func runtimeBuildDir(runtimeDir string) string { return filepath.Join(runtimeDir, "build") }
@@ -165,7 +172,7 @@ func buildRuntime(zigPath, runtimeDir string) error {
 				// detects the host libc properly instead of guessing a
 				// triple.
 				args := []string{
-					"c++", "-std=c++17", "-O3", "-w",
+					"c++", cxxStd, "-O3", "-w",
 					"-I" + runtimeDir,
 					"-I" + filepath.Join(runtimeDir, "Eigen"),
 					"-c", srcs[i], "-o", objs[i],
@@ -228,7 +235,7 @@ func warmLinkCache(zigPath string) {
 
 	fmt.Println("[Setup] Warming Zig's C++ link cache...")
 	// Same flags as a real compile, so the cached artifacts actually hit.
-	cmd := exec.Command(zigPath, "c++", "-std=c++17", "-O3", "-w", src, "-o", filepath.Join(dir, "warm"))
+	cmd := exec.Command(zigPath, "c++", cxxStd, "-O3", "-w", src, "-o", filepath.Join(dir, "warm"))
 	_ = cmd.Run()
 }
 

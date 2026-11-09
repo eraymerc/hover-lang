@@ -6,7 +6,6 @@ import (
 	"hover/compiler/lexer"
 	"hover/compiler/parser"
 	token "hover/compiler/token"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -67,7 +66,7 @@ func loadFile(filePath string, result *LoadResult, visiting map[string]int, visi
 	visiting[filePath] = len(visiting)
 	defer delete(visiting, filePath)
 
-	contentBytes, err := os.ReadFile(filePath)
+	contentBytes, err := readFile(filePath)
 	if err != nil {
 		return fmt.Errorf("could not read imported file %q: %w", filePath, err)
 	}

@@ -47,12 +47,13 @@ func (g *generator) emitHvrParamGlobals() {
 }
 
 // emitLibraryMain is emitMain's --hovercraft branch.
-func (g *generator) emitLibraryMain(cfg simConfig, strategyStruct string) error {
+func (g *generator) emitLibraryMain(cfg simConfig) error {
 	if cfg.acEnabled {
 		return fmt.Errorf(".ac is not supported with --hovercraft (the library API steps a transient); " +
 			"build the deck without --hovercraft to run the AC sweep")
 	}
 	g.raw(`#include "hvr_runtime.hpp"`)
+	g.raw(`#include "hvr_sim/hvr_sim_internal.hpp"`)
 	g.raw(`#include "hovercraft.h"`)
 	g.raw(`#include <cstring>`)
 	g.raw("")
@@ -60,11 +61,10 @@ func (g *generator) emitLibraryMain(cfg simConfig, strategyStruct string) error 
 	g.raw(`// ── HOVERCRAFT RUNTIME WIRING ───────────────────────────────────────────────`)
 	g.raw("// File-scope statics (not main()-locals) so every HVR_* call below reaches")
 	g.raw("// the one live instance across separate calls from the host program.")
-	g.raw("static System sys;")
-	g.raw("static Solver solver;")
-	g.raw("static API    api;")
-	g.raw("static VM     vm;")
-	g.raw(fmt.Sprintf("static %s strategy;", strategyStruct))
+	g.raw("static hvr::Sim sim;")
+	g.raw("// The library steps, resets and queries the VM directly (hvr_rt_*,")
+	g.raw("// vm_run_until), so it holds the Sim's VM by reference.")
+	g.raw("static VM    &vm = hvr::internal::vm(sim);")
 	g.raw("static bool   hvr_wired   = false;")
 	g.raw("static bool   hvr_started = false;")
 	g.raw("")
@@ -79,38 +79,7 @@ func (g *generator) emitLibraryMain(cfg simConfig, strategyStruct string) error 
 	g.raw("static void hvr_boot(void) {")
 	g.push()
 	g.line("if (hvr_wired) return;")
-	g.line("system_init_empty(&sys, %s);", cfg.tStep)
-	g.line("register_netlist(&sys);")
-	g.line("system_finalize(&sys);")
-	g.line("stamp_netlist(&sys);")
-	g.raw("")
-	g.line("solver_init(&solver, &sys);")
-	g.line("api_init(&api, &sys, &solver);")
-	g.raw("")
-	g.line("vm.api        = &api;")
-	g.line("vm.solver     = &solver;")
-	g.line("vm.time       = 0.0;")
-	g.line("vm.time_step  = %s;", cfg.tStep)
-	g.line("vm.end_time   = %s;", cfg.tEnd)
-	g.line("vm.zcd_enabled = %d;", boolToInt(cfg.zcdEnabled))
-	g.line("vm.op_enabled  = %d;", boolToInt(cfg.opEnabled))
-	g.line("vm.jacobian_scratch = Eigen::MatrixXd::Zero(sys.size, sys.size);")
-	g.line("vm.base_b_scratch   = Eigen::VectorXd::Zero(sys.size);")
-	g.raw("")
-	g.line("vm.phase_structural = phase_structural;")
-	g.line("vm.phase_digital    = phase_digital;")
-	g.line("vm.phase_analog     = phase_analog;")
-	g.line("vm.phase_b          = phase_b;")
-	g.line("vm.phase_log        = phase_log;")
-	g.line("vm.save_state_vars    = save_state_vars;")
-	g.line("vm.restore_state_vars = restore_state_vars;")
-	g.raw("")
-	g.line("std::vector<std::string> mna_nodes = {%s};", quotedList(cfg.saveMNANodes))
-	g.line("std::vector<std::string> vm_signals = {%s};", quotedList(cfg.loggerSignalList()))
-	g.line("logger_init(&vm.logger, mna_nodes, vm_signals);")
-	g.raw("")
-	g.emitSolverTuningOverrides(strategyStruct, cfg)
-	g.line("vm.strategy = &strategy;")
+	g.emitSimSetup(cfg, "return; // left unwired; the runtime printed why")
 	g.raw("")
 	g.line("hvr_apply_deferred_state_inits();")
 	g.line("hvr_wired = true;")
@@ -461,7 +430,7 @@ func (g *generator) hvrOutputs(cfg simConfig) []hvrOutput {
 
 	var outs []hvrOutput
 	for _, node := range cfg.saveMNANodes {
-		outs = append(outs, hvrOutput{node, fmt.Sprintf("api_V(&api, %s)", cStr(node)), "node"})
+		outs = append(outs, hvrOutput{node, fmt.Sprintf("sim.V(%s)", cStr(node)), "node"})
 	}
 	for _, sig := range cfg.saveVMSignals {
 		mangled := mangle(sig)
@@ -475,7 +444,7 @@ func (g *generator) hvrOutputs(cfg simConfig) []hvrOutput {
 		outs = append(outs, hvrOutput{sig, emitCast(mangled, ht.elem, CDouble), "signal"})
 	}
 	for _, elem := range cfg.saveBranchCurrents {
-		outs = append(outs, hvrOutput{branchCurrentColumn(elem), fmt.Sprintf("api_I(&api, %s)", cStr(elem)), "current"})
+		outs = append(outs, hvrOutput{branchCurrentColumn(elem), fmt.Sprintf("sim.I(%s)", cStr(elem)), "current"})
 	}
 	return outs
 }

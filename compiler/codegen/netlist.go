@@ -25,7 +25,7 @@ import (
 func (g *generator) emitBuildNetlist() {
 	// ── Pass 1: register all nodes and branches (no stamping yet) ────────────────
 	g.raw(`// ── NETLIST PASS 1: register nodes & branches ────────────────────────────────`)
-	g.raw(`static void register_netlist(System *sys) {`)
+	g.raw(`static void register_netlist(hvr::Sim &sim) {`)
 	g.push()
 
 	for _, phys := range g.prog.Physicals {
@@ -38,7 +38,7 @@ func (g *generator) emitBuildNetlist() {
 
 	// ── Pass 2: stamp values into the now-correctly-sized matrices ────────────────
 	g.raw(`// ── NETLIST PASS 2: stamp values ─────────────────────────────────────────────`)
-	g.raw(`static void stamp_netlist(System *sys) {`)
+	g.raw(`static void stamp_netlist(hvr::Sim &sim) {`)
 	g.push()
 
 	for _, phys := range g.prog.Physicals {
@@ -59,12 +59,12 @@ func (g *generator) emitRegisterCall(phys elaborator.PhysicalObject) {
 	for _, n := range phys.Nodes {
 		cleanN := n // elaborator names are structural now — nothing to scrub
 		if cleanN != "gnd" && cleanN != "0" && cleanN != "" {
-			g.line("sys->register_node(%s);", cStr(cleanN))
+			g.line("sim.register_node(%s);", cStr(cleanN))
 		}
 	}
 	// Register branch if this primitive needs one
 	if branchBearingType(phys.Type) {
-		g.line("sys->register_branch(%s);", cStr(phys.Name))
+		g.line("sim.register_branch(%s);", cStr(phys.Name))
 	}
 }
 
@@ -97,7 +97,7 @@ func (g *generator) emitStampCall(phys elaborator.PhysicalObject) {
 		if i >= len(phys.Nodes) || phys.Nodes[i] == "gnd" || phys.Nodes[i] == "0" {
 			return "-1"
 		}
-		return fmt.Sprintf(`sys->resolve_node(%s)`, cStr(phys.Nodes[i]))
+		return fmt.Sprintf(`sim.resolve_node(%s)`, cStr(phys.Nodes[i]))
 	}
 
 	param := func(i int) string {
@@ -112,37 +112,37 @@ func (g *generator) emitStampCall(phys elaborator.PhysicalObject) {
 
 	switch strings.ToLower(phys.Type) {
 	case "r", "resistor":
-		g.line("stamp_resistor(sys, %s, %s, %s);",
+		g.line("sim.stamp_resistor(%s, %s, %s);",
 			node(0), node(1), param(0))
 
 	case "c", "capacitor":
-		g.line("stamp_capacitor(sys, %s, %s, %s);",
+		g.line("sim.stamp_capacitor(%s, %s, %s);",
 			node(0), node(1), param(0))
 
 	case "l", "inductor":
-		g.line("{ int br = sys->resolve_branch(%s); stamp_inductor(sys, %s, %s, %s, br); }",
+		g.line("{ int br = sim.resolve_branch(%s); sim.stamp_inductor(%s, %s, %s, br); }",
 			name, node(0), node(1), param(0))
 
 	case "voltage_source", "v":
-		g.line("{ int br = sys->resolve_branch(%s); stamp_voltage_source(sys, %s, %s, %s, br); }",
+		g.line("{ int br = sim.resolve_branch(%s); sim.stamp_voltage_source(%s, %s, %s, br); }",
 			name, node(0), node(1), param(0))
 		if ac, ph, ok := acExcitation(phys); ok {
-			g.line("stamp_ac_voltage(sys, sys->resolve_branch(%s), %.17g, %.17g);", name, ac, ph)
+			g.line("sim.stamp_ac_voltage(sim.resolve_branch(%s), %.17g, %.17g);", name, ac, ph)
 		}
 
 	case "current_source", "i":
-		g.line("stamp_current_source(sys, %s, %s, %s, %s);",
+		g.line("sim.stamp_current_source(%s, %s, %s, %s);",
 			node(0), node(1), param(0), name)
 		if ac, ph, ok := acExcitation(phys); ok {
-			g.line("stamp_ac_current(sys, %s, %s, %.17g, %.17g);", node(0), node(1), ac, ph)
+			g.line("sim.stamp_ac_current(%s, %s, %.17g, %.17g);", node(0), node(1), ac, ph)
 		}
 
 	case "vccs", "g":
-		g.line("stamp_vccs(sys, %s, %s, %s, %s, %s);",
+		g.line("sim.stamp_vccs(%s, %s, %s, %s, %s);",
 			node(0), node(1), node(2), node(3), param(0))
 
 	case "vcvs", "e":
-		g.line("{ int br = sys->resolve_branch(%s); stamp_vcvs(sys, %s, %s, %s, %s, %s, br); }",
+		g.line("{ int br = sim.resolve_branch(%s); sim.stamp_vcvs(%s, %s, %s, %s, %s, br); }",
 			name, node(0), node(1), node(2), node(3), param(0))
 
 	// SenseElement carries the name of the branch whose current is sensed —
@@ -157,7 +157,7 @@ func (g *generator) emitStampCall(phys elaborator.PhysicalObject) {
 			g.line("#error unresolved sense element for CCCS %s", phys.Name)
 			break
 		}
-		g.line("{ int sens = sys->resolve_branch(%s); stamp_cccs(sys, %s, %s, sens, %s); }",
+		g.line("{ int sens = sim.resolve_branch(%s); sim.stamp_cccs(%s, %s, sens, %s); }",
 			cStr(phys.SenseElement), node(0), node(1), param(0))
 
 	case "ccvs", "h":
@@ -165,7 +165,7 @@ func (g *generator) emitStampCall(phys elaborator.PhysicalObject) {
 			g.line("#error unresolved sense element for CCVS %s", phys.Name)
 			break
 		}
-		g.line("{ int sens = sys->resolve_branch(%s); int br = sys->resolve_branch(%s); stamp_ccvs(sys, %s, %s, sens, %s, br); }",
+		g.line("{ int sens = sim.resolve_branch(%s); int br = sim.resolve_branch(%s); sim.stamp_ccvs(%s, %s, sens, %s, br); }",
 			cStr(phys.SenseElement), name, node(0), node(1), param(0))
 	}
 }

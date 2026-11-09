@@ -103,6 +103,11 @@ struct VM {
     void (*save_state_vars)(VM *vm);
     void (*restore_state_vars)(VM *vm);
 
+    // The hvr::Sim that owns this VM (runtime/hvr_sim/hvr_sim.cpp). Its phase-hook
+    // trampolines use it to hand generated phases their Sim& — the VM
+    // itself never reads it.
+    void *host = nullptr;
+
     // Pre-allocated Jacobian scratch — used by implicit solvers
     Eigen::MatrixXd jacobian_scratch;
     Eigen::VectorXd base_b_scratch;
