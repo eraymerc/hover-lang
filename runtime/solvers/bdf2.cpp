@@ -8,6 +8,7 @@
 #include "../vm/zcd.hpp"
 
 #include <cstdio>
+#include <cstdlib>
 #include <cmath>
 
 // The convergence test and the within-step Jacobian refresh policy now live in
@@ -168,8 +169,13 @@ void BDF2::run(VM *vm) {
 
             if (newton_converged(x_new, x_guess, n_nodes, rtol, atol, abstol, conv) &&
             vm_slots_converged(vm, x_new, rtol, atol, abstol)) {
+                if (vm_kcl_ratio(vm, x_new, alpha, x_blend, nullptr, KCL_RTOL, KCL_ATOL) > KCL_VETO) {
+                    step_trace("bdf2", attempt, vm->time, dt, iters, "kcl-veto");
+                    break;   // a non-solution: fail the attempt (see KCL VETO, newton_core.hpp)
+                }
                 x_guess = x_new;
                 converged = true;
+
                 break;
             }
 

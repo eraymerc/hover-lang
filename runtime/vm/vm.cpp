@@ -4,6 +4,7 @@
 #include "../solvers/step_limits.hpp"
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <cstdio>
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -72,6 +73,55 @@ bool vm_slots_converged(VM *vm, const Eigen::VectorXd &x_new,
         }
     }
     return true;
+}
+
+double vm_kcl_ratio(VM *vm, const Eigen::VectorXd &x, double alpha,
+                    const Eigen::VectorXd &x_history, const Eigen::VectorXd *correction,
+                    double rtol, double atol, int *worst_row) {
+    // A PROBE: it must leave the solver bit-for-bit where it found it. Not just
+    // logically — current sources are stamped into B_static incrementally
+    // (B += new - last), so an extra drive pass re-rounds B even when it
+    // writes the same values, and examples/Diode/rectifier.hvr sits close
+    // enough to its convergence edge that this alone turned a clean run into a
+    // FATAL at 15.5 ms. So B_static and every source's last value are saved
+    // and put back exactly, and the analog outputs are recomputed at the
+    // caller's own read-view and Newton history (a deterministic re-run).
+    API    *api = vm->api;
+    System *sys = vm->solver->sys;
+    const Eigen::VectorXd last_saved = api->last_solution;
+    const Eigen::VectorXd prev_saved = api->prev_solution;
+    const Eigen::VectorXd b_saved    = sys->B_static;
+    std::vector<double> cs_saved;
+    cs_saved.reserve(sys->current_sources.size());
+    for (const auto &kv : sys->current_sources) cs_saved.push_back(kv.second.last_value);
+
+    api->last_solution = x;
+    api->prev_solution = x;          // nr_prev(v) == v: every limiter passes through
+    vm_run_analog(vm);
+    vm_run_phase_b(vm);
+
+    const Eigen::VectorXd gx   = sys->G * x;
+    const Eigen::VectorXd cdot = sys->C * (x_history - x);
+    double worst = 0.0;
+    int    wrow  = -1;
+    for (int i = 0; i < x.size(); i++) {
+        double rhs = sys->B_static(i) + alpha * cdot(i);
+        if (correction) rhs += (*correction)(i);
+        const double r = rhs - gx(i);
+        double traffic = std::abs(gx(i)) + alpha * std::abs(cdot(i)) + std::abs(sys->B_static(i));
+        if (correction) traffic += std::abs((*correction)(i));
+        const double ratio = std::abs(r) / (rtol * traffic + atol);
+        if (!(ratio <= worst)) { worst = ratio; wrow = i; }   // NaN counts as worst
+    }
+
+    api->last_solution = last_saved;
+    api->prev_solution = prev_saved;
+    vm_run_analog(vm);
+    sys->B_static = b_saved;
+    size_t k = 0;
+    for (auto &kv : sys->current_sources) kv.second.last_value = cs_saved[k++];
+    if (worst_row) *worst_row = wrow;
+    return worst;
 }
 
 void vm_run_phase_b(VM *vm) {

@@ -74,6 +74,8 @@ EulerAdaptive::StepResult EulerAdaptive::take_implicit_step(VM *vm, double dt) {
 
         if (newton_converged(x_new, x_guess, n_nodes, rtol, atol, abstol, conv) &&
             vm_slots_converged(vm, x_new, rtol, atol, abstol)) {
+            if (vm_kcl_ratio(vm, x_new, alpha, x_anchor, nullptr, KCL_RTOL, KCL_ATOL) > KCL_VETO)
+                break;   // a non-solution: fail the attempt (see KCL VETO, newton_core.hpp)
             x_guess = x_new;
             converged = true;
             break;

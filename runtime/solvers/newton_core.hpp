@@ -56,6 +56,35 @@ struct ConvergenceReport {
     double worst_tol   = 0.0;   // the tolerance it was compared against
 };
 
+// KCL VETO — the false-convergence guard (docs/hoveR_sorunlar.txt item 21).
+//
+// newton_converged only asks whether the iterate stopped moving. Two things in
+// this engine let it stop at a point that is not a solution:
+//   * junction and FET limiters (pnjlim, fetlim, limvds) are written in the
+//     models and evaluate each device at a voltage held near the previous
+//     iterate, so a stalled iterate can balance limited currents while the
+//     true ones are nowhere near balance — SPICE refuses convergence whenever a
+//     limiter is active (CKTnoncon) for exactly this reason;
+//   * rtol scales with |x|, so a node that has run away to kilovolts is judged
+//     against a tolerance of volts.
+// Measured on examples/MOSFET/h_bridge_inverter.hvr (500 ns ceiling): a step
+// accepted with bridge_b jumping from -0.78 V to -11.9 kV — a node the NMOS
+// body diode clamps at -0.7 V — after which the run continued to 40 ms on that
+// value.
+//
+// So a step-converged x must also satisfy KCL with every limiter released
+// (vm_kcl_ratio: true residual of row i over rtol*traffic_i + atol, with
+// rtol = 1e-3 and atol = 1e-9). The veto threshold was set from measurements
+// over every accepted step of the healthy decks — worst ratio 5.5 (rectifier),
+// 2.0 (npn_amp), 1.2 (optocoupler), at most 0.01 elsewhere — against the
+// inverter, where hundreds of steps exceed 10 and the worst reach 1000 (a
+// residual as large as all the current in the row). A vetoed step is a failed
+// step: the caller's usual recovery (re-form the Jacobian, then cut dt) takes
+// over, since iterating on from an iterate that no longer moves cannot help.
+constexpr double KCL_RTOL  = 1e-3;
+constexpr double KCL_ATOL  = 1e-9;
+constexpr double KCL_VETO  = 10.0;
+
 // newton_converged answers whether the Newton step from x_old to x_new is small
 // enough to stop, and fills `rep` with the measurements above.
 //

@@ -161,6 +161,19 @@ void vm_commit_slots_at(VM *vm, const Eigen::VectorXd &x);
 bool vm_slots_converged(VM *vm, const Eigen::VectorXd &x_new,
                         double rtol, double vntol, double abstol);
 
+// KCL check at a step-converged x: the worst row of |r_i| / (rtol*traffic_i +
+// atol), where r is the TRUE nonlinear residual and traffic_i the magnitude of
+// the currents flowing in row i (residual_converged's yardstick). "True" means
+// device models are evaluated with nr_prev() == x, so no junction or FET
+// limiter clips anything: a point that only balances because a limiter is
+// holding a device voltage away from its node voltages is exactly the false
+// convergence SPICE's CKTnoncon exists to refuse. correction is the solver's
+// PHYSICAL extra RHS term (trapezoidal's trap_base), never the Norton term.
+// The API's read-view and Newton history are restored afterwards.
+double vm_kcl_ratio(VM *vm, const Eigen::VectorXd &x, double alpha,
+                    const Eigen::VectorXd &x_history, const Eigen::VectorXd *correction,
+                    double rtol, double atol, int *worst_row = nullptr);
+
 // ─────────────────────────────────────────────────────────────────────────────
 // PHASE EXECUTION
 // Mirrors Go: RunDigital, RunAnalog, RunPhaseB

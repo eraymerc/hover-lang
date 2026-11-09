@@ -1,5 +1,6 @@
 #include "trapezoidal_fixed.hpp"
 #include "newton_trust_region.hpp"
+#include "newton_core.hpp"
 #include "../vm/vm.hpp"
 
 #include <cstdio>
@@ -126,6 +127,12 @@ void TrapezoidalFixed::run(VM *vm) {
 
             if (trap_converged(x_new, x_guess) &&
                 vm_slots_converged(vm, x_new, rtol, atol, atol)) {   // one tolerance here, as trap_converged
+                // A fixed-step solver cannot reject the step; a vetoed point is
+                // still taken, but reported by the not-converged warning below
+                // instead of passing silently (KCL VETO, newton_core.hpp).
+                if (vm_kcl_ratio(vm, x_new, alpha_this_iter, x_anchor, using_euler ? nullptr : &trap_base,
+                                 KCL_RTOL, KCL_ATOL) > KCL_VETO)
+                    break;
                 x_guess = x_new;
                 converged = true;
                 break;
