@@ -1,0 +1,4 @@
+# npm install output and the cached wasm32 runtime archive — both rebuilt by
+# `make web-playground`.
+node_modules/
+build/

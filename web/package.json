@@ -1,0 +1,10 @@
+{
+  "name": "hover-web-playground-build",
+  "private": true,
+  "description": "Build-time dependencies of `make web-playground`: the in-browser Clang/LLD the playground ships, and the chart library it draws with. Nothing here is a runtime dependency of the hover CLI.",
+  "type": "module",
+  "dependencies": {
+    "@yowasp/clang": "22.0.0-git20542-10",
+    "uplot": "1.6.32"
+  }
+}

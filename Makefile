@@ -20,6 +20,8 @@
 #                         Not needed to package; run it in CI so runtime
 #                         breakage surfaces here rather than on a user's
 #                         machine at `hover --setup` time.
+#   make web-playground → Build the in-browser playground's assets into the
+#                         website (WEB_PLAYGROUND_DIR). Needs Go and Node.
 #   make clean          → Remove build artifacts, staging dirs and releases/
 #   make help           → List targets
 #
@@ -327,12 +329,41 @@ check-runtime: $(CHECK_OBJS)
 
 -include $(CHECK_OBJS:.o=.d)
 
+# ── WEB PLAYGROUND ────────────────────────────────────────────────────────────
+# The website's /playground/ compiles and runs Hover entirely in the browser:
+# this repo's Go front end built for js/wasm turns .hvr into sim.cpp, and
+# YoWASP's Clang/LLD (WebAssembly) links that against a runtime archive
+# prebuilt here for wasm32-wasip1 by the same Clang. web/build.mjs assembles
+# all of it — see the comment at its top.
+#
+# Node is needed at BUILD time only (to run Clang over the runtime and to
+# fetch the pinned npm packages in web/package.json); the web host serves
+# static files. The runtime step takes a few minutes and is skipped while
+# web/build/libhover_runtime.a is newer than the runtime sources.
+
+WEB_PLAYGROUND_DIR ?= ../website/assets/playground
+WEB_BUILD          := web/build
+# wasm_exec.js must come from the Go that builds the front end. Go >= 1.24
+# keeps it in lib/wasm; older releases in misc/wasm.
+GO_WASM_EXEC = $(firstword $(wildcard $(shell go env GOROOT)/lib/wasm/wasm_exec.js $(shell go env GOROOT)/misc/wasm/wasm_exec.js))
+
+.PHONY: web-playground
+web-playground:
+	@test -n "$(GO_WASM_EXEC)" || { echo "[web] wasm_exec.js not found under $$(go env GOROOT)"; exit 1; }
+	@command -v node >/dev/null || { echo "[web] node is required to build the playground"; exit 1; }
+	cd web && npm install --no-audit --no-fund --loglevel=error
+	@mkdir -p $(WEB_BUILD)
+	@rm -f $(GEN_SRCS)
+	GOOS=js GOARCH=wasm go build -trimpath -ldflags="-s -w" -o $(WEB_BUILD)/hover-web.wasm ./cmd/hover-web
+	node web/build.mjs --out $(WEB_PLAYGROUND_DIR) \
+		--frontend $(WEB_BUILD)/hover-web.wasm --wasm-exec $(GO_WASM_EXEC)
+
 # ── UTILITIES ─────────────────────────────────────────────────────────────────
 
 clean:
 	@echo "Cleaning build artifacts..."
 	rm -rf $(RUNTIME_DIR)/build
-	rm -rf build
+	rm -rf build $(WEB_BUILD)
 	rm -f $(ICON_SYSO) $(GEN_SRCS)
 	rm -rf releases
 	rm -rf hover_linux hover_win
@@ -347,6 +378,8 @@ help:
 	@echo "  make stdlib-archives - Package the standard library for the web"
 	@echo "                       (releases do NOT bundle it; --setup downloads it)"
 	@echo "  make check-runtime - Compile the C++ runtime locally (CI check)"
+	@echo "  make web-playground - Build the browser playground into the website"
+	@echo "                       (WEB_PLAYGROUND_DIR=$(WEB_PLAYGROUND_DIR); needs Node)"
 	@echo "  make clean         - Remove build artifacts"
 	@echo ""
 	@echo "  VERSION=$(VERSION) (override with VERSION=v1.2.3)"
