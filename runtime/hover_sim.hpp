@@ -75,6 +75,11 @@ public:
     void set_phases(Phase structural, Phase digital, Phase analog, Phase drive_sources,
                     Phase log, Phase save_state, Phase restore_state);
 
+    // A clock domain (`.clock(name, period);`) and the phase holding the
+    // digital modules bound to it, which then runs once per tick at
+    // t = k * period. While it runs, dt() is the period. Call after init_vm.
+    void add_clock(const char *name, double period, Phase phase);
+
     // What the logger records: MNA node voltages, then VM signals (values
     // published with set_value). init_logger fixes the column set.
     void log_node(const char *name);
@@ -102,7 +107,7 @@ public:
 
     // ── Inside phases ────────────────────────────────────────────────────────
     double time() const;
-    double dt() const;
+    double dt() const;  // the clock period inside a clocked phase, else the solver step
     double V(const char *net) const;
     double V_prev(const char *net) const;  // previous Newton iterate
     double I(const char *element) const;
@@ -120,6 +125,7 @@ private:
 
     friend VM &internal::vm(Sim &sim);
     template <int Slot> static void run_phase(VM *vm);
+    static void run_clock(VM *vm, int index);
 };
 
 }  // namespace hvr

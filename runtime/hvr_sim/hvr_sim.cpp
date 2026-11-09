@@ -30,6 +30,8 @@ struct Sim::Impl {
     std::vector<std::string> log_nodes;
     std::vector<std::string> log_signals;
     Phase phases[kSlots] = {};
+    std::vector<Phase> clock_phases;  // parallel to vm.clocks
+    double tick_dt = 0.0;             // period of the clock whose phase is running, else 0
 };
 
 // The VM calls its phase hooks as void(VM*). Each hook is wired to one
@@ -105,6 +107,26 @@ void Sim::set_phases(Phase structural, Phase digital, Phase analog, Phase drive_
     m.vm.phase_log = &run_phase<kLog>;
     m.vm.save_state_vars = &run_phase<kSaveState>;
     m.vm.restore_state_vars = &run_phase<kRestoreState>;
+}
+
+void Sim::add_clock(const char *, double period, Phase phase) {
+    impl_->clock_phases.push_back(phase);
+    VMClock c;
+    c.period = period;
+    impl_->vm.clocks.push_back(c);
+    impl_->vm.run_clock = &Sim::run_clock;
+}
+
+// The VM's clock hook: run domain `index`'s phase with dt() reporting its
+// period — so `dt` means the sample period in a clocked module and in every
+// function it calls.
+void Sim::run_clock(VM *vm, int index) {
+    Sim &sim = *static_cast<Sim *>(vm->host);
+    Impl &m = *sim.impl_;
+    const double saved = m.tick_dt;
+    m.tick_dt = vm->clocks[index].period;
+    m.clock_phases[index](sim);
+    m.tick_dt = saved;
 }
 
 void Sim::log_node(const char *name) { impl_->log_nodes.emplace_back(name); }
@@ -189,7 +211,7 @@ bool Sim::run_ac() { return vm_run_ac(&impl_->vm); }
 // ── Inside phases ────────────────────────────────────────────────────────────
 
 double Sim::time() const { return impl_->vm.time; }
-double Sim::dt() const { return impl_->vm.time_step; }
+double Sim::dt() const { return impl_->tick_dt > 0.0 ? impl_->tick_dt : impl_->vm.time_step; }
 double Sim::V(const char *net) const { return api_V(&impl_->api, net); }
 double Sim::V_prev(const char *net) const { return api_V_prev(&impl_->api, net); }
 double Sim::I(const char *element) const { return api_I(&impl_->api, element); }

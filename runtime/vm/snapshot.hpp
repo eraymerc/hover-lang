@@ -3,6 +3,7 @@
 #include <Eigen/Dense>
 #include <unordered_map>
 #include <string>
+#include <vector>
 
 // ─────────────────────────────────────────────────────────────────────────────
 // VM SNAPSHOT
@@ -25,6 +26,7 @@ struct VMSnapshot {
     Eigen::VectorXd                         last_solution;
     Eigen::VectorXd                         b_static;
     std::unordered_map<std::string, double> cs_last_vals;  // current source last values
+    std::vector<long>                       clock_last_tick; // per VMClock: a rolled-back step un-runs its tick
 };
 
 // Forward declaration

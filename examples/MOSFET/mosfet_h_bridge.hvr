@@ -8,10 +8,15 @@
 .save(main.motor_a, main.motor_b, main.omega_node, main.loadCmd,
       main.cmd_TL, main.cmd_BL, main.cmd_TR, main.cmd_BR);
 .op;    // Settle the bridge/motor bias point before the switching sequence.
-.zcd;   // HBridgeControl's outputs step discretely at t_switch +/- deadtime --
-        // this isolates those edges instead of stepping across them.
 .tran(0, 400m, 20u);
 .solver(bdf2);
+
+// The H-bridge sequencer runs on a 1 kHz timer tick, as it would on a
+// microcontroller. Its commands can only change on a tick, and ticks are
+// points the solver steps exactly onto, so the switching edges at
+// t_switch +/- deadtime (both whole milliseconds) are hit precisely without
+// .zcd hunting for them. (.zcd was here for exactly those edges.)
+.clock(mcu, 1m);
 
 import <parts/mosfet/nmos> as nfet;
 import <parts/mosfet/pmos> as pfet;
@@ -59,6 +64,9 @@ module DCMotor<double Ra, double La, double gm_torque, double Ke,
     current_source<>(loadCmd) [gnd, omega_node];
 }
 
+// Not clocked: this is a model of the motor's physics (friction always
+// opposes motion), not controller firmware, so it follows the solver.
+//
 // Recomputes the opposing load current every step based on the *current*
 // sign of omega, so it always fights whichever direction the rotor is
 // actually spinning.
@@ -89,6 +97,9 @@ digital module LoadTorque<double Tload>
 //
 //   High-side P-channel: gate at 0 V turns it ON (Vsg = vcc), gate at vcc OFF.
 //   Low-side  N-channel: gate at vgs_on turns it ON, 0 V OFF.
+//
+// Bound to the `mcu` clock below: evaluated once per millisecond, outputs
+// held in between.
 
 digital module HBridgeControl<double vcc_val, double vgs_on,
                               double t_switch, double deadtime>
@@ -205,7 +216,7 @@ module main<>() []
     // specified at; the high side gets the full 12 V rail for free, since
     // turning a P-channel on means pulling its gate to ground.
     module ctrl = HBridgeControl<12, 10, 200m, 2m>
-                  (cmd_TL, cmd_BL, cmd_TR, cmd_BR) [];
+                  (cmd_TL, cmd_BL, cmd_TR, cmd_BR) [] @mcu;
 
     // 47 Ohm gate resistors
     module bridge = HBridge<47>

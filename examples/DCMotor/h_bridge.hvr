@@ -9,10 +9,15 @@
 // No .op: this is a startup run. .op would relax the rotor-inertia cap and
 // winding inductance to DC too, so the motor would start already spinning.
 // Junction bias is still solved without it (same Newton, uncharged C/L).
-.zcd;   // HBridgeControl's outputs step discretely at t_switch +/- deadtime --
-        // this isolates those edges instead of stepping across them.
 .tran(0, 400m, 20u);
 .solver(bdf2);
+
+// The H-bridge sequencer runs on a 1 kHz timer tick, as it would on a
+// microcontroller. Its commands can only change on a tick, and ticks are
+// points the solver steps exactly onto, so the switching edges at
+// t_switch +/- deadtime (both whole milliseconds) are hit precisely without
+// .zcd hunting for them. (.zcd was here for exactly those edges.)
+.clock(mcu, 1m);
 
 import <semiconductors/bjt>;
 import <semiconductors> as devices;
@@ -74,6 +79,9 @@ module DCMotor<double Ra, double La, double gm_torque, double Ke,
     current_source<>(loadCmd) [gnd, omega_node];
 }
 
+// Not clocked: this is a model of the motor's physics (friction always
+// opposes motion), not controller firmware, so it follows the solver.
+//
 // Recomputes the opposing load current every step based on the *current*
 // sign of omega, so it always fights whichever direction the rotor is
 // actually spinning -- unlike a constant current_source, this can't bias
@@ -99,6 +107,9 @@ digital module LoadTorque<double Tload>
 // off before the opposite diagonal turns on, so both switches in a leg
 // (e.g. TL and BL) are never commanded on simultaneously -- avoids
 // shoot-through across the supply.
+//
+// Bound to the `mcu` clock below: evaluated once per millisecond, outputs
+// held in between.
 
 digital module HBridgeControl<double vcc_val, double t_switch, double deadtime>
 (output double cmd_TL, output double cmd_BL,
@@ -196,7 +207,7 @@ module main<>() []
 
     // Direction sequencer: forward until 200ms, 4ms dead-time, then reverse.
     module ctrl = HBridgeControl<12, 200m, 2m>
-                  (cmd_TL, cmd_BL, cmd_TR, cmd_BR) [];
+                  (cmd_TL, cmd_BL, cmd_TR, cmd_BR) [] @mcu;
 
     // 1k base resistors
     module bridge = HBridge<1>

@@ -45,6 +45,12 @@ type LogicObject struct {
 	File string
 
 	Domain token.Type
+
+	// Clock is the clock domain this statement runs in (`@name` on the
+	// instance, or inherited from an enclosing one), or "" to run every
+	// solver step. Only ever set on DIGITAL logic: analog equations are
+	// continuous and structural statements run every step regardless.
+	Clock string
 }
 
 // FunctionInfo is one function declaration's compilation identity: the
@@ -176,6 +182,12 @@ type Elaborator struct {
 	// different files (bare "LED" here, "L.LED" there), and a cycle is a
 	// property of the declaration, not of how someone spelled it.
 	expanding map[*ast.ModuleDeclStatement]bool
+
+	// declaredClocks holds the names declared by the entry file's
+	// `.clock(name, period);` directives, so an `@name` on an instance can be
+	// checked where its line number is known. The period itself is codegen's
+	// business (see codegen/directives.go).
+	declaredClocks map[string]bool
 
 	// elementIndex maps a flattened element name ("main.motor.vsense") to its
 	// index in output.Physicals. EVERY physical is registered here, user-named

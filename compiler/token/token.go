@@ -60,6 +60,7 @@ const (
 	COMMA    // ,
 	SEMI     // ;
 	COLON    // :
+	AT       // @  — binds a module instance to a clock: `module c = M<>()[] @mcu;`
 
 	// Keywords
 	MODULE
@@ -127,6 +128,7 @@ var tokens = [...]string{
 	COMMA:    ",",
 	SEMI:     ";",
 	COLON:    ":",
+	AT:       "@",
 	MODULE:   "MODULE",
 	FUNC:     "FUNC",
 	STATE:    "STATE",

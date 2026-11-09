@@ -61,6 +61,14 @@ void NDF2::run(VM *vm) {
         attempt++;
         VMSnapshot checkpoint = vm_save_state(vm);
         double dt = vm->time_step;
+        // End this step on the next clock tick if it would cross one. Local
+        // to the step: the controller's own preferred step is untouched.
+        if (!vm->clocks.empty()) {
+            dt = vm_limit_step(vm, dt);
+            // A tick at this step's start changes the circuit's inputs: do not
+            // integrate across it with pre-tick history (see vm_tick_due).
+            if (vm_tick_due(vm)) step_count = 0;
+        }
 
         if (vm->zcd_enabled) {
             vm->time += dt;

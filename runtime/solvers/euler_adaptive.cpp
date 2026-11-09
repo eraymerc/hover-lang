@@ -122,6 +122,9 @@ void EulerAdaptive::run(VM *vm) {
         attempt++;
         VMSnapshot checkpoint = vm_save_state(vm);
         double dt = vm->time_step;
+        // End this step on the next clock tick if it would cross one. Local
+        // to the step: the controller's own preferred step is untouched.
+        if (!vm->clocks.empty()) dt = vm_limit_step(vm, dt);
 
         if (vm->zcd_enabled) {
             vm->time += dt;

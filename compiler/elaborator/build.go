@@ -79,7 +79,8 @@ func (e *Elaborator) Elaborate() (*ElaboratedProgram, error) {
 	e.output.MainParams = copyMapSF(mainParams)
 	e.output.MainPorts = copyMapSS(mainPorts)
 
-	e.flattenModule(main, "main", mainParams, mainPorts, main.Token.Type)
+	e.declaredClocks = declaredClocks(e.output.Directives)
+	e.flattenModule(main, "main", mainParams, mainPorts, main.Token.Type, "")
 
 	// 3. Post-flatten validation (elements.go). Both passes need the COMPLETE
 	//    design: a CCCS/CCVS sense reference legitimately points forward, and a
@@ -95,4 +96,19 @@ func (e *Elaborator) Elaborate() (*ElaboratedProgram, error) {
 	}
 
 	return e.output, nil
+}
+
+// declaredClocks collects the clock names declared by `.clock(name, ...)`
+// directives. A malformed one is left for codegen to report.
+func declaredClocks(directives []*ast.DirectiveStatement) map[string]bool {
+	names := map[string]bool{}
+	for _, d := range directives {
+		if d.Name != "clock" || len(d.Args) == 0 {
+			continue
+		}
+		if id, ok := d.Args[0].(*ast.IdentifierExpression); ok {
+			names[id.Value] = true
+		}
+	}
+	return names
 }

@@ -3,7 +3,9 @@ package codegen
 import (
 	"errors"
 	"fmt"
+	"math"
 	"sort"
+	"strconv"
 	"strings"
 
 	ast "hover/compiler/ast"
@@ -86,6 +88,9 @@ type simConfig struct {
 	// saveMNANodes are .save() arguments that resolved to an MNA node name
 	// (a wire that's also a terminal of some physical primitive) — these
 	// are read directly from the solution vector by logger_log_step.
+	// clocks are the `.clock(name, period);` domains, in declaration order.
+	clocks []clockDef
+
 	saveMNANodes []string
 
 	// saveVMSignals are .save() arguments that resolved to a logic
@@ -259,12 +264,28 @@ func (g *generator) parseSimConfig() (simConfig, error) {
 				return cfg, err
 			}
 		}
+		if d.Name == "clock" {
+			c, err := parseClockDirective(d)
+			if err != nil {
+				return cfg, err
+			}
+			for _, prev := range cfg.clocks {
+				if prev.name == c.name {
+					return cfg, fmt.Errorf(".clock(%s, ...) is declared more than once", c.name)
+				}
+			}
+			cfg.clocks = append(cfg.clocks, c)
+		}
 		if d.Name == "zcd" {
 			cfg.zcdEnabled = true
 		}
 		if d.Name == "op" {
 			cfg.opEnabled = true
 		}
+	}
+
+	if err := checkClocksAgainstStep(cfg); err != nil {
+		return cfg, err
 	}
 
 	var saveErr error
@@ -599,4 +620,62 @@ func joinSortedOrNone(names []string) string {
 	}
 	sort.Strings(names)
 	return strings.Join(names, ", ")
+}
+
+// clockDef is one `.clock(name, period);` domain.
+type clockDef struct {
+	name   string
+	period float64
+}
+
+// phaseFunc is the generated function holding the clock's digital modules.
+func (c clockDef) phaseFunc() string { return "phase_clock_" + c.name }
+
+// parseClockDirective reads `.clock(name, period);` — a bare identifier and
+// a positive numeric literal (engineering suffixes allowed: 10u, 1m).
+func parseClockDirective(d *ast.DirectiveStatement) (clockDef, error) {
+	if len(d.Args) != 2 {
+		return clockDef{}, fmt.Errorf(".clock(...) takes 2 arguments (name, period), e.g. `.clock(mcu, 10u);` — got %d", len(d.Args))
+	}
+	id, ok := d.Args[0].(*ast.IdentifierExpression)
+	if !ok {
+		return clockDef{}, fmt.Errorf(".clock(...)'s 1st argument must be a name, e.g. `.clock(mcu, 10u);` — got '%s'", d.Args[0].String())
+	}
+	period, err := directiveNumber("clock", d.Args[1])
+	if err != nil {
+		return clockDef{}, err
+	}
+	if !(period > 0) {
+		return clockDef{}, fmt.Errorf(".clock(%s, ...): the period must be positive, got %g", id.Value, period)
+	}
+	return clockDef{name: id.Value, period: period}, nil
+}
+
+// fixedStepSolvers never vary their step, so the runtime cannot shorten one
+// to land on a tick; see vm/clock.cpp.
+var fixedStepSolvers = map[string]bool{"euler_fixed": true, "gauss_siedel": true, "trapezoidal_fixed": true}
+
+// checkClocksAgainstStep rejects a clock a fixed-step solver cannot honor:
+// its ticks only fall on step boundaries if the period is a whole number of
+// steps. Variable-step solvers shorten steps to hit ticks, so any period works.
+func checkClocksAgainstStep(cfg simConfig) error {
+	if !fixedStepSolvers[cfg.solverType] || len(cfg.clocks) == 0 {
+		return nil
+	}
+	step, err := strconv.ParseFloat(cfg.tStep, 64)
+	if err != nil || step <= 0 {
+		return nil
+	}
+	for _, c := range cfg.clocks {
+		ratio := c.period / step
+		whole := math.Round(ratio)
+		if whole < 1 || math.Abs(ratio-whole) > 1e-6*whole {
+			return fmt.Errorf(".clock(%s, %.6g): with the fixed-step solver %s, a clock period must be a whole "+
+				"number of .tran steps (%.6g), so that every tick falls on a step — use a period of %.6g or %.6g, "+
+				"change the step, or choose a variable-step solver (bdf2, ndf2, trapezoidal, euler_adaptive)",
+				c.name, c.period, cfg.solverType, step,
+				math.Max(1, math.Floor(ratio))*step, math.Max(1, math.Ceil(ratio))*step)
+		}
+	}
+	return nil
 }

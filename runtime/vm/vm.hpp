@@ -19,6 +19,17 @@
 // function call. Mirrors Go: type returnSignal struct{ value float64 }
 // ─────────────────────────────────────────────────────────────────────────────
 
+// One clock domain (`.clock(name, period);`). Digital modules bound to it
+// with `@name` run once per tick, at t = k * period, and hold their outputs
+// in between. Ticks run from vm_run_digital at the START of a solver step;
+// adaptive solvers shorten a step so it ends exactly on the next tick
+// (vm_limit_step), and fixed-step solvers are required by the compiler to
+// use a step that divides every clock period.
+struct VMClock {
+    double period    = 0.0;
+    long   last_tick = -1;   // highest tick index already run; snapshotted
+};
+
 struct ReturnSignal {
     double value;
 };
@@ -108,6 +119,12 @@ struct VM {
     // itself never reads it.
     void *host = nullptr;
 
+    // Clock domains, in declaration order, and the hook that runs one
+    // domain's phase (installed by hvr::Sim). Empty for an unclocked deck,
+    // which is then simulated exactly as before clocks existed.
+    std::vector<VMClock> clocks;
+    void (*run_clock)(VM *vm, int index) = nullptr;
+
     // Pre-allocated Jacobian scratch — used by implicit solvers
     Eigen::MatrixXd jacobian_scratch;
     Eigen::VectorXd base_b_scratch;
@@ -134,6 +151,24 @@ void vm_run_analog(VM *vm);
 
 // Phase B: stamp driven source values into MNA B_static
 void vm_run_phase_b(VM *vm);
+
+// Shortens a proposed step so it does not cross the next clock tick (and
+// does not stop just short of one). Returns dt unchanged when there are no
+// clocks. Called by the variable-step solvers where they choose dt.
+double vm_limit_step(const VM *vm, double dt);
+
+// Runs every clock whose next tick is due at vm->time (vm_run_digital calls
+// it), and forgets which ticks have run (vm_boot calls it). vm/clock.cpp.
+void vm_run_clocks(VM *vm);
+void vm_reset_clocks(VM *vm);
+
+// True when a step starting at vm->time will run at least one clock tick.
+// A tick changes the digital outputs — the inputs the analog side sees — so
+// a multistep solver (bdf2, ndf2) must not carry history across it, exactly
+// as at a zero crossing: it restarts at order 1, which SPICE does at its
+// breakpoints too. Without that, every tick leaks a small error that acts as
+// artificial damping and can turn an unstable sampled loop into a stable one.
+bool vm_tick_due(const VM *vm);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // JACOBIAN

@@ -46,6 +46,12 @@ func (p *parser) parseModuleStatement() ast.Statement {
 		stmt.StaticArgs = p.parseArgList(token.LT, token.GT)
 		stmt.LogicArgs = p.parseArgList(token.LPAREN, token.RPAREN)
 		stmt.PhysArgs = p.parseArgList(token.LBRACKET, token.RBRACKET)
+		// Optional clock binding: `... [ports] @mcu;`
+		if p.currentTokenType() == token.AT {
+			p.nextToken() // consume '@'
+			stmt.Clock = p.currentToken().Literal
+			p.expect(token.IDENT)
+		}
 		p.expect(token.SEMI)
 		return stmt
 	}

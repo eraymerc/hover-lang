@@ -257,6 +257,9 @@ func (g *generator) emitSimSetup(cfg simConfig, onSolverError string) {
 	}
 	g.line("sim.set_phases(phase_structural, phase_digital, phase_analog, phase_b,")
 	g.line("               phase_log, save_state_vars, restore_state_vars);")
+	for _, c := range cfg.clocks {
+		g.line("sim.add_clock(%s, %s, %s);", cStr(c.name), formatDoubleLiteral(c.period), c.phaseFunc())
+	}
 	g.raw("")
 
 	g.line("// Logger")

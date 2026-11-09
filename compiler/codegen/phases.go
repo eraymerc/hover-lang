@@ -21,7 +21,11 @@ import (
 // (see collect.go/emitStateVars), so no C block scoping is needed here —
 // statements from different LogicObjects in the same domain can simply be
 // emitted flat, one after another.
-func (g *generator) emitPhaseByDomain(domain token.Type, fnName string) {
+//
+// clock selects which digital logic lands here: "" for the unclocked logic
+// that runs every step, or a clock's name for the logic bound to it. It is
+// "" for the structural and analog phases, whose logic is never clocked.
+func (g *generator) emitPhaseByDomain(domain token.Type, fnName string, clock string) {
 	g.raw(fmt.Sprintf("// ── %s ─────────────────────────────────────────────────────────────────────", strings.ToUpper(fnName)))
 	g.raw(fmt.Sprintf("static void %s(hvr::Sim &sim) {", fnName))
 	g.push()
@@ -30,7 +34,7 @@ func (g *generator) emitPhaseByDomain(domain token.Type, fnName string) {
 	// All variables are file-scope globals — no C blocks needed.
 	// Emit statements flat; use comments to mark module boundaries.
 	for _, logic := range g.prog.Logic {
-		if logic.Domain != domain {
+		if logic.Domain != domain || logic.Clock != clock {
 			continue
 		}
 		g.line("// %s", logic.Prefix)
@@ -43,15 +47,24 @@ func (g *generator) emitPhaseByDomain(domain token.Type, fnName string) {
 }
 
 func (g *generator) emitPhaseStructural() {
-	g.emitPhaseByDomain(token.MODULE, "phase_structural")
+	g.emitPhaseByDomain(token.MODULE, "phase_structural", "")
+}
+
+// emitClockPhases emits one phase function per `.clock` domain, holding the
+// digital modules bound to it with `@name`. The runtime calls each once per
+// tick (vm/clock.cpp); emitSimSetup registers them with sim.add_clock.
+func (g *generator) emitClockPhases() {
+	for _, c := range g.clocks {
+		g.emitPhaseByDomain(token.DIGITAL, c.phaseFunc(), c.name)
+	}
 }
 
 func (g *generator) emitPhaseDigital() {
-	g.emitPhaseByDomain(token.DIGITAL, "phase_digital")
+	g.emitPhaseByDomain(token.DIGITAL, "phase_digital", "")
 }
 
 func (g *generator) emitPhaseAnalog() {
-	g.emitPhaseByDomain(token.ANALOG, "phase_analog")
+	g.emitPhaseByDomain(token.ANALOG, "phase_analog", "")
 }
 
 // branchCurrentColumn is the vm->values key (and hence CSV column header) for

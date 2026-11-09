@@ -1,12 +1,25 @@
 // ─────────────────────────────────────────────────────────────────────────────
-//  HVR Example — Discrete PID Controller, using a native `struct`
-//  Demonstrates: struct declaration, a struct-typed `state` variable, a
-//  named-field struct literal, and a struct passed by value into a
-//  function — regulating an RC plant's node voltage toward a setpoint.
+//  HVR Example — Discrete PID Controller on a 10 kHz clock, using a `struct`
+//  Demonstrates: a clock domain (.clock + @), struct declaration, a
+//  struct-typed value, a named-field struct literal, and a struct passed by
+//  value into a function — regulating an RC plant's node voltage toward a
+//  setpoint, the way a microcontroller's control loop would.
 // ─────────────────────────────────────────────────────────────────────────────
 
 .save(main.plant_node, main.setpoint, main.out);
-.tran(0, 50m, 10u);
+.tran(0, 20m, 10u);
+
+// The controller's sample clock: 10 kHz, as a microcontroller's control-loop
+// timer interrupt would run it. A digital module bound to it with `@mcu`
+// runs once every 100 us — at t = 0, 100u, 200u, ... — and holds its outputs
+// in between, however small the solver's own steps are. Without a clock a
+// digital module runs on every solver step instead, which makes its sample
+// rate (and so its stability) depend on the .tran step.
+//
+// The analog side still steps at 10 us: the RC plant is integrated ten times
+// per controller sample. With this fixed-step solver the clock period has to
+// be a whole number of .tran steps, so every tick falls on a step.
+.clock(mcu, 100u);
 
 // Bundles the controller's three gains together instead of three separate
 // double parameters. This is the native equivalent of the "flattened C++
@@ -27,20 +40,23 @@ struct PIDGains {
 // PIDController module below is free to update its own `state` fields
 // after the call without this function ever seeing (or needing to see)
 // that state directly.
+//
+// Inside a clocked module — and in every function it calls — `dt` is the
+// clock period, so this derivative (and the integral below) are per sample,
+// independent of how the solver steps.
 func double pid_output(PIDGains gains, double error, double integral, double prev_error) {
     double derivative = (error - prev_error) / dt;
     return gains.kp * error + gains.ki * integral + gains.kd * derivative;
 }
 
-// `sense` is a physical wire port, read directly with V() every step —
-// unlike a logic-arg sampled once by a structural caller, a digital
-// module's own body re-runs every timestep, so this is a real closed
-// feedback loop, not a one-time initial read.
+// `sense` is a physical wire port, read with V() at every clock tick — the
+// ADC sample of a real controller — so this is a closed feedback loop, not a
+// one-time initial read.
 digital module PIDController<double kp, double ki, double kd>
 (input double setpoint, output double out)
 [wire sense]
 {
-    // Recomputed each step from the module's static gains via a named-
+    // Recomputed each tick from the module's static gains via a named-
     // field struct literal — fields can be given in any order, matched by
     // name. Plain (non-`state`), not because it changes, but because a
     // `state` initializer is folded once at compile time and only ever
@@ -71,7 +87,15 @@ module main<>() []
     state double setpoint = 3.3;
     state double out = 0;
 
-    module ctrl = PIDController<2.0, 40.0, 0.0>(setpoint, out) [plant_node];
+    // Gains sized for the 10 kHz sample rate: the proportional loop moves the
+    // 10 uF plant by kp*T/C = 0.05 * 100u / 10u = 0.5 of the error per
+    // sample — well inside the sampled loop's stability limit of 2 (at 1 it
+    // would close the error in one sample, past 2 it would oscillate and
+    // grow). That brings the plant to within ~1% of the setpoint in about
+    // half a millisecond; the integral term then removes the offset
+    // proportional action leaves behind, with a time constant of about
+    // (1 + kp*R) / (ki*R) = 5 ms — hence the 20 ms run.
+    module ctrl = PIDController<0.05, 10.0, 0.0>(setpoint, out) [plant_node] @mcu;
 
     current_source<>(out) [gnd, plant_node];
     R<1k>() [plant_node, gnd];

@@ -7,10 +7,15 @@
 
 .save(main.sw, main.i_sense, main.gate_h, main.gate_l);
 .op;    // Everything starts off, so this is a trivial (and exact) bias point.
-.zcd;   // The gate commands step discretely — isolate those edges rather than
-        // stepping across them.
 .tran(0, 300u, 50n);
 .solver(ndf2);
+
+// The gate sequencer runs on a 1 MHz timer, like a gate-driver
+// microcontroller's PWM timer. Its commands only change on a tick, and the
+// solver steps exactly onto every tick, so the 150 us and 155 us edges are
+// hit precisely — no .zcd needed to hunt for them (it was here for exactly
+// those edges).
+.clock(gate_timer, 1u);
 
 import <parts/mosfet/nmos>;
 
@@ -84,7 +89,7 @@ module main<>() []
     // 2. Gate drive. 10 V of enhancement is what the IRF540N's Rds(on) is
     // specified at; the high side gets 34 V so it still sees 10 V above a
     // switch node sitting at the 24 V rail.
-    module seq = GateSeq<150u, 155u, 10.0, 34.0>(gate_cmd_h, gate_cmd_l)[];
+    module seq = GateSeq<150u, 155u, 10.0, 34.0>(gate_cmd_h, gate_cmd_l)[] @gate_timer;
     voltage_source<>(gate_cmd_h)[rail_h, gnd];
     voltage_source<>(gate_cmd_l)[rail_l, gnd];
 

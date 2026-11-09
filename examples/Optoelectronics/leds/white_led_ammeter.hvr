@@ -1,0 +1,29 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  HVR Example — White LED with an Ammeter
+//  Demonstrates: a standard-library LED part, a 0 V voltage source used as
+//  an ammeter (its branch current logged by .save as I(main.vsense)), and an
+//  RC soft start — the LED turns on as the 10 uF capacitor charges through
+//  1 kOhm, settling near 3 V and 2 mA. main.light is the LED's optical output.
+// ─────────────────────────────────────────────────────────────────────────────
+
+.tran(0, 40m, 1u);
+.solver(bdf2);
+.save(
+    main.out,
+    main.light,
+    main.vsense
+);
+
+import <stdlib/optoelectronics/leds/> as LED_COLORS;
+
+module main<>() []
+{
+    wire in, out, light, led;
+
+    voltage_source<5>()[in, gnd];
+    R<1k>()[in, out];
+    C<10u>()[out, gnd];
+    voltage_source vsense<0>() [out, led];
+
+    module led_white = LED_COLORS.LED_WHITE<>()[led, gnd, light];
+}

@@ -258,12 +258,20 @@ type ModuleInstStatement struct {
 	StaticArgs   []Expression
 	LogicArgs    []Expression
 	PhysArgs     []Expression
+
+	// Clock is the clock domain named by a trailing `@name` (declared with
+	// `.clock(name, period);`), or "" for none. It applies to every digital
+	// module in the instance's subtree that does not name its own.
+	Clock string
 }
 
 func (mi *ModuleInstStatement) statementNode()       {}
 func (mi *ModuleInstStatement) TokenLiteral() string { return mi.Token.Literal }
 func (mi *ModuleInstStatement) Line() int            { return mi.Token.Line }
 func (mi *ModuleInstStatement) String() string {
+	if mi.Clock != "" {
+		return "module " + mi.InstanceName + " = " + mi.ModuleName + "<...>(...)[...] @" + mi.Clock + ";"
+	}
 	return "module " + mi.InstanceName + " = " + mi.ModuleName + "<...>(...)[...];"
 }
 

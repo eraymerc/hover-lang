@@ -104,6 +104,11 @@ type generator struct {
 	// because emitExpr can hit I() many times and each rebuild is a full walk.
 	branchSet  map[string]bool
 	elementIdx map[string]int
+
+	// clocks are the deck's `.clock` domains, parsed up front because the
+	// phase emitters need them (one phase function per clock) before
+	// emitMain parses the rest of the configuration.
+	clocks []clockDef
 }
 
 // emit drives the full sim.cpp generation pipeline, section by section.
@@ -112,6 +117,12 @@ type generator struct {
 // there; emitMain must come last since it wires together everything the
 // earlier sections defined.
 func (g *generator) emit() error {
+	cfg, err := g.parseSimConfig()
+	if err != nil {
+		return err
+	}
+	g.clocks = cfg.clocks
+
 	g.emitHeader()
 	if g.LibraryMode {
 		// Must land before emitFunctions/the phase emitters: those bodies
@@ -124,6 +135,7 @@ func (g *generator) emit() error {
 	g.emitFunctions()
 	g.emitPhaseStructural()
 	g.emitPhaseDigital()
+	g.emitClockPhases()
 	g.emitPhaseAnalog()
 	g.emitPhaseB()
 	g.emitStateVarSnapshot()

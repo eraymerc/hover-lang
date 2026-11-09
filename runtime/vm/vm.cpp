@@ -39,6 +39,7 @@ void vm_init(VM *vm, API *api, Solver *solver) {
 void vm_run_digital(VM *vm) {
     if (vm->phase_structural) vm->phase_structural(vm);
     if (vm->phase_digital)    vm->phase_digital(vm);
+    if (!vm->clocks.empty())  vm_run_clocks(vm);  // clocked digital modules — vm/clock.cpp
 }
 
 void vm_run_analog(VM *vm) {
@@ -388,8 +389,11 @@ static bool vm_solve_dc_once(VM *vm, bool relax) {
                             "(worst step %.3e on row %d)\n",
                     alpha, op_iters, op_worst, op_worst_row);
             op_failed = 1;
+        } else {
+            // Only a converged rung is "complete" — stderr already says when
+            // one is not, and stdout used to contradict it.
+            printf("[VM] OP alpha=%.2f complete (%d iters)\n", alpha, op_iters);
         }
-        printf("[VM] OP alpha=%.2f complete (%d iters)\n", alpha, op_iters);
     }
 
     // Unconditional, and before the commit restamps: the transient's per-step
@@ -467,7 +471,10 @@ static bool vm_solve_dc(VM *vm, bool relax) {
     fprintf(stderr, "[VM] WARNING: DC operating point did not converge after %d "
                     "damping retries; the transient is starting from an "
                     "unconverged bias.\n", OP_DAMPING_RETRIES);
-    printf("[VM] OP complete\n");
+    // Not "OP complete": that line used to be printed here too, so a log read
+    // top to bottom (or grepped for it) said the operating point had been
+    // found when it had not. stdout now says what stderr says.
+    printf("[VM] OP FAILED — continuing from an unconverged bias\n");
     return false;
 }
 
@@ -490,6 +497,7 @@ void vm_solve_op(VM *vm) {
 // behavior for the standalone binary — it's now just boot() + run_until(end
 // _time) + the same CSV export it always did.
 void vm_boot(VM *vm) {
+    vm_reset_clocks(vm); // a (re)boot starts every clock from tick 0
     // COLD START — applied HERE, before the operating point, not inside the
     // solver's run().
     //

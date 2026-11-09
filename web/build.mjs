@@ -41,7 +41,8 @@ const EXAMPLES = [
   { id: 'bjt_opamp', title: 'Discrete BJT op-amp', file: 'examples/BJT/opamp.hvr' },
   { id: 'nmos_amp', title: 'NMOS common-source amplifier', file: 'examples/MOSFET/nmos_amp.hvr' },
   { id: 'cmos_inverter', title: 'CMOS inverter', file: 'examples/MOSFET/cmos_inverter.hvr' },
-  { id: 'pid', title: 'PID controller', file: 'examples/PIDController/pid_controller.hvr' },
+  { id: 'led_ammeter', title: 'White LED with an ammeter', file: 'examples/Optoelectronics/leds/white_led_ammeter.hvr' },
+  { id: 'pid', title: 'PID controller (10 kHz clock)', file: 'examples/PIDController/pid_controller.hvr' },
 ];
 
 // Must match the flags the worker compiles sim.cpp with.

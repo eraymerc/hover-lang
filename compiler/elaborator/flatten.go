@@ -4,9 +4,13 @@ import (
 	"fmt"
 	"hover/compiler/ast"
 	"hover/compiler/token"
+	"sort"
+	"strings"
 )
 
-func (e *Elaborator) flattenModule(mod *ast.ModuleDeclStatement, prefix string, params map[string]float64, ports map[string]string, domain token.Type) {
+// clock is the clock domain inherited from the enclosing instances ("" for
+// none); it lands on this module's DIGITAL statements only.
+func (e *Elaborator) flattenModule(mod *ast.ModuleDeclStatement, prefix string, params map[string]float64, ports map[string]string, domain token.Type, clock string) {
 	if mod == nil {
 		return
 	}
@@ -78,8 +82,25 @@ func (e *Elaborator) flattenModule(mod *ast.ModuleDeclStatement, prefix string, 
 				}
 			}
 
+			// An instance's own @clock overrides the one it inherits.
+			childClock := clock
+			if s.Clock != "" {
+				if !e.declaredClocks[s.Clock] {
+					e.errors = append(e.errors, fmt.Sprintf(
+						"Line %d: unknown clock '%s' — declare it at the top level with `.clock(%s, <period>);`%s",
+						s.Line(), s.Clock, s.Clock, describeClocks(e.declaredClocks)))
+					continue
+				}
+				if target.Token.Type == token.ANALOG {
+					e.errors = append(e.errors, fmt.Sprintf(
+						"Line %d: '%s' is an analog module and cannot run on clock '%s' — analog equations are continuous. "+
+							"Clock the digital module that samples it instead.", s.Line(), s.ModuleName, s.Clock))
+					continue
+				}
+				childClock = s.Clock
+			}
 			e.expanding[target] = true
-			e.flattenModule(target, prefix+"."+s.InstanceName, childParams, childPorts, target.Token.Type)
+			e.flattenModule(target, prefix+"."+s.InstanceName, childParams, childPorts, target.Token.Type, childClock)
 			delete(e.expanding, target)
 
 		case *ast.PhysicalPrimitiveStatement:
@@ -185,6 +206,7 @@ func (e *Elaborator) flattenModule(mod *ast.ModuleDeclStatement, prefix string, 
 					Ports:  copyMapSS(ports),
 					File:   declFile,
 					Domain: domain,
+					Clock:  clockFor(domain, clock),
 				})
 			}
 
@@ -198,6 +220,7 @@ func (e *Elaborator) flattenModule(mod *ast.ModuleDeclStatement, prefix string, 
 				Ports:  copyMapSS(ports),
 				File:   declFile,
 				Domain: domain,
+				Clock:  clockFor(domain, clock),
 			})
 
 		case *ast.ExpressionStatement:
@@ -211,6 +234,7 @@ func (e *Elaborator) flattenModule(mod *ast.ModuleDeclStatement, prefix string, 
 				Ports:  copyMapSS(ports),
 				File:   declFile,
 				Domain: domain,
+				Clock:  clockFor(domain, clock),
 			})
 
 		case *ast.IfStatement, *ast.WhileStatement:
@@ -223,7 +247,30 @@ func (e *Elaborator) flattenModule(mod *ast.ModuleDeclStatement, prefix string, 
 				Ports:  copyMapSS(ports),
 				File:   declFile,
 				Domain: domain,
+				Clock:  clockFor(domain, clock),
 			})
 		}
 	}
+}
+
+// clockFor is the clock a statement of the given domain runs on: the
+// inherited clock for digital logic, none for anything else.
+func clockFor(domain token.Type, clock string) string {
+	if domain == token.DIGITAL {
+		return clock
+	}
+	return ""
+}
+
+// describeClocks lists the declared clocks for an unknown-clock error.
+func describeClocks(declared map[string]bool) string {
+	if len(declared) == 0 {
+		return " (no clocks are declared)"
+	}
+	names := make([]string, 0, len(declared))
+	for n := range declared {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	return " (declared: " + strings.Join(names, ", ") + ")"
 }
