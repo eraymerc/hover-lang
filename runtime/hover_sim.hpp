@@ -105,7 +105,9 @@ public:
     void set_max_iter(int v);
     void set_max_dt(double v);
 
-    void run();     // the transient, start to end_time; writes simulation_output.csv
+    // The transient, start to end_time; writes simulation_output.csv (also when
+    // it stops early). False if the solver gave up before end_time.
+    bool run();
     bool run_ac();  // the .ac sweep; writes ac_output.csv
 
     // ── Inside phases ────────────────────────────────────────────────────────

@@ -12,7 +12,7 @@
 // one switches 3200 times. Measured here: enabling it moves the failure point
 // from t = 1.02 ms back to t = 87 us, so the edge isolation costs far more than
 // it buys.
-.tran(0, 40m, 10u);   // 40 ms = two full 50 Hz cycles
+.tran(0, 40m, 1u);   // 40 ms = two full 50 Hz cycles
 .solver(ndf2);
 
 import <parts/mosfet/nmos> as nfet;

@@ -2,6 +2,7 @@
 #include "newton_core.hpp"
 #include "newton_trust_region.hpp"
 #include "step_trace.hpp"
+#include "lte.hpp"
 #include "fail_dump.hpp"
 #include "step_limits.hpp"
 #include "../vm/vm.hpp"
@@ -10,6 +11,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cmath>
+#include <algorithm>
 
 // The convergence test and the within-step Jacobian refresh policy now live in
 // newton_core.hpp, shared with ndf2, trapezoidal and euler_adaptive. Both were
@@ -29,6 +31,7 @@ void BDF2::run(VM *vm) {
 
     int n = (int)vm->solver->last_solution.size();
     hist.reset(vm->solver->last_solution);
+    const std::vector<char> state_rows = lte_state_rows(*vm->solver->sys);
 
     Eigen::VectorXd correction(n);
     Eigen::VectorXd x_blend(n);
@@ -167,11 +170,11 @@ void BDF2::run(VM *vm) {
             // a carried-over number rather than this step's own opening ratio.
             if (iter == 0) jac.seed(conv.worst_ratio);
 
-            if (newton_converged(x_new, x_guess, n_nodes, rtol, atol, abstol, conv) &&
-            vm_slots_converged(vm, x_new, rtol, atol, abstol)) {
-                if (vm_kcl_ratio(vm, x_new, alpha, x_blend, nullptr, KCL_RTOL, KCL_ATOL) > KCL_VETO) {
+            if (newton_converged(x_new, x_guess, n_nodes, rtol, atol, abstol, conv)) {
+                if (vm_kcl_ratio(vm, x_new, alpha, x_blend, nullptr, KCL_RTOL, KCL_ATOL, rtol, atol, abstol) > KCL_VETO) {
                     step_trace("bdf2", attempt, vm->time, dt, iters, "kcl-veto");
-                    break;   // a non-solution: fail the attempt (see KCL VETO, newton_core.hpp)
+                    x_guess = x_new;
+                    continue;   // iterate on: the limiters release next time (KCL VETO, newton_core.hpp)
                 }
                 x_guess = x_new;
                 converged = true;
@@ -315,6 +318,7 @@ void BDF2::run(VM *vm) {
             step_trace("bdf2", attempt, vm->time, dt, iters, "reject");
             if (reject_run.exhausted(vm->time_step)) {
                 fprintf(stderr, "[BDF2] FATAL: Failed to converge at t=%.3e\n", vm->time);
+                vm_fail(vm);
                 dump_convergence_row(vm, conv.worst_row, conv.worst_step, conv.worst_tol);
                 dump_failure(vm, "bdf2", dt, alpha, x_guess, x_blend);
                 break;
@@ -369,7 +373,23 @@ void BDF2::run(VM *vm) {
         jacobian_valid = false;
 
         reject_run.clear();
-        vm_commit_slots_at(vm, x_guess);
+        // TRUNCATION ERROR (lte.hpp). The slots are evaluated at the new
+        // point first: their error counts, and their commit waits for the verdict.
+        vm_eval_slots_at(vm, x_guess);
+        LteMethod lm = hist.usable_order(dt, 2) >= 2 ? lte_bdf2() : lte_be();
+        const bool has_slots = vm->slots.size() > 0;
+        LteStep ls{&hist, &x_guess, &state_rows, n_nodes, dt, rtol, atol, abstol,
+                   has_slots ? &vm->slots.s_now : nullptr,
+                   {&vm->slots.h0, &vm->slots.h1, &vm->slots.h2}};
+        double lte_r = lte_ratio(ls, lm);
+        if (lte_r < 0.0 && lm.p > 1) { lm = lte_be(); lte_r = lte_ratio(ls, lm); }
+        if (lte_r > 1.0 && dt > lte_min_step(max_dt)) {
+            vm_restore_state(vm, checkpoint);
+            vm->time_step = dt * lte_factor(lte_r, lm);
+            step_trace("bdf2", attempt, vm->time, dt, iters, "lte-reject");
+            continue;
+        }
+        slots_commit(vm->slots);
         hist.accept(x_guess, dt);
 
         solver_advance_time(vm->solver, x_guess);
@@ -378,7 +398,13 @@ void BDF2::run(VM *vm) {
         if (vm->phase_log) vm->phase_log(vm);
         logger_log_signals(&vm->logger, vm->values);
 
-        if (iters <= 5) {
+        if (lte_r >= 0.0) {
+            // The error estimate picks the next step; the .tran step is a ceiling.
+            vm->time_step = std::min(max_dt, dt * lte_factor(lte_r, lm));
+            if (iters > max_iter / 2) vm->time_step = std::min(vm->time_step, 0.8 * dt);
+            step_trace("bdf2", attempt, vm->time, dt, iters, "lte");
+        } else if (iters <= 5) {
+            // Too few accepted points for an estimate yet (start, restart).
             vm->time_step *= 1.2;
             if (vm->time_step > max_dt) vm->time_step = max_dt;
             step_trace("bdf2", attempt, vm->time, dt, iters, "grow");

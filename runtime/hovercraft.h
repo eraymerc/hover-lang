@@ -31,6 +31,8 @@ typedef struct {
 #define HVR_ERR_TIME    -1  /* HVR_set_param_* called with sim time != 0   */
 #define HVR_ERR_IO      -2  /* HVR_save_log could not open the file        */
 #define HVR_ERR_UNKNOWN -3  /* invalid argument (e.g. negative duration)   */
+#define HVR_ERR_CONVERGE -4 /* HVR_step/HVR_run: the solver gave up; the   */
+                            /* log holds the run up to HVR_get_time()      */
 
 // ── LIFECYCLE ────────────────────────────────────────────────────────────────
 
@@ -48,7 +50,8 @@ int  HVR_save_log(const char *filename);
 
 // Advance the simulation. HVR_step(n) advances by n minimum timesteps
 // (n * dt seconds); HVR_run advances by an arbitrary duration in
-// simulation seconds. Both return HVR_ERR_UNKNOWN for a negative argument.
+// simulation seconds. Both return HVR_ERR_UNKNOWN for a negative argument,
+// and HVR_ERR_CONVERGE if the solver gave up before reaching the target.
 int  HVR_step(long n);
 int  HVR_run(double duration_seconds);
 

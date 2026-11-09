@@ -1,6 +1,7 @@
 #include "trapezoidal.hpp"
 #include "step_limits.hpp"
 #include "newton_core.hpp"
+#include "lte.hpp"
 #include "newton_trust_region.hpp"
 #include "step_trace.hpp"
 #include "fail_dump.hpp"
@@ -42,6 +43,12 @@ void Trapezoidal::run(VM *vm) {
     double jac_alpha = -1.0;      // alpha the held Jacobian was formed under (see the slots note)
     bool force_euler = true; // ALWAYS start the simulation with a Backward Euler step
 
+    // Accepted points for the truncation-error estimate (lte.hpp). This solver
+    // keeps no multistep history of its own; this one only feeds the estimate.
+    BdfHistory lhist;
+    lhist.reset(vm->solver->last_solution);
+    const std::vector<char> state_rows = lte_state_rows(*vm->solver->sys);
+
     long attempt = 0;   // counts ATTEMPTS, not accepted steps — see step_trace.hpp
 
     while (vm->time < vm->end_time) {
@@ -54,7 +61,7 @@ void Trapezoidal::run(VM *vm) {
             dt = vm_limit_step(vm, dt);
             // A tick changes the circuit's inputs: take this step as Backward
             // Euler, as after a zero crossing, so stiff modes do not ring.
-            if (vm_tick_due(vm)) force_euler = true;
+            if (vm_tick_due(vm)) { force_euler = true; lhist.restart(); }
         }
         bool zcd_triggered = false;
 
@@ -106,7 +113,7 @@ void Trapezoidal::run(VM *vm) {
 
         // 2. Determine Integration Method for this step
         // We use Euler if recovering from a failed step, or if ZCD just triggered
-        if (zcd_triggered) force_euler = true;
+        if (zcd_triggered) { force_euler = true; lhist.restart(); }
 
         // No "alpha changed, rebuild the matrix" flag is needed here any more:
         // solver_solve_rhs refactorizes whenever g_dirty is set OR alpha differs
@@ -195,11 +202,11 @@ void Trapezoidal::run(VM *vm) {
             // iteration's own.
             if (iter == 0) jac.seed(conv.worst_ratio);
 
-            if (newton_converged(x_new, x_guess, n_nodes, rtol, atol, abstol, conv) &&
-            vm_slots_converged(vm, x_new, rtol, atol, abstol)) {
-                if (vm_kcl_ratio(vm, x_new, alpha, x_anchor, phys_correction, KCL_RTOL, KCL_ATOL) > KCL_VETO) {
+            if (newton_converged(x_new, x_guess, n_nodes, rtol, atol, abstol, conv)) {
+                if (vm_kcl_ratio(vm, x_new, alpha, x_anchor, phys_correction, KCL_RTOL, KCL_ATOL, rtol, atol, abstol) > KCL_VETO) {
                     step_trace("trap", attempt, vm->time, dt, iters, "kcl-veto");
-                    break;   // a non-solution: fail the attempt (see KCL VETO, newton_core.hpp)
+                    x_guess = x_new;
+                    continue;   // iterate on: the limiters release next time (KCL VETO, newton_core.hpp)
                 }
                 x_guess = x_new;
                 converged = true;
@@ -222,8 +229,23 @@ void Trapezoidal::run(VM *vm) {
 
         // 5. Adaptive Timestep Control & Recovery
         if (converged) {
+            // TRUNCATION ERROR (lte.hpp), before anything is committed.
+            vm_eval_slots_at(vm, x_guess);
+            LteMethod lm = force_euler ? lte_be() : lte_trap();
+            LteStep ls{&lhist, &x_guess, &state_rows, n_nodes, dt, rtol, atol, abstol,
+                       vm->slots.size() > 0 ? &vm->slots.s_now : nullptr,
+                       {&vm->slots.h0, &vm->slots.h1, &vm->slots.h2}};
+            double lte_r = lte_ratio(ls, lm);
+            if (lte_r < 0.0 && lm.p > 1) { lm = lte_be(); lte_r = lte_ratio(ls, lm); }
+            if (lte_r > 1.0 && dt > lte_min_step(max_dt)) {
+                vm_restore_state(vm, checkpoint);
+                vm->time_step = dt * lte_factor(lte_r, lm);
+                step_trace("trap", attempt, vm->time, dt, iters, "lte-reject");
+                continue;
+            }
             // Success! Log the state.
-            vm_commit_slots_at(vm, x_guess);
+            slots_commit(vm->slots);
+            lhist.accept(x_guess, dt);
             solver_advance_time(vm->solver, x_guess);
             logger_log_step(&vm->logger, vm->time, vm->solver->sys, vm->solver->last_solution);
             if (vm->phase_log) vm->phase_log(vm);
@@ -246,7 +268,12 @@ void Trapezoidal::run(VM *vm) {
             reject_run.clear();
 
             // Time Step Adjustment Heuristics
-            if (iters <= 4) {
+            if (lte_r >= 0.0) {
+                // The error estimate picks the next step; the .tran step is a ceiling.
+                vm->time_step = std::min(max_dt, dt * lte_factor(lte_r, lm));
+                if (iters > max_iter / 2) vm->time_step = std::min(vm->time_step, 0.5 * dt);
+                step_trace("trap", attempt, vm->time, dt, iters, "lte");
+            } else if (iters <= 4) {
                 vm->time_step = std::min(dt * 2.0, max_dt);
                 step_trace("trap", attempt, vm->time, dt, iters, "grow");
             } else if (iters > max_iter / 2) {
@@ -281,6 +308,7 @@ void Trapezoidal::run(VM *vm) {
 
             if (reject_run.exhausted(vm->time_step)) {
                 fprintf(stderr, "[Trap] FATAL: Failed to converge at t=%.3e\n", vm->time);
+                vm_fail(vm);
                 dump_convergence_row(vm, conv.worst_row, conv.worst_step, conv.worst_tol);
                 dump_failure(vm, "trapezoidal", dt, alpha, x_guess, x_anchor);
                 break;

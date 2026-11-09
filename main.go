@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"hover/compiler/ast"
 	codegen "hover/compiler/codegen"
@@ -630,6 +631,14 @@ func main() {
 	runCmd.Stdout = os.Stdout
 	runCmd.Stderr = os.Stderr
 	if err := runCmd.Run(); err != nil {
+		// Exit code 2 is the simulator's own "stopped early" (sim.cpp's main):
+		// the solver gave up, and the CSV holds the run up to that point. Pass
+		// it through so scripts can tell it from success — and from a crash.
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && exitErr.ExitCode() == 2 {
+			fmt.Println("[Run] Simulation stopped early: the solver did not converge. Partial results were saved.")
+			os.Exit(2)
+		}
 		fmt.Printf("[Run] Simulation crashed or failed: %v\n", err)
 		os.Exit(1)
 	}

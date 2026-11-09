@@ -7,9 +7,9 @@
 
 .save(main.motor_a, main.motor_b, main.omega_node, main.loadCmd,
       main.cmd_TL, main.cmd_BL, main.cmd_TR, main.cmd_BR);
-.op;    // Settle the bridge/motor bias point before the switching sequence.
+.op;   // Settle the bridge/motor bias point before the switching sequence.
 .tran(0, 400m, 20u);
-.solver(bdf2);
+.solver(ndf2);
 
 // The H-bridge sequencer runs on a 1 kHz timer tick, as it would on a
 // microcontroller. Its commands can only change on a tick, and ticks are

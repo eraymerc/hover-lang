@@ -47,37 +47,23 @@ void vm_run_analog(VM *vm) {
     if (vm->phase_analog) vm->phase_analog(vm);
 }
 
-void vm_commit_slots_at(VM *vm, const Eigen::VectorXd &x) {
+void vm_eval_slots_at(VM *vm, const Eigen::VectorXd &x) {
     if (vm->slots.size() == 0) return;
     api_peek_solution(vm->api, x);
     vm_run_analog(vm);
-    slots_commit(vm->slots);
 }
 
-bool vm_slots_converged(VM *vm, const Eigen::VectorXd &x_new,
-                        double rtol, double vntol, double abstol) {
-    StateSlots &st = vm->slots;
-    if (st.size() == 0) return true;
-    const std::vector<double> s_old = st.s_now, d_old = st.d_now;
-    api_peek_solution(vm->api, x_new);
-    vm_run_analog(vm);
-    auto close = [rtol](double a, double b, double tol) {
-        return std::abs(a - b) <= tol + rtol * std::max(std::abs(a), std::abs(b));
-    };
-    for (int k = 0; k < st.size(); k++) {
-        if (st.is_idt[k]) {
-            if (!close(st.s_now[k], s_old[k], vntol)) return false;      // a node, then
-        } else {
-            if (!close(st.s_now[k], s_old[k], abstol)) return false;     // the charge: a branch
-            if (!close(st.d_now[k], d_old[k], vntol))  return false;     // its current: a node
-        }
-    }
-    return true;
+void vm_commit_slots_at(VM *vm, const Eigen::VectorXd &x) {
+    if (vm->slots.size() == 0) return;
+    vm_eval_slots_at(vm, x);
+    slots_commit(vm->slots);
 }
 
 double vm_kcl_ratio(VM *vm, const Eigen::VectorXd &x, double alpha,
                     const Eigen::VectorXd &x_history, const Eigen::VectorXd *correction,
-                    double rtol, double atol, int *worst_row) {
+                    double rtol, double atol,
+                    double step_rtol, double vntol, double abstol,
+                    int *worst_row) {
     // A PROBE: it must leave the solver bit-for-bit where it found it. Not just
     // logically — current sources are stamped into B_static incrementally
     // (B += new - last), so an extra drive pass re-rounds B even when it
@@ -102,6 +88,11 @@ double vm_kcl_ratio(VM *vm, const Eigen::VectorXd &x, double alpha,
 
     const Eigen::VectorXd gx   = sys->G * x;
     const Eigen::VectorXd cdot = sys->C * (x_history - x);
+    // Residual the step tolerance alone can account for (see vm.hpp).
+    Eigen::VectorXd tol(x.size());
+    for (int j = 0; j < x.size(); j++)
+        tol(j) = step_rtol * std::abs(x(j)) + (j < sys->num_nodes ? vntol : abstol);
+    const Eigen::VectorXd allowed = sys->G.cwiseAbs() * tol + alpha * (sys->C.cwiseAbs() * tol);
     double worst = 0.0;
     int    wrow  = -1;
     for (int i = 0; i < x.size(); i++) {
@@ -110,6 +101,7 @@ double vm_kcl_ratio(VM *vm, const Eigen::VectorXd &x, double alpha,
         const double r = rhs - gx(i);
         double traffic = std::abs(gx(i)) + alpha * std::abs(cdot(i)) + std::abs(sys->B_static(i));
         if (correction) traffic += std::abs((*correction)(i));
+        traffic += allowed(i) / rtol;   // so rtol*traffic covers it in full
         const double ratio = std::abs(r) / (rtol * traffic + atol);
         if (!(ratio <= worst)) { worst = ratio; wrow = i; }   // NaN counts as worst
     }
@@ -597,6 +589,8 @@ void vm_solve_op(VM *vm) {
 // behavior for the standalone binary — it's now just boot() + run_until(end
 // _time) + the same CSV export it always did.
 void vm_boot(VM *vm) {
+    vm->failed = false;
+    vm->failed_at = 0.0;
     vm_reset_clocks(vm); // a (re)boot starts every clock from tick 0
     // COLD START — applied HERE, before the operating point, not inside the
     // solver's run().
@@ -716,6 +710,11 @@ void vm_run(VM *vm) {
     vm_boot(vm);
     vm_run_until(vm, vm->end_time);
 
-    printf("[VM] Simulation Complete.\n");
+    if (vm->failed) {
+        printf("[VM] Simulation STOPPED at t=%.6e of %.6e — the solver did not converge; "
+               "the CSV holds the run up to there.\n", vm->failed_at, vm->end_time);
+    } else {
+        printf("[VM] Simulation Complete.\n");
+    }
     logger_export_csv(&vm->logger, "simulation_output.csv");
 }

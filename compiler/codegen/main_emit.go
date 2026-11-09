@@ -208,17 +208,21 @@ func (g *generator) emitMain() error {
 	g.line("hvr::Sim sim;")
 	g.emitSimSetup(cfg, "return 1;")
 	g.raw("")
+	// Exit codes: 1 = the simulator could not be set up (e.g. unknown solver),
+	// 2 = it ran but stopped early — a solver gave up, or .ac had no operating
+	// point to linearise around. Results written before that are kept.
+	g.line("int rc = 0;")
 	if cfg.acEnabled {
 		// AC first; then the transient only if the deck asked for one (a deck
 		// with .ac alone skips the default transient).
-		g.line("sim.run_ac();")
+		g.line("if (!sim.run_ac()) rc = 2;")
 		if cfg.tranPresent {
-			g.line("sim.run();")
+			g.line("if (!sim.run()) rc = 2;")
 		}
 	} else {
-		g.line("sim.run();")
+		g.line("if (!sim.run()) rc = 2;")
 	}
-	g.line("return 0;")
+	g.line("return rc;")
 
 	g.pop()
 	g.raw("}")

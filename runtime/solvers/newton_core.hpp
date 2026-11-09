@@ -78,9 +78,16 @@ struct ConvergenceReport {
 // over every accepted step of the healthy decks — worst ratio 5.5 (rectifier),
 // 2.0 (npn_amp), 1.2 (optocoupler), at most 0.01 elsewhere — against the
 // inverter, where hundreds of steps exceed 10 and the worst reach 1000 (a
-// residual as large as all the current in the row). A vetoed step is a failed
-// step: the caller's usual recovery (re-form the Jacobian, then cut dt) takes
-// over, since iterating on from an iterate that no longer moves cannot help.
+// residual as large as all the current in the row). A vetoed point is NOT a
+// failed step: Newton iterates on from it, as SPICE does under CKTnoncon. The
+// iterate stopped moving because the limiters held the devices near the
+// previous iterate; on the next iteration nr_prev() IS that point, the
+// limiters let go, the true currents enter the Jacobian and x moves again.
+// Failing the step instead was tried first, and it is wrong in a way that only
+// shows with small steps: after the 202 ms tick of examples/DCMotor/h_bridge
+// .hvr, every step from 1e-9 s down to 1e-27 s was vetoed after one iteration
+// and halved, ending in a FATAL. Only max_iter ends the loop, and then the
+// caller's usual recovery (re-form the Jacobian, then cut dt) takes over.
 constexpr double KCL_RTOL  = 1e-3;
 constexpr double KCL_ATOL  = 1e-9;
 constexpr double KCL_VETO  = 10.0;

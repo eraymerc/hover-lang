@@ -1,6 +1,7 @@
 #include "euler_adaptive.hpp"
 #include "step_limits.hpp"
 #include "newton_core.hpp"
+#include "lte.hpp"
 #include "newton_trust_region.hpp"
 #include "step_trace.hpp"
 #include "fail_dump.hpp"
@@ -8,6 +9,7 @@
 #include "../vm/zcd.hpp"
 
 #include <cstdio>
+#include <algorithm>
 #include <cmath>
 
 // The convergence test lives in newton_core.hpp, shared with bdf2. This solver
@@ -72,10 +74,9 @@ EulerAdaptive::StepResult EulerAdaptive::take_implicit_step(VM *vm, double dt) {
         // previous convergence test, since it runs before this iteration's own.
         if (iter == 0) jac.seed(conv.worst_ratio);
 
-        if (newton_converged(x_new, x_guess, n_nodes, rtol, atol, abstol, conv) &&
-            vm_slots_converged(vm, x_new, rtol, atol, abstol)) {
-            if (vm_kcl_ratio(vm, x_new, alpha, x_anchor, nullptr, KCL_RTOL, KCL_ATOL) > KCL_VETO)
-                break;   // a non-solution: fail the attempt (see KCL VETO, newton_core.hpp)
+        if (newton_converged(x_new, x_guess, n_nodes, rtol, atol, abstol, conv)) {
+            if (vm_kcl_ratio(vm, x_new, alpha, x_anchor, nullptr, KCL_RTOL, KCL_ATOL, rtol, atol, abstol) > KCL_VETO)
+            { x_guess = x_new; continue; }   // iterate on: the limiters release (KCL VETO, newton_core.hpp)
             x_guess = x_new;
             converged = true;
             break;
@@ -123,6 +124,11 @@ void EulerAdaptive::run(VM *vm) {
 
     long attempt = 0;   // counts ATTEMPTS, not accepted steps — see step_trace.hpp
 
+    // Accepted points for the truncation-error estimate (lte.hpp).
+    BdfHistory lhist;
+    lhist.reset(vm->solver->last_solution);
+    const std::vector<char> state_rows = lte_state_rows(*vm->solver->sys);
+
     while (vm->time < vm->end_time) {
         attempt++;
         VMSnapshot checkpoint = vm_save_state(vm);
@@ -149,13 +155,39 @@ void EulerAdaptive::run(VM *vm) {
 
         StepResult step = take_implicit_step(vm, dt);
 
+        double lte_r = -1.0;
+        const LteMethod lm = lte_be();
+        if (step.converged) {
+            // TRUNCATION ERROR (lte.hpp). take_implicit_step has already
+            // committed the step, slots included: the new value is now h0 and
+            // the older ones h1, h2. A rejection rolls all of it back.
+            const bool has_slots = vm->slots.size() > 0;
+            LteStep ls{&lhist, &vm->solver->last_solution, &state_rows, n_nodes, dt,
+                       rtol, atol, abstol,
+                       has_slots ? &vm->slots.h0 : nullptr,
+                       {&vm->slots.h1, &vm->slots.h2, &vm->slots.h2}};
+            lte_r = lte_ratio(ls, lm);
+            if (lte_r > 1.0 && dt > lte_min_step(max_dt)) {
+                vm_restore_state(vm, checkpoint);
+                vm->time_step = dt * lte_factor(lte_r, lm);
+                step_trace("euler_adaptive", attempt, vm->time, dt, step.iters, "lte-reject");
+                continue;
+            }
+            lhist.accept(vm->solver->last_solution, dt);
+        }
+
         if (step.converged) {
             reject_run.clear();
             logger_log_step(&vm->logger, vm->time, vm->solver->sys, vm->solver->last_solution);
             if (vm->phase_log) vm->phase_log(vm);
             logger_log_signals(&vm->logger, vm->values);
 
-            if (step.iters < 5) {
+            if (lte_r >= 0.0) {
+                // The error estimate picks the next step; the .tran step is a ceiling.
+                vm->time_step = std::min(max_dt, dt * lte_factor(lte_r, lm));
+                if (step.iters > max_iter / 2) vm->time_step = std::min(vm->time_step, 0.8 * dt);
+                step_trace("euler_adaptive", attempt, vm->time, dt, step.iters, "lte");
+            } else if (step.iters < 5) {
                 vm->time_step *= 1.5;
                 if (vm->time_step > max_dt) vm->time_step = max_dt;
                 step_trace("euler_adaptive", attempt, vm->time, dt, step.iters, "grow");
@@ -172,6 +204,7 @@ void EulerAdaptive::run(VM *vm) {
             step_trace("euler_adaptive", attempt, vm->time, dt, step.iters, "reject");
             if (reject_run.exhausted(vm->time_step)) {
                 fprintf(stderr, "[Adaptive] FATAL: Failed to converge at t=%.3e\n", vm->time);
+                vm_fail(vm);
                 dump_convergence_row(vm, conv.worst_row, conv.worst_step, conv.worst_tol);
                 dump_failure(vm, "euler_adaptive", dt, step.alpha, last_x, last_history);
                 break;

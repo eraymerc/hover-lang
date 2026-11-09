@@ -205,7 +205,7 @@ void Sim::set_abstol(double v) { if (impl_->tune) impl_->tune(impl_->strategy.ge
 void Sim::set_max_iter(int v) { if (impl_->tune) impl_->tune(impl_->strategy.get(), Field::max_iter, v); }
 void Sim::set_max_dt(double v) { if (impl_->tune) impl_->tune(impl_->strategy.get(), Field::max_dt, v); }
 
-void Sim::run() { vm_run(&impl_->vm); }
+bool Sim::run() { vm_run(&impl_->vm); return !impl_->vm.failed; }
 bool Sim::run_ac() { return vm_run_ac(&impl_->vm); }
 
 // ── Inside phases ────────────────────────────────────────────────────────────

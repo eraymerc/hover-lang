@@ -204,9 +204,15 @@ analog module PMOS4<double VTO,  double KP,   double GAMMA, double PHI, double L
     // Incremental Meyer currents, i = C(v)*dv/dt — see nmos.hvr for why not
     // ddt(C(v)*v) (a spurious v*dC/dt term and a negative capacitance below
     // threshold).
-    double igs = capgs * ddt(vgs_true);
-    double igd = capgd * ddt(vgd);
-    double igb = capgb * ddt(vgb);
+    // The integrated quantity is COX*v, not v: it is a charge-scaled value, so
+    // the step controller holds it to the same charge tolerance as every other
+    // ddt() (runtime/solvers/lte.hpp), and with TOX = 0 it is identically zero
+    // and constrains nothing. capgs/COX is the region's fraction of COX.
+    double inv_cox = 0.0;
+    if (COX > 0.0) { inv_cox = 1.0 / COX; }
+    double igs = capgs * inv_cox * ddt(COX * vgs_true);
+    double igd = capgd * inv_cox * ddt(COX * vgd);
+    double igb = capgb * inv_cox * ddt(COX * vgb);
 
     // Reversed pairs, matching the flipped coordinates the charges were
     // written in.

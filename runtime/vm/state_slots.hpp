@@ -55,7 +55,6 @@ struct StateSlots {
     std::vector<double> h0, h1, h2;       // s at the last three accepted points
     std::vector<double> d_prev;           // d at the last accepted point
     std::vector<double> blend;            // recipe applied to h, per slot
-    std::vector<char>   is_idt;           // set by the call: 0 = ddt, 1 = idt
 
     // The recipe in force. inv_alpha is kept separately so .ac can drive the
     // two operators independently (see vm/ac.cpp).

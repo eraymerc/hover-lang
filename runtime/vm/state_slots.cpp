@@ -3,7 +3,6 @@
 void slots_resize(StateSlots &st, int n) {
     for (auto *v : {&st.s_now, &st.d_now, &st.h0, &st.h1, &st.h2, &st.d_prev, &st.blend})
         v->assign(n, 0.0);
-    st.is_idt.assign(n, 0);
 }
 
 void slots_reset(StateSlots &st) {
@@ -40,7 +39,6 @@ double slots_idt(StateSlots &st, int k, double x) {
     const double s = st.blend[k] + (x + st.beta * st.d_prev[k]) * st.inv_alpha;
     st.s_now[k] = s;
     st.d_now[k] = x;
-    st.is_idt[k] = 1;
     return s;
 }
 

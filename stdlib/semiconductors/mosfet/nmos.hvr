@@ -321,9 +321,15 @@ analog module NMOS4<double VTO,  double KP,   double GAMMA, double PHI, double L
     // The capacitance is taken at the current iterate (SPICE averages it with
     // the previous step's; at the step sizes a switching edge forces, the two
     // agree).
-    double igs = capgs * ddt(vgs_true);
-    double igd = capgd * ddt(vgd);
-    double igb = capgb * ddt(vgb);
+    // The integrated quantity is COX*v, not v: it is a charge-scaled value, so
+    // the step controller holds it to the same charge tolerance as every other
+    // ddt() (runtime/solvers/lte.hpp), and with TOX = 0 it is identically zero
+    // and constrains nothing. capgs/COX is the region's fraction of COX.
+    double inv_cox = 0.0;
+    if (COX > 0.0) { inv_cox = 1.0 / COX; }
+    double igs = capgs * inv_cox * ddt(COX * vgs_true);
+    double igd = capgd * inv_cox * ddt(COX * vgd);
+    double igb = capgb * inv_cox * ddt(COX * vgb);
 
     current_source<>(igs) [gate, si];
     current_source<>(igd) [gate, di];
