@@ -240,6 +240,32 @@ func (g *generator) emitExpr(expr ast.Expression, logic elaborator.LogicObject) 
 			}
 			g.errors = append(g.errors, "I() requires a circuit element name, e.g. I(vsense)")
 			return "0.0", CDouble
+		case "ddt", "idt":
+			// Tagged by the elaborator (processAnalogStateOps) with a call-site
+			// number as a second argument. An untagged call was not at the top
+			// level of an analog module body.
+			tag, ok := (*ast.NumberExpression)(nil), len(n.Arguments) == 2
+			if ok {
+				tag, ok = n.Arguments[1].(*ast.NumberExpression)
+			}
+			if !ok {
+				g.errors = append(g.errors, fmt.Sprintf(
+					"%s() is only allowed in a statement at the top level of an analog module body — "+
+						"not inside an if/while block, a function, or a digital module: it is integrated "+
+						"over every accepted time step, so it must be evaluated on every one", fnName))
+				return "0.0", CDouble
+			}
+			key := fnName + "|" + logic.Prefix + "|" + tag.Value
+			if g.stateSlots == nil {
+				g.stateSlots = map[string]int{}
+			}
+			slot, seen := g.stateSlots[key]
+			if !seen {
+				slot = len(g.stateSlots)
+				g.stateSlots[key] = slot
+			}
+			argCode, argType := g.emitExpr(n.Arguments[0], logic)
+			return fmt.Sprintf("sim.%s(%d, %s)", fnName, slot, emitCast(argCode, argType, CDouble)), CDouble
 		case "nr_prev":
 			// nr_prev(expr) emits expr's full C++ translation with every
 			// nested V()/I() call routed to api_V_prev/api_I_prev — "this

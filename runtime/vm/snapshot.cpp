@@ -29,6 +29,7 @@ VMSnapshot vm_save_state(const VM *vm) {
         snap.cs_last_vals[name] = rec.last_value;
     }
     for (const VMClock &c : vm->clocks) snap.clock_last_tick.push_back(c.last_tick);
+    snap.slots = vm->slots;
 
     // Capture every Hover `state` variable's real current value into
     // vm->values (under the same key phase_log uses), THEN copy that into
@@ -76,6 +77,7 @@ void vm_restore_state(VM *vm, const VMSnapshot &snap) {
     for (size_t i = 0; i < snap.clock_last_tick.size() && i < vm->clocks.size(); i++) {
         vm->clocks[i].last_tick = snap.clock_last_tick[i];
     }
+    vm->slots = snap.slots;
 
     // Write the restored values back into the real C++ state globals —
     // this is the actual rollback. Without this call, vm->values would

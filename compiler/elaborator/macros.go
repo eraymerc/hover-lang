@@ -1,274 +1,77 @@
 package elaborator
 
 import (
-	"fmt"
+	"strconv"
+
 	"hover/compiler/ast"
 	"hover/compiler/token"
 )
 
-// processAnalogIdt dynamically rewrites idt(expr) calls into physical 1-Farad capacitors
-// processAnalogIdt dynamically rewrites idt() calls into physical capacitors
-func (e *Elaborator) processAnalogIdt(module *ast.ModuleDeclStatement) {
+// processAnalogStateOps tags every ddt(expr) and idt(expr) in an analog
+// module's body with its call-site number: ddt(expr) becomes ddt(expr, k).
+// Codegen turns a tagged call into sim.ddt(slot, expr) / sim.idt(slot, expr),
+// one runtime slot per call site per module instance, and the runtime
+// integrates it with the active solver's own formula
+// (runtime/vm/state_slots.hpp).
+//
+// Until 0.9 this pass rewrote the calls into circuit elements instead — ddt(q)
+// into a hidden node with a 1 H inductor fed by a current source of value q,
+// idt(x) into a hidden node with a 1 F capacitor — so that the solver would
+// integrate them. It did, but q became an unknown of the MNA system: a junction
+// charge of ~1e-10 C on a row scaled by 1/dt, read back as the difference of
+// two nearly equal charges times 1/dt. Halving dt made that worse, which is
+// how examples/MOSFET/h_bridge_inverter.hvr failed. The slots keep the
+// delegation (the solver's formula, implicit, inside Newton) without the extra
+// unknowns.
+//
+// Only the module body's top-level statements are searched, as before: a ddt()
+// inside an if/while body would be evaluated on some steps and not others, and
+// a derivative needs its history on every accepted step. An untagged call that
+// reaches codegen is reported there.
+func (e *Elaborator) processAnalogStateOps(module *ast.ModuleDeclStatement) {
 	if module.Body == nil {
 		return
 	}
+	site := 0
 
-	idtCounter := 0
-	var newBody []ast.Statement
-	var injectedStmts []ast.Statement
-
-	var walkExpr func(expr ast.Expression) ast.Expression
-	walkExpr = func(expr ast.Expression) ast.Expression {
-		if expr == nil {
-			return nil
-		}
-
+	var walk func(expr ast.Expression) ast.Expression
+	walk = func(expr ast.Expression) ast.Expression {
 		switch node := expr.(type) {
 		case *ast.BinaryExpression:
-			node.Left = walkExpr(node.Left)
-			node.Right = walkExpr(node.Right)
-			return node
-
+			node.Left = walk(node.Left)
+			node.Right = walk(node.Right)
+		case *ast.UnaryExpression:
+			node.Right = walk(node.Right)
+		case *ast.IndexExpression:
+			node.Left = walk(node.Left)
+			node.Index = walk(node.Index)
 		case *ast.CallExpression:
-			if id, ok := node.Function.(*ast.IdentifierExpression); ok && id.Value == "idt" && len(node.Arguments) == 1 {
-
-				hiddenNode := fmt.Sprintf("__hidden_idt_%d_%s", idtCounter, module.Name)
-				idtCounter++
-
-				hiddenRef := &ast.IdentifierExpression{
-					Token: token.Token{Type: token.IDENT, Literal: hiddenNode},
-					Value: hiddenNode,
-				}
-
-				// A declaration, not a bare assignment: the injected current
-				// source is controlled by this name, and checkSourceControls
-				// rejects a control that nothing declares.
-				declStmt := &ast.LocalDeclStatement{
-					Token: module.Token,
-					Type:  ast.TDouble,
-					Decls: []*ast.VarDecl{{Name: hiddenNode, Value: node.Arguments[0]}},
-				}
-
-				capStmt := &ast.PhysicalPrimitiveStatement{
-					Token:    module.Token,
-					PrimType: "C",
-					StaticArgs: []ast.Expression{
-						&ast.NumberExpression{
-							Token: token.Token{Type: token.NUMBER, Literal: "1.0"},
-							Value: "1.0",
-						},
-					},
-					PhysArgs: []ast.Expression{
-						&ast.IdentifierExpression{
-							Token: token.Token{Type: token.IDENT, Literal: hiddenNode},
-							Value: hiddenNode,
-						},
-						&ast.IdentifierExpression{
-							Token: token.Token{Type: token.IDENT, Literal: "gnd"},
-							Value: "gnd",
-						},
-					},
-				}
-
-				csStmt := &ast.PhysicalPrimitiveStatement{
-					Token:     module.Token,
-					PrimType:  "current_source",
-					LogicArgs: []ast.Expression{hiddenRef},
-					PhysArgs: []ast.Expression{
-						&ast.IdentifierExpression{
-							Token: token.Token{Type: token.IDENT, Literal: "gnd"},
-							Value: "gnd",
-						},
-						&ast.IdentifierExpression{
-							Token: token.Token{Type: token.IDENT, Literal: hiddenNode},
-							Value: hiddenNode,
-						},
-					},
-				}
-
-				injectedStmts = append(injectedStmts, declStmt, capStmt, csStmt)
-
-				return &ast.CallExpression{
-					Token: module.Token,
-					Function: &ast.IdentifierExpression{
-						Token: token.Token{Type: token.IDENT, Literal: "V"},
-						Value: "V",
-					},
-					Arguments: []ast.Expression{
-						&ast.IdentifierExpression{
-							Token: token.Token{Type: token.IDENT, Literal: hiddenNode},
-							Value: hiddenNode,
-						},
-					},
-				}
-			}
-
 			for i, arg := range node.Arguments {
-				node.Arguments[i] = walkExpr(arg)
+				node.Arguments[i] = walk(arg)
 			}
-			return node
+			if id, ok := node.Function.(*ast.IdentifierExpression); ok &&
+				(id.Value == "ddt" || id.Value == "idt") && len(node.Arguments) == 1 {
+				lit := strconv.Itoa(site)
+				site++
+				node.Arguments = append(node.Arguments, &ast.NumberExpression{
+					Token: token.Token{Type: token.NUMBER, Literal: lit, Line: id.Token.Line},
+					Value: lit,
+				})
+			}
 		}
 		return expr
 	}
 
 	for _, stmt := range module.Body.Body {
-		injectedStmts = nil
-
 		switch s := stmt.(type) {
 		case *ast.ExpressionStatement:
-			s.Expression = walkExpr(s.Expression)
+			s.Expression = walk(s.Expression)
 		case *ast.AssignmentStatement:
-			s.Right = walkExpr(s.Right)
+			s.Right = walk(s.Right)
 		case *ast.LocalDeclStatement:
 			for _, d := range s.Decls {
-				d.Value = walkExpr(d.Value)
+				d.Value = walk(d.Value)
 			}
 		}
-
-		if len(injectedStmts) > 0 {
-			newBody = append(newBody, injectedStmts...)
-		}
-		newBody = append(newBody, stmt)
 	}
-
-	module.Body.Body = newBody
-}
-
-// processAnalogDdt dynamically rewrites ddt(expr) calls into physical
-// 1-Henry inductors -- the exact dual of processAnalogIdt's capacitor trick.
-//
-// An inductor's defining equation is V = L * dI/dt, where I is the current
-// THROUGH it. By injecting expr as a current source into a node whose only
-// other connection is the inductor (to ground), KCL forces the inductor's
-// actual current to equal expr exactly -- so the inductor's voltage becomes
-// L * d(expr)/dt, i.e. the time derivative of expr, scaled by L. With L=1,
-// V(hiddenNode) = d(expr)/dt directly.
-//
-// Like idt(), this performs NO numerical differentiation at all -- it lets
-// the MNA solver compute the derivative as a natural consequence of solving
-// the inductor's own physical equation, inheriting whatever stability and
-// accuracy properties the active solver already has for inductors.
-func (e *Elaborator) processAnalogDdt(module *ast.ModuleDeclStatement) {
-	if module.Body == nil {
-		return
-	}
-
-	ddtCounter := 0
-	var newBody []ast.Statement
-	var injectedStmts []ast.Statement
-
-	var walkExpr func(expr ast.Expression) ast.Expression
-	walkExpr = func(expr ast.Expression) ast.Expression {
-		if expr == nil {
-			return nil
-		}
-
-		switch node := expr.(type) {
-		case *ast.BinaryExpression:
-			node.Left = walkExpr(node.Left)
-			node.Right = walkExpr(node.Right)
-			return node
-
-		case *ast.CallExpression:
-			if id, ok := node.Function.(*ast.IdentifierExpression); ok && id.Value == "ddt" && len(node.Arguments) == 1 {
-
-				hiddenNode := fmt.Sprintf("__hidden_ddt_%d_%s", ddtCounter, module.Name)
-				ddtCounter++
-
-				hiddenRef := &ast.IdentifierExpression{
-					Token: token.Token{Type: token.IDENT, Literal: hiddenNode},
-					Value: hiddenNode,
-				}
-
-				// Declared, not assigned — see the matching comment in
-				// processAnalogIdt.
-				declStmt := &ast.LocalDeclStatement{
-					Token: module.Token,
-					Type:  ast.TDouble,
-					Decls: []*ast.VarDecl{{Name: hiddenNode, Value: node.Arguments[0]}},
-				}
-
-				indStmt := &ast.PhysicalPrimitiveStatement{
-					Token:    module.Token,
-					PrimType: "L",
-					StaticArgs: []ast.Expression{
-						&ast.NumberExpression{
-							Token: token.Token{Type: token.NUMBER, Literal: "1.0"},
-							Value: "1.0",
-						},
-					},
-					PhysArgs: []ast.Expression{
-						&ast.IdentifierExpression{
-							Token: token.Token{Type: token.IDENT, Literal: hiddenNode},
-							Value: hiddenNode,
-						},
-						&ast.IdentifierExpression{
-							Token: token.Token{Type: token.IDENT, Literal: "gnd"},
-							Value: "gnd",
-						},
-					},
-				}
-
-				csStmt := &ast.PhysicalPrimitiveStatement{
-					Token:     module.Token,
-					PrimType:  "current_source",
-					LogicArgs: []ast.Expression{hiddenRef},
-					PhysArgs: []ast.Expression{
-						&ast.IdentifierExpression{
-							Token: token.Token{Type: token.IDENT, Literal: "gnd"},
-							Value: "gnd",
-						},
-						&ast.IdentifierExpression{
-							Token: token.Token{Type: token.IDENT, Literal: hiddenNode},
-							Value: hiddenNode,
-						},
-					},
-				}
-
-				injectedStmts = append(injectedStmts, declStmt, indStmt, csStmt)
-
-				return &ast.CallExpression{
-					Token: module.Token,
-					Function: &ast.IdentifierExpression{
-						Token: token.Token{Type: token.IDENT, Literal: "V"},
-						Value: "V",
-					},
-					Arguments: []ast.Expression{
-						&ast.IdentifierExpression{
-							Token: token.Token{Type: token.IDENT, Literal: hiddenNode},
-							Value: hiddenNode,
-						},
-					},
-				}
-			}
-
-			for i, arg := range node.Arguments {
-				node.Arguments[i] = walkExpr(arg)
-			}
-			return node
-		}
-		return expr
-	}
-
-	for _, stmt := range module.Body.Body {
-		injectedStmts = nil
-
-		switch s := stmt.(type) {
-		case *ast.ExpressionStatement:
-			s.Expression = walkExpr(s.Expression)
-		case *ast.AssignmentStatement:
-			s.Right = walkExpr(s.Right)
-		case *ast.LocalDeclStatement:
-			for _, d := range s.Decls {
-				d.Value = walkExpr(d.Value)
-			}
-		}
-
-		if len(injectedStmts) > 0 {
-			newBody = append(newBody, injectedStmts...)
-		}
-		newBody = append(newBody, stmt)
-	}
-
-	module.Body.Body = newBody
 }

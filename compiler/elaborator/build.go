@@ -22,13 +22,12 @@ func (e *Elaborator) Elaborate() (*ElaboratedProgram, error) {
 		return nil, fmt.Errorf("module 'main' not found")
 	}
 
-	// Macro rewriting applies to every analog module in the whole loaded set,
-	// not just the entry file's — a library's analog module needs its idt()/
-	// ddt() expanded whether or not the entry file can name it.
+	// ddt()/idt() call-site tagging applies to every analog module in the
+	// whole loaded set, not just the entry file's — a library's analog module
+	// needs its calls tagged whether or not the entry file can name it.
 	for _, mod := range e.allModules() {
 		if mod.Token.Type == token.ANALOG {
-			e.processAnalogIdt(mod)
-			e.processAnalogDdt(mod)
+			e.processAnalogStateOps(mod)
 		}
 	}
 

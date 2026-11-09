@@ -201,13 +201,12 @@ analog module PMOS4<double VTO,  double KP,   double GAMMA, double PHI, double L
         }
     }
 
-    double qgs = capgs * vgs_true;
-    double qgd = capgd * vgd;
-    double qgb = capgb * vgb;
-
-    double igs = ddt(qgs);
-    double igd = ddt(qgd);
-    double igb = ddt(qgb);
+    // Incremental Meyer currents, i = C(v)*dv/dt — see nmos.hvr for why not
+    // ddt(C(v)*v) (a spurious v*dC/dt term and a negative capacitance below
+    // threshold).
+    double igs = capgs * ddt(vgs_true);
+    double igd = capgd * ddt(vgd);
+    double igb = capgb * ddt(vgb);
 
     // Reversed pairs, matching the flipped coordinates the charges were
     // written in.

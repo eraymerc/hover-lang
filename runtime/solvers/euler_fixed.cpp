@@ -39,11 +39,18 @@ void EulerFixed::run(VM *vm) {
         api_update_solution(vm->api, vm->solver->last_solution);
         vm_run_digital(vm);
 
+        // ddt/idt: backward Euler from the last step. The analog pass below is
+        // this solver's only one, at the step's START, so a ddt() here is the
+        // derivative over the previous step — explicit, as every device
+        // current in this solver is (state_slots.hpp).
+        slots_begin_be(vm->slots, 1.0 / dt);
+
 
         vm_run_analog(vm);
         vm_run_phase_b(vm);
 
         solver_step(vm->solver);
+        slots_commit(vm->slots);
         vm->time += dt;
 
         logger_log_step(&vm->logger, vm->time,

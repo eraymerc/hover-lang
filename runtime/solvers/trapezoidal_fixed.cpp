@@ -34,6 +34,7 @@ void TrapezoidalFixed::run(VM *vm) {
     // Persistent Jacobian across iterations to avoid O(N^3) recalculations
     Eigen::MatrixXd cached_jacobian(n, n);
     bool recompute_jacobian = true;
+    double jac_alpha = -1.0;   // alpha the cached Jacobian was formed under
 
     double alpha_trap  = 2.0 / vm->time_step;
     double alpha_euler = 1.0 / vm->time_step;
@@ -63,16 +64,30 @@ void TrapezoidalFixed::run(VM *vm) {
         // sources (like AC voltages) correctly evaluate for the t + dt integration point.
         vm->time += vm->time_step;
 
+        bool using_euler = tick;
+        // ddt/idt follow the same formula as the matrix, switched in the same
+        // place (state_slots.hpp). The trapezoidal companion needs the
+        // derivative at the last point, which B_old carries for the matrix.
+        // Published BEFORE the Jacobian: alpha*dq/dV is part of it, so a
+        // Jacobian formed under another alpha has the wrong slope for every
+        // ddt() — re-form it when alpha changes (only when there are slots, so
+        // a deck without ddt/idt is solved exactly as before).
+        static const double W_LAST[3] = {1.0, 0.0, 0.0};
+        const double alpha_step = using_euler ? alpha_euler : alpha_trap;
+        if (using_euler) slots_begin_be(vm->slots, alpha_euler);
+        else             slots_begin(vm->slots, alpha_trap, W_LAST, 1.0);
+        if (vm->slots.size() > 0 && alpha_step != jac_alpha) recompute_jacobian = true;
+
         // Evaluate the Jacobian exactly once per time step
         if (recompute_jacobian) {
             cached_jacobian = vm_compute_jacobian(vm, x_anchor);
             vm->solver->g_dirty = 1; // Force LU factorization
             recompute_jacobian = false;
+            jac_alpha = alpha_step;
         } else {
             vm->solver->g_dirty = 0; // Reuse previous LU factorization
         }
 
-        bool using_euler = tick;
 
         for (int iter = 0; iter < max_iter; iter++) {
             api_update_solution(vm->api, x_guess);
@@ -82,6 +97,8 @@ void TrapezoidalFixed::run(VM *vm) {
             // If Trapezoidal rings or stalls, drop to Backward Euler to mathematically damp it.
             if (!using_euler && iter > max_iter / 2) {
                 using_euler = true;
+                slots_begin_be(vm->slots, alpha_euler);
+                jac_alpha = alpha_euler;
                 // Because alpha drops from 2/dt to 1/dt, the dynamic conductance matrix 
                 // changes. We MUST calculate a fresh Jacobian and force an LU decomposition.
                 cached_jacobian = vm_compute_jacobian(vm, x_guess);
@@ -107,7 +124,8 @@ void TrapezoidalFixed::run(VM *vm) {
                                          &total_correction, &cached_jacobian);
             }
 
-            if (trap_converged(x_new, x_guess)) {
+            if (trap_converged(x_new, x_guess) &&
+                vm_slots_converged(vm, x_new, rtol, atol, atol)) {   // one tolerance here, as trap_converged
                 x_guess = x_new;
                 converged = true;
                 break;
@@ -131,6 +149,7 @@ void TrapezoidalFixed::run(VM *vm) {
             recompute_jacobian = true; 
         }
 
+        vm_commit_slots_at(vm, x_guess);
         solver_advance_time(vm->solver, x_guess);
         logger_log_step(&vm->logger, vm->time, vm->solver->sys, vm->solver->last_solution);
         if (vm->phase_log) vm->phase_log(vm);

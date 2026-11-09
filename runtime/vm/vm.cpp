@@ -46,6 +46,34 @@ void vm_run_analog(VM *vm) {
     if (vm->phase_analog) vm->phase_analog(vm);
 }
 
+void vm_commit_slots_at(VM *vm, const Eigen::VectorXd &x) {
+    if (vm->slots.size() == 0) return;
+    api_peek_solution(vm->api, x);
+    vm_run_analog(vm);
+    slots_commit(vm->slots);
+}
+
+bool vm_slots_converged(VM *vm, const Eigen::VectorXd &x_new,
+                        double rtol, double vntol, double abstol) {
+    StateSlots &st = vm->slots;
+    if (st.size() == 0) return true;
+    const std::vector<double> s_old = st.s_now, d_old = st.d_now;
+    api_peek_solution(vm->api, x_new);
+    vm_run_analog(vm);
+    auto close = [rtol](double a, double b, double tol) {
+        return std::abs(a - b) <= tol + rtol * std::max(std::abs(a), std::abs(b));
+    };
+    for (int k = 0; k < st.size(); k++) {
+        if (st.is_idt[k]) {
+            if (!close(st.s_now[k], s_old[k], vntol)) return false;      // a node, then
+        } else {
+            if (!close(st.s_now[k], s_old[k], abstol)) return false;     // the charge: a branch
+            if (!close(st.d_now[k], d_old[k], vntol))  return false;     // its current: a node
+        }
+    }
+    return true;
+}
+
 void vm_run_phase_b(VM *vm) {
     if (vm->phase_b) vm->phase_b(vm);
 }
@@ -329,7 +357,12 @@ static bool op_relax_to_dc(VM *vm, Eigen::VectorXd &x_guess) {
         const double dt_try = std::min(dt * grow, DT_END);
         const Eigen::VectorXd history = x_guess;
         x_try = x_guess;
+        // ddt/idt slots take the same history as the matrix: the last
+        // converged rung, held in h0 by slots_anchor and untouched by a rung
+        // that fails.
+        slots_begin_be(vm->slots, 1.0 / dt_try);
         if (op_newton(vm, x_try, history, 1.0 / dt_try, &iters, &worst, &worst_row)) {
+            slots_anchor(vm->slots);
             x_guess = x_try;
             dt      = dt_try;
             grow    = std::min(grow * 2.0, 10.0);
@@ -366,6 +399,10 @@ static bool vm_solve_dc_once(VM *vm, bool relax) {
     const int    n_alphas = rampable ? 12 : 1;
 
     vm->time = 0.0;
+    // The ladder solves from an all-zero history (zero_history below), and so
+    // do the ddt/idt slots: uncharged, at the same alpha.
+    slots_reset(vm->slots);
+    slots_begin_zero(vm->slots, 1.0 / vm->time_step);
     api_update_solution(vm->api, x_guess);
     vm_run_digital(vm);
     vm_run_analog(vm);
@@ -407,13 +444,18 @@ static bool vm_solve_dc_once(VM *vm, bool relax) {
     // bias point is one backward-Euler step of vm->time_step from an all-zero
     // history — i.e. the state at t = time_step, not at t = 0 — and vm_boot
     // accounts for it as such (see the t = 0 row there).
-    if (relax && !op_failed && !op_relax_to_dc(vm, x_guess)) {
-        op_failed = 1;
+    if (relax && !op_failed) {
+        slots_anchor(vm->slots);   // the relaxation starts from the last rung
+        if (!op_relax_to_dc(vm, x_guess)) op_failed = 1;
     }
 
     api_update_solution(vm->api, x_guess);
     vm_run_analog(vm);
     vm_run_phase_b(vm);
+    // The bias point is the transient's history: its charges, and (without
+    // .op) the derivative its backward-Euler step produced — which a
+    // trapezoidal first step needs, exactly as the matrix needs B_old.
+    slots_anchor(vm->slots);
     solver_advance_time(vm->solver, x_guess);
     return !op_failed;
 }

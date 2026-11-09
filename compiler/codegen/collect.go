@@ -95,10 +95,9 @@ func (g *generator) collectAllVars() []string {
 			}
 		case *ast.AssignmentStatement:
 			// Bare assignments with no prior LocalDeclStatement must still get
-			// a global declared (idt()/ddt()'s injected hidden-node writes —
-			// elaborator/macros.go — target a fresh identifier that is never
-			// wrapped in a LocalDeclStatement). Without this they'd never be
-			// declared and the generated C++ would fail to compile.
+			// a global declared (idt()/ddt() used to inject such writes for
+			// their hidden nodes). Without this they'd never be declared and
+			// the generated C++ would fail to compile.
 			if id, ok := s.Left.(*ast.IdentifierExpression); ok {
 				mangled := resolveWrite(id.Value, logic)
 				if !seen[mangled] {
@@ -159,8 +158,8 @@ func (g *generator) collectVarTypes() map[string]hoverType {
 				types[resolveWrite(d.Name, logic)] = ht
 			}
 		case *ast.AssignmentStatement:
-			// Bare-assigned names (idt/ddt hidden nodes) have no declared type;
-			// they are always plain physical scalars — default to double.
+			// Bare-assigned names have no declared type; they are always plain
+			// physical scalars — default to double.
 			if id, ok := s.Left.(*ast.IdentifierExpression); ok {
 				mangled := resolveWrite(id.Value, logic)
 				if _, exists := types[mangled]; !exists {

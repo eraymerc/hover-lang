@@ -43,6 +43,7 @@ void BDF2::run(VM *vm) {
     // Jacobian is never blamed twice within the same step.
     Eigen::MatrixXd jacobian;
     bool jacobian_valid = false;
+    double jac_alpha = -1.0;   // alpha the held Jacobian was formed under
 
     long attempt = 0;   // counts ATTEMPTS, not accepted steps — see step_trace.hpp
     RejectRun reject_run;    // bounds the halving spiral — see step_limits.hpp
@@ -84,7 +85,14 @@ void BDF2::run(VM *vm) {
 
         bool converged   = false;
         double alpha;
-        hist.bdf(hist.usable_order(dt, 2), dt, alpha, x_blend);
+        double w[3];
+        hist.bdf_recipe(hist.usable_order(dt, 2), dt, alpha, w);
+        hist.blend_of(w, x_blend);
+        // ddt/idt slots get the same recipe (vm/state_slots.hpp). alpha*dq/dV
+        // is part of the Jacobian, so a Jacobian formed under another alpha is
+        // re-formed — only when the deck has slots, so nothing else changes.
+        slots_begin(vm->slots, alpha, w, 0.0);
+        if (vm->slots.size() > 0 && alpha != jac_alpha) jacobian_valid = false;
 
         int iters = 0;
         bool jacobian_current_this_step = false;
@@ -98,6 +106,7 @@ void BDF2::run(VM *vm) {
             jacobian = vm_compute_jacobian(vm, x_guess);
             vm->solver->g_dirty = 1;
             jacobian_valid = true;
+            jac_alpha = alpha;
             jacobian_current_this_step = true;
         }
 
@@ -157,7 +166,8 @@ void BDF2::run(VM *vm) {
             // a carried-over number rather than this step's own opening ratio.
             if (iter == 0) jac.seed(conv.worst_ratio);
 
-            if (newton_converged(x_new, x_guess, n_nodes, rtol, atol, abstol, conv)) {
+            if (newton_converged(x_new, x_guess, n_nodes, rtol, atol, abstol, conv) &&
+            vm_slots_converged(vm, x_new, rtol, atol, abstol)) {
                 x_guess = x_new;
                 converged = true;
                 break;
@@ -353,6 +363,7 @@ void BDF2::run(VM *vm) {
         jacobian_valid = false;
 
         reject_run.clear();
+        vm_commit_slots_at(vm, x_guess);
         hist.accept(x_guess, dt);
 
         solver_advance_time(vm->solver, x_guess);

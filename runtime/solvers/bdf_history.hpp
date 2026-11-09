@@ -82,45 +82,53 @@ struct BdfHistory {
         return order;
     }
 
-    // BDF of the given order (1 or 2): sets alpha and x_blend.
-    void bdf(int order, double dt, double &alpha, Eigen::VectorXd &x_blend) const {
-        if (order <= 1) {
-            alpha = 1.0 / dt;
-            x_blend = y[0];
-            return;
-        }
-        const double w = dt / h[0];
-        alpha = (1.0 + 2.0 * w) / ((1.0 + w) * dt);
-        x_blend = ((1.0 + w) * (1.0 + w) * y[0] - w * w * y[1]) / (1.0 + 2.0 * w);
+    // A recipe is alpha and the weights w[k] on y[k]: x_blend = sum w[k]*y[k].
+    // Computing x_blend from the weights — rather than each formula building
+    // its own blend — is what lets the ddt()/idt() slots (vm/state_slots.hpp)
+    // apply the very same recipe to their own histories.
+    void blend_of(const double w[3], Eigen::VectorXd &x_blend) const {
+        x_blend = w[0] * y[0];
+        if (w[1] != 0.0) x_blend += w[1] * y[1];
+        if (w[2] != 0.0) x_blend += w[2] * y[2];
     }
 
-    // NDF of order k = 1 or 2 (needs k+1 points), Shampine & Reichelt's kappa.
-    // order 0 means "no history": plain BDF1, no correction.
-    void ndf(int points_used, double dt, double &alpha, Eigen::VectorXd &x_blend) const {
+    // BDF of the given order (1 or 2).
+    void bdf_recipe(int order, double dt, double &alpha, double w[3]) const {
+        w[0] = 1.0; w[1] = 0.0; w[2] = 0.0;
+        if (order <= 1) { alpha = 1.0 / dt; return; }
+        const double r = dt / h[0];
+        alpha = (1.0 + 2.0 * r) / ((1.0 + r) * dt);
+        w[0] = (1.0 + r) * (1.0 + r) / (1.0 + 2.0 * r);
+        w[1] = -r * r / (1.0 + 2.0 * r);
+    }
+
+    // NDF using `points_used` history points (1: BDF1, 2: NDF1, 3: NDF2),
+    // Shampine & Reichelt's kappa.
+    void ndf_recipe(int points_used, double dt, double &alpha, double w[3]) const {
         static const double KAPPA[2] = { -0.1850, -1.0 / 9.0 };
         static const double GAMMA[2] = { 1.0, 1.5 };
         const int k = points_used - 1;          // NDF order
-        if (k <= 0) { bdf(1, dt, alpha, x_blend); return; }
+        if (k <= 0) { bdf_recipe(1, dt, alpha, w); return; }
 
-        double a_bdf;
-        Eigen::VectorXd b_bdf;
-        bdf(k, dt, a_bdf, b_bdf);
+        double a_bdf, wb[3];
+        bdf_recipe(k, dt, a_bdf, wb);
 
         // Predictor: polynomial through y[0..k], extrapolated to t_n + dt.
-        Eigen::VectorXd y0;
+        double L[3] = {0.0, 0.0, 0.0};
         if (k == 1) {
-            y0 = y[0] + (dt / h[0]) * (y[0] - y[1]);
+            const double r = dt / h[0];
+            L[0] = 1.0 + r;
+            L[1] = -r;
         } else {
             const double h1 = h[0], h2 = h[1];
-            const double L0 = (dt + h1) * (dt + h1 + h2) / (h1 * (h1 + h2));
-            const double L1 = -dt * (dt + h1 + h2) / (h1 * h2);
-            const double L2 = dt * (dt + h1) / ((h1 + h2) * h2);
-            y0 = L0 * y[0] + L1 * y[1] + L2 * y[2];
+            L[0] = (dt + h1) * (dt + h1 + h2) / (h1 * (h1 + h2));
+            L[1] = -dt * (dt + h1 + h2) / (h1 * h2);
+            L[2] = dt * (dt + h1) / ((h1 + h2) * h2);
         }
 
         // alpha*(y - x_blend) = a_bdf*(y - b_bdf) - c*(y - y0),  c = kappa*gamma/h
         const double c = KAPPA[k - 1] * GAMMA[k - 1] / dt;
         alpha = a_bdf - c;
-        x_blend = (a_bdf * b_bdf - c * y0) / alpha;
+        for (int i = 0; i < 3; i++) w[i] = (a_bdf * wb[i] - c * L[i]) / alpha;
     }
 };

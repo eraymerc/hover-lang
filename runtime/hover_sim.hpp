@@ -80,6 +80,9 @@ public:
     // t = k * period. While it runs, dt() is the period. Call after init_vm.
     void add_clock(const char *name, double period, Phase phase);
 
+    // Number of ddt()/idt() call sites (one slot each). Call before init_vm.
+    void init_state_slots(int n);
+
     // What the logger records: MNA node voltages, then VM signals (values
     // published with set_value). init_logger fixes the column set.
     void log_node(const char *name);
@@ -114,6 +117,11 @@ public:
     double I_prev(const char *element) const;
     void   set_voltage_source(const char *name, double voltage);
     void   set_current_source(const char *name, double current);
+
+    // ddt(q) / idt(x) at call site `slot`, integrated by the active solver's
+    // own formula (runtime/vm/state_slots.hpp). Analog phases only.
+    double ddt(int slot, double q);
+    double idt(int slot, double x);
 
     // The VM's named-value table: logged signals and state snapshots.
     void   set_value(const char *key, double v);

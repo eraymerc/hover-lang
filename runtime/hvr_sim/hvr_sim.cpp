@@ -219,6 +219,9 @@ double Sim::I_prev(const char *element) const { return api_I_prev(&impl_->api, e
 void Sim::set_voltage_source(const char *name, double v) { api_set_voltage_source(&impl_->api, name, v); }
 void Sim::set_current_source(const char *name, double i) { api_set_current_source(&impl_->api, name, i); }
 void Sim::set_value(const char *key, double v) { impl_->vm.values[key] = v; }
+void Sim::init_state_slots(int n) { slots_resize(impl_->vm.slots, n); }
+double Sim::ddt(int slot, double q) { return slots_ddt(impl_->vm.slots, slot, q); }
+double Sim::idt(int slot, double x) { return slots_idt(impl_->vm.slots, slot, x); }
 double Sim::value(const char *key) const { return impl_->vm.values[key]; }
 
 }  // namespace hvr

@@ -5,14 +5,14 @@
 //             reconstruction of the 50 Hz fundamental
 // ─────────────────────────────────────────────────────────────────────────────
 
-.save(main.bridge_a, main.bridge_b, main.out_p, main.out_n, main.v_ref);
+.save(main.bridge_a, main.out_p, main.out_n, main.v_ref);
 .op;
 // No .zcd. It is the natural fit for discrete gate edges and it is what
 // mosfet_h_bridge.hvr uses, but that deck switches twice in 400 ms while this
 // one switches 3200 times. Measured here: enabling it moves the failure point
 // from t = 1.02 ms back to t = 87 us, so the edge isolation costs far more than
 // it buys.
-.tran(0, 40m, 1u);   // 40 ms = two full 50 Hz cycles
+.tran(0, 40m, 10u);   // 40 ms = two full 50 Hz cycles
 .solver(ndf2);
 
 import <parts/mosfet/nmos> as nfet;
@@ -221,7 +221,7 @@ module HBridge<double Rgate>
 
 module main<>() []
 {
-    wire vdc, bridge_a, bridge_b, out_p, out_n, cm_mid, snub_a, snub_b;
+    wire vdc, bridge_a, out_p, out_n, cm_mid, snub_a, snub_b;
     state double cmd_TL = 0, cmd_BL = 0, cmd_TR = 0, cmd_BR = 0;
     state double v_ref = 0;
 
@@ -238,14 +238,11 @@ module main<>() []
     // time. A stiffer drive makes the commutation harder to resolve and buys
     // nothing at 20 kHz, where switching loss is not what limits the design.
     module bridge = HBridge<470>
-                    (cmd_TL, cmd_BL, cmd_TR, cmd_BR) [vdc, bridge_a, bridge_b];
+                    (cmd_TL, cmd_BL, cmd_TR, cmd_BR) [vdc, bridge_a, out_n];
 
     // 4. LC output filter with the common-mode damping leg described above.
     L<14m>()  [bridge_a, out_p];
-    L<14m>()  [bridge_b, out_n];
-    C<1.4u>() [out_p, cm_mid];
-    C<1.4u>() [out_n, cm_mid];
-    R<68>()   [cm_mid, gnd];
+    C<1.4u>() [out_n, out_p];
     R<200>()  [out_p, out_n];
 
     // 5. No snubber, deliberately — and this is the single thing that decides

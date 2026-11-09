@@ -39,6 +39,7 @@ void Trapezoidal::run(VM *vm) {
     // matrix ever survives into a step it was not formed for.
     Eigen::MatrixXd cached_jacobian(n, n);
     bool jacobian_valid = false;
+    double jac_alpha = -1.0;      // alpha the held Jacobian was formed under (see the slots note)
     bool force_euler = true; // ALWAYS start the simulation with a Backward Euler step
 
     long attempt = 0;   // counts ATTEMPTS, not accepted steps — see step_trace.hpp
@@ -113,6 +114,15 @@ void Trapezoidal::run(VM *vm) {
         // the top of every step regardless.
         double alpha = force_euler ? (1.0 / dt) : (2.0 / dt);
 
+        // ddt/idt: the same companion as the matrix (state_slots.hpp), with the
+        // derivative at the last point for the trapezoidal rule. alpha*dq/dV is
+        // part of the Jacobian, so one formed under another alpha is re-formed
+        // (only when the deck has slots — otherwise nothing changes).
+        static const double W_LAST[3] = {1.0, 0.0, 0.0};
+        if (force_euler) slots_begin_be(vm->slots, alpha);
+        else             slots_begin(vm->slots, alpha, W_LAST, 1.0);
+        if (vm->slots.size() > 0 && alpha != jac_alpha) jacobian_valid = false;
+
         // Prepare Trapezoidal History if not using Euler
         x_anchor = vm->solver->last_solution;
         if (!force_euler) {
@@ -132,6 +142,7 @@ void Trapezoidal::run(VM *vm) {
             vm->solver->g_dirty = 1;
             jacobian_valid = true;
             jacobian_current_this_step = true;
+            jac_alpha = alpha;
         } else {
             vm->solver->g_dirty = 0;
         }
@@ -184,7 +195,8 @@ void Trapezoidal::run(VM *vm) {
             // iteration's own.
             if (iter == 0) jac.seed(conv.worst_ratio);
 
-            if (newton_converged(x_new, x_guess, n_nodes, rtol, atol, abstol, conv)) {
+            if (newton_converged(x_new, x_guess, n_nodes, rtol, atol, abstol, conv) &&
+            vm_slots_converged(vm, x_new, rtol, atol, abstol)) {
                 x_guess = x_new;
                 converged = true;
                 break;
@@ -207,6 +219,7 @@ void Trapezoidal::run(VM *vm) {
         // 5. Adaptive Timestep Control & Recovery
         if (converged) {
             // Success! Log the state.
+            vm_commit_slots_at(vm, x_guess);
             solver_advance_time(vm->solver, x_guess);
             logger_log_step(&vm->logger, vm->time, vm->solver->sys, vm->solver->last_solution);
             if (vm->phase_log) vm->phase_log(vm);

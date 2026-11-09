@@ -29,6 +29,7 @@ EulerAdaptive::StepResult EulerAdaptive::take_implicit_step(VM *vm, double dt) {
     bool converged = false;
     int  iters     = 0;
     double alpha   = 1.0 / dt;
+    slots_begin_be(vm->slots, alpha);
 
     JacRefresh jac;   // within-step re-form policy — see newton_core.hpp
 
@@ -71,7 +72,8 @@ EulerAdaptive::StepResult EulerAdaptive::take_implicit_step(VM *vm, double dt) {
         // previous convergence test, since it runs before this iteration's own.
         if (iter == 0) jac.seed(conv.worst_ratio);
 
-        if (newton_converged(x_new, x_guess, n_nodes, rtol, atol, abstol, conv)) {
+        if (newton_converged(x_new, x_guess, n_nodes, rtol, atol, abstol, conv) &&
+            vm_slots_converged(vm, x_new, rtol, atol, abstol)) {
             x_guess = x_new;
             converged = true;
             break;
@@ -94,6 +96,7 @@ EulerAdaptive::StepResult EulerAdaptive::take_implicit_step(VM *vm, double dt) {
     }
 
     if (converged) {
+        vm_commit_slots_at(vm, x_guess);
         solver_advance_time(vm->solver, x_guess);
         vm->time += dt;
     } else {

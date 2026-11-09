@@ -51,6 +51,7 @@ void GaussSiedel::run(VM *vm) {
     while (vm->time < vm->end_time - 0.5 * vm->time_step) {
         double dt = vm_check_zero_crossing(vm, vm->time_step);
         double alpha = 1.0 / dt;
+        slots_begin_be(vm->slots, alpha);
 
         api_update_solution(vm->api, vm->solver->last_solution);
         vm_run_digital(vm);
@@ -87,6 +88,7 @@ void GaussSiedel::run(VM *vm) {
             fprintf(stderr, "[GS] warning: did not converge at t=%.3e\n", vm->time);
         }
 
+        slots_commit(vm->slots);
         solver_advance_time(vm->solver, x_guess);
         vm->time += dt;
         logger_log_step(&vm->logger, vm->time, vm->solver->sys, vm->solver->last_solution);

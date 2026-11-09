@@ -12,6 +12,7 @@
 #include "solver_strategy.hpp"
 #include "snapshot.hpp"
 #include "logger.hpp"
+#include "state_slots.hpp"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // RETURN SIGNAL
@@ -123,6 +124,10 @@ struct VM {
     // domain's phase (installed by hvr::Sim). Empty for an unclocked deck,
     // which is then simulated exactly as before clocks existed.
     std::vector<VMClock> clocks;
+
+    // ddt()/idt() state, one slot per call site (vm/state_slots.hpp). Sized by
+    // the generated code before boot; empty for a deck without either.
+    StateSlots slots;
     void (*run_clock)(VM *vm, int index) = nullptr;
 
     // Pre-allocated Jacobian scratch — used by implicit solvers
@@ -137,6 +142,24 @@ struct VM {
 
 // Zero-initialise VM. sim.cpp sets fields directly after calling this.
 void vm_init(VM *vm, API *api, Solver *solver);
+
+// Accept a Newton step's solution x into the ddt()/idt() history. The slots'
+// last evaluation is from the iterate BEFORE the final solve; at nanosecond
+// steps the tolerance-sized difference times a diffusion capacitance over dt
+// is an ampere-scale error in the next step's charge current. So the analog
+// pass is re-run at x first — only when the deck has slots.
+void vm_commit_slots_at(VM *vm, const Eigen::VectorXd &x);
+
+// The Newton convergence test for the ddt()/idt() slots, to be ANDed with the
+// test on x. When q and dq/dt were hidden MNA unknowns, the step test covered
+// them: the charge against abstol, the charge current (a hidden node voltage)
+// against vntol. As slots they are outside x, and leaving them unchecked let
+// steps through with an unsettled charge current — h_bridge.hvr, 20 us ceiling,
+// drifted from its fine-step answer after the 198 ms switching tick. This puts
+// the same check back, comparing the evaluation at x_new with the one at the
+// iterate before it. True when the deck has no slots.
+bool vm_slots_converged(VM *vm, const Eigen::VectorXd &x_new,
+                        double rtol, double vntol, double abstol);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PHASE EXECUTION

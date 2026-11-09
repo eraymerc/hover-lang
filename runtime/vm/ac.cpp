@@ -71,8 +71,41 @@ bool vm_run_ac(VM *vm) {
     }
 
     Eigen::VectorXd x_op = vm->solver->last_solution;
+
+    // ddt()/idt() SLOTS. Their small-signal admittance is not in sys->C — they
+    // are not circuit elements (vm/state_slots.hpp) — so it is measured. At the
+    // operating point every slot's history is its own OP value, so ddt() is
+    // alpha*(q - q_op) and idt() is y_op + x/alpha: exactly linear in alpha
+    // and 1/alpha there. The Jacobian is therefore
+    //
+    //     J(alpha, inv) = J0 + alpha * Kd + inv * Ki
+    //
+    // and the small-signal matrix is G + J0 + jw*(C + Kd) + Ki/(jw). Kd and Ki
+    // come from two extra Jacobians with each operator driven on its own. The
+    // drive is 1e9 (and 1e-9) rather than 1: a forward difference carries
+    // round-off of ~sqrt(eps)*|B| per entry, a pF junction's dq/dV is ~1e-12,
+    // and only alpha*dq/dV well above that noise survives the subtraction.
+    // Dividing the drive back out returns the noise to below 1e-20 S.
+    StateSlots &st = vm->slots;
+    static const double W_OP[3] = {1.0, 0.0, 0.0};
+    auto drive = [&st](double alpha, double inv_alpha) {
+        slots_begin(st, 0.0, W_OP, 0.0);   // blend = OP value
+        st.alpha = alpha;
+        st.inv_alpha = inv_alpha;
+    };
+    drive(0.0, 0.0);
     const Eigen::MatrixXd J = vm_compute_jacobian(vm, x_op);   // copy: scratch is reused
     const Eigen::MatrixXd GJ = sys->G + J;
+    Eigen::MatrixXd Kd = Eigen::MatrixXd::Zero(n, n), Ki = Eigen::MatrixXd::Zero(n, n);
+    if (st.size() > 0) {
+        const double DRIVE = 1e9;
+        drive(DRIVE, 0.0);
+        Kd = (vm_compute_jacobian(vm, x_op) - J) / DRIVE;
+        drive(0.0, 1.0 / DRIVE);
+        Ki = (vm_compute_jacobian(vm, x_op) - J) * DRIVE;
+        drive(0.0, 0.0);
+    }
+    const Eigen::MatrixXd CK = sys->C + Kd;
 
     if (sys->B_ac.cwiseAbs().maxCoeff() == 0.0) {
         fprintf(stderr, "[VM] AC: no source has ac= set — every result is 0. "
@@ -113,7 +146,7 @@ bool vm_run_ac(VM *vm) {
     for (double f : freqs) {
         const double w = 2.0 * M_PI * f;
         A.real() = GJ;
-        A.imag() = w * sys->C;
+        A.imag() = w * CK - Ki / w;
 
         // Same exact power-of-two equilibration as solver_factorize: the
         // jwC entries span many decades across a sweep, and a GMIN-only row

@@ -273,11 +273,18 @@ analog module NMOS4<double VTO,  double KP,   double GAMMA, double PHI, double L
     // qmeyer() computes it. cox below is the TOTAL oxide capacitance.
     //
     // Meyer is not charge-conserving — capgs and capgd are functions of both
-    // vgs and vgd, so no single potential exists whose gradient they are, and
-    // q = C(v)*v is what SPICE effectively integrates through its average-
-    // capacitance scheme. That is a known property of MOS1 and not a defect to
-    // be repaired here: the charge-conserving alternative (Ward-Dutton) is a
-    // different model, not this one.
+    // vgs and vgd, so no single potential exists whose gradient they are. SPICE
+    // therefore does not integrate a charge q = C(v)*v: it integrates the
+    // INCREMENT, dq = C*dv (mos1load.c accumulates qgs += capgs*(vgs - vgs_old),
+    // with capgs averaged over the step). That is what i = C(v)*dv/dt below
+    // does. Writing q = C(v)*v instead — as this model did until 0.9 — adds a
+    // spurious v*dC/dt current and, worse, a NEGATIVE capacitance wherever C
+    // falls with v: below threshold capgb = -(vgs - von)*COX/(2*PHI), so
+    // d(capgb*vgs)/dvgs = COX*(von - 2*vgs)/(2*PHI) < 0 for vgs > von/2 — on
+    // every switching edge. (Every shipped card has TOX = 0, so no example was
+    // affected.) Non-conservation itself is a known property of MOS1 and not
+    // repaired here: the charge-conserving alternative (Ward-Dutton) is a
+    // different model.
     double vgd = V(gate) - V(di);
     double vgb = V(gate) - V(bulk);
 
@@ -307,18 +314,16 @@ analog module NMOS4<double VTO,  double KP,   double GAMMA, double PHI, double L
         }
     }
 
-    // ddt() has to sit at the module body's top level — the elaborator rewrites
-    // it into a companion inductor plus a current source and cannot do that
-    // from inside a branch (processAnalogDdt, compiler/elaborator/macros.go).
-    // So the regions above assign into the capacitance locals, and the three
-    // charges are formed unconditionally here.
-    double qgs = capgs * vgs_true;
-    double qgd = capgd * vgd;
-    double qgb = capgb * vgb;
-
-    double igs = ddt(qgs);
-    double igd = ddt(qgd);
-    double igb = ddt(qgb);
+    // ddt() has to sit at the module body's top level — it is integrated over
+    // every accepted step, so it must be evaluated on every one, not only on
+    // the steps a branch is taken. So the regions above assign into the
+    // capacitance locals, and the three currents are formed unconditionally.
+    // The capacitance is taken at the current iterate (SPICE averages it with
+    // the previous step's; at the step sizes a switching edge forces, the two
+    // agree).
+    double igs = capgs * ddt(vgs_true);
+    double igd = capgd * ddt(vgd);
+    double igb = capgb * ddt(vgb);
 
     current_source<>(igs) [gate, si];
     current_source<>(igd) [gate, di];

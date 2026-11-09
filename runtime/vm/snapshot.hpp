@@ -1,4 +1,5 @@
 #pragma once
+#include "state_slots.hpp"
 
 #include <Eigen/Dense>
 #include <unordered_map>
@@ -27,6 +28,7 @@ struct VMSnapshot {
     Eigen::VectorXd                         b_static;
     std::unordered_map<std::string, double> cs_last_vals;  // current source last values
     std::vector<long>                       clock_last_tick; // per VMClock: a rolled-back step un-runs its tick
+    StateSlots                              slots;           // ddt/idt history and recipe
 };
 
 // Forward declaration

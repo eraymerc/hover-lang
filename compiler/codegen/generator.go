@@ -92,6 +92,12 @@ type generator struct {
 	// silently doing the wrong thing).
 	usingPrevAPI bool
 
+	// stateSlots numbers the ddt()/idt() call sites, one runtime slot per call
+	// site per module instance (runtime/vm/state_slots.hpp). Keyed by operator,
+	// instance prefix and the elaborator's call-site tag, so an expression
+	// emitted twice still maps to one slot.
+	stateSlots map[string]int
+
 	// errors collects hard validation failures found while emitting
 	// expressions, where emitExpr's (string, CType) signature leaves no room
 	// for an error return. Same deferred-diagnostic shape as

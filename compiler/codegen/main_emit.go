@@ -244,6 +244,9 @@ func (g *generator) emitSimSetup(cfg simConfig, onSolverError string) {
 	g.line("stamp_netlist(sim);     // pass 2: stamp values into them")
 	g.raw("")
 
+	if len(g.stateSlots) > 0 {
+		g.line("sim.init_state_slots(%d);  // ddt()/idt() call sites", len(g.stateSlots))
+	}
 	g.line("sim.init_vm(%s, %s, %t, %t);", cfg.tStep, cfg.tEnd, cfg.zcdEnabled, cfg.opEnabled)
 	if cfg.acEnabled {
 		g.line("// .ac small-signal sweep")

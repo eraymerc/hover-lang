@@ -500,9 +500,9 @@ func uniqueCName(f *ast.FuncDeclStatement, taken map[string]bool) string {
 // declared it or whether anything imports it.
 //
 // Sorted by declaring file and then source line. The map it reads from has
-// randomized iteration order, and the macro passes it feeds (processAnalogIdt,
-// processAnalogDdt) inject statements whose order reaches the generated C++ —
-// so without this, two builds of identical source produced different sim.cpp.
+// randomized iteration order, and what it feeds reaches the generated C++ in
+// that order — when the ddt()/idt() pass still injected hidden elements, two
+// builds of identical source produced different sim.cpp.
 // That was a real, observable bug: repeated runs of examples/DCMotor emitted
 // the same statements in different positions.
 //
