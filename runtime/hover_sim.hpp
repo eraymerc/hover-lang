@@ -124,6 +124,25 @@ public:
     void   set_voltage_source(const char *name, double voltage);
     void   set_current_source(const char *name, double current);
 
+    // ── Handles: the same reads and writes without a name lookup ─────────────
+    // Resolve a name once, after finalize_system(), and pass the handle in the
+    // phases. Generated code does exactly this (resolve_handles in sim.cpp):
+    // the by-name calls above build a std::string and hash it on EVERY call,
+    // and a numerical Jacobian runs the phases n+2 times per formation — on
+    // examples/MOSFET/h_bridge_inverter.hvr the lookups were 91 % of the run.
+    // A handle of -1 (ground, or a name that does not exist — warned about
+    // once, here) reads 0 and ignores writes, as the by-name calls do.
+    int    node_handle(const char *net) const;
+    int    branch_handle(const char *element) const;       // I(), I_prev()
+    int    voltage_source_handle(const char *name) const;
+    int    current_source_handle(const char *name);
+    double V(int node) const;
+    double V_prev(int node) const;
+    double I(int branch) const;
+    double I_prev(int branch) const;
+    void   set_voltage_source(int handle, double voltage);
+    void   set_current_source(int handle, double current);
+
     // ddt(q) / idt(x) at call site `slot`, integrated by the active solver's
     // own formula (runtime/vm/state_slots.hpp). Analog phases only.
     double ddt(int slot, double q);

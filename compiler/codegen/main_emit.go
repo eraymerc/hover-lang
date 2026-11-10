@@ -252,6 +252,7 @@ func (g *generator) emitSimSetup(cfg simConfig, onSolverError string) {
 	g.line("register_netlist(sim);  // pass 1: register all nodes and branches")
 	g.line("sim.finalize_system();  // size the MNA matrices to the exact count")
 	g.line("stamp_netlist(sim);     // pass 2: stamp values into them")
+	g.line("resolve_handles(sim);   // names -> indices, once (current sources exist from pass 2)")
 	g.raw("")
 
 	if len(g.stateSlots) > 0 {

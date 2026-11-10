@@ -103,7 +103,7 @@ func (g *generator) emitPhaseLog(vmSignals, branchCurrents []string) {
 	g.line("(void)sim;")
 	for _, elem := range branchCurrents {
 		g.line(`sim.set_value(%s, sim.I(%s));`,
-			cStr(branchCurrentColumn(elem)), cStr(elem))
+			cStr(branchCurrentColumn(elem)), g.handle(handleBranch, elem))
 	}
 	for _, sig := range vmSignals {
 		mangled := mangle(sig)
@@ -232,9 +232,9 @@ func (g *generator) emitPhaseB() {
 		castSig := emitCast(sig, sigType, CDouble)
 		switch strings.ToLower(phys.Type) {
 		case "voltage_source":
-			g.line(`sim.set_voltage_source(%s, %s);`, cStr(name), castSig)
+			g.line(`sim.set_voltage_source(%s, %s);`, g.handle(handleVoltageSource, name), castSig)
 		case "current_source", "i":
-			g.line(`sim.set_current_source(%s, %s);`, cStr(name), castSig)
+			g.line(`sim.set_current_source(%s, %s);`, g.handle(handleCurrentSource, name), castSig)
 		}
 	}
 

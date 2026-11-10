@@ -93,6 +93,8 @@ double api_I_prev(const API *api, const char *element_name);
 void api_set_voltage_source(API *api, const char *name, double voltage);
 
 // Update output current of a named current source.
-// Unstamps old value then stamps new value into B_static.
+// Rebuilds the node rows it touches (System::restamp_current_row).
 // Language usage: current_source(signal)[out, gnd]
 void api_set_current_source(API *api, const char *name, double current);
+// The same, by record — what hvr::Sim's handle overload calls (no name lookup).
+void api_set_current_source_rec(API *api, CurrentSourceRecord *rec, double current);

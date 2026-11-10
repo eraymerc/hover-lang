@@ -204,10 +204,13 @@ func (g *generator) emitExpr(expr ast.Expression, logic elaborator.LogicObject) 
 					netName = n.Arguments[0].String()
 				}
 				net := resolveNet(netName, logic)
-				if g.usingPrevAPI {
-					return fmt.Sprintf(`sim.V_prev(%s)`, cStr(net)), CDouble
+				if net == "gnd" || net == "0" {
+					return "0.0", CDouble
 				}
-				return fmt.Sprintf(`sim.V(%s)`, cStr(net)), CDouble
+				if g.usingPrevAPI {
+					return fmt.Sprintf(`sim.V_prev(%s)`, g.handle(handleNode, net)), CDouble
+				}
+				return fmt.Sprintf(`sim.V(%s)`, g.handle(handleNode, net)), CDouble
 			}
 			return "0.0", CDouble
 		case "I":
@@ -234,9 +237,9 @@ func (g *generator) emitExpr(expr ast.Expression, logic elaborator.LogicObject) 
 					return "0.0", CDouble
 				}
 				if g.usingPrevAPI {
-					return fmt.Sprintf(`sim.I_prev(%s)`, cStr(elem)), CDouble
+					return fmt.Sprintf(`sim.I_prev(%s)`, g.handle(handleBranch, elem)), CDouble
 				}
-				return fmt.Sprintf(`sim.I(%s)`, cStr(elem)), CDouble
+				return fmt.Sprintf(`sim.I(%s)`, g.handle(handleBranch, elem)), CDouble
 			}
 			g.errors = append(g.errors, "I() requires a circuit element name, e.g. I(vsense)")
 			return "0.0", CDouble

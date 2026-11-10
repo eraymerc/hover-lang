@@ -121,6 +121,11 @@ type generator struct {
 	// phase emitters need them (one phase function per clock) before
 	// emitMain parses the rest of the configuration.
 	clocks []clockDef
+
+	// handles are the net/element names the phases read or drive, resolved
+	// once at startup (handles.go); handleIdx dedupes them.
+	handles   []handleDef
+	handleIdx map[string]int
 }
 
 // emit drives the full sim.cpp generation pipeline, section by section.
@@ -144,6 +149,7 @@ func (g *generator) emit() error {
 		g.emitHvrParamGlobals()
 	}
 	g.emitStateVars()
+	g.raw(handlesPlaceholder)
 	g.emitFunctions()
 	g.emitPhaseStructural()
 	g.emitPhaseDigital()
@@ -156,6 +162,7 @@ func (g *generator) emit() error {
 	if err := g.emitMain(); err != nil {
 		return err
 	}
+	g.finishHandles()
 	// Deferred diagnostics from expression emission (bad I() references and
 	// the like) — reported after the whole walk so a user sees every one at
 	// once rather than fixing them one recompile at a time.

@@ -32,6 +32,7 @@ struct Sim::Impl {
     Phase phases[kSlots] = {};
     std::vector<Phase> clock_phases;  // parallel to vm.clocks
     double tick_dt = 0.0;             // period of the clock whose phase is running, else 0
+    std::vector<CurrentSourceRecord *> isrc;  // current_source_handle -> record
 };
 
 // The VM calls its phase hooks as void(VM*). Each hook is wired to one
@@ -219,6 +220,48 @@ double Sim::I_prev(const char *element) const { return api_I_prev(&impl_->api, e
 void Sim::set_voltage_source(const char *name, double v) { api_set_voltage_source(&impl_->api, name, v); }
 void Sim::set_current_source(const char *name, double i) { api_set_current_source(&impl_->api, name, i); }
 void Sim::set_value(const char *key, double v) { impl_->vm.values[key] = v; }
+
+int Sim::node_handle(const char *net) const {
+    const int idx = impl_->sys.resolve_node(net);
+    if (idx == -2) fprintf(stderr, "[MNA API] warning: V(\"%s\") — net not found, reads 0\n", net);
+    return idx < 0 ? -1 : idx;
+}
+int Sim::branch_handle(const char *element) const {
+    const int idx = impl_->sys.resolve_branch(element);
+    if (idx < 0) fprintf(stderr, "[MNA API] warning: I(\"%s\") — element has no branch current, reads 0\n", element);
+    return idx < 0 ? -1 : idx;
+}
+int Sim::voltage_source_handle(const char *name) const {
+    const int idx = impl_->sys.resolve_branch(name);
+    if (idx < 0) fprintf(stderr, "[MNA API] error: SetVoltageSource(\"%s\") — element not found\n", name);
+    return idx < 0 ? -1 : idx;
+}
+int Sim::current_source_handle(const char *name) {
+    CurrentSourceRecord *rec = impl_->sys.find_current_source(name);
+    if (rec == nullptr) {
+        fprintf(stderr, "[MNA API] error: SetCurrentSource(\"%s\") — current source not found\n", name);
+        return -1;
+    }
+    // Pointers into the unordered_map stay valid: sources are never erased.
+    impl_->isrc.push_back(rec);
+    return (int)impl_->isrc.size() - 1;
+}
+double Sim::V(int node) const { return node < 0 ? 0.0 : impl_->api.last_solution(node); }
+double Sim::V_prev(int node) const {
+    const Eigen::VectorXd &p = impl_->api.prev_solution;
+    return (node < 0 || node >= p.size()) ? 0.0 : p(node);
+}
+double Sim::I(int branch) const { return branch < 0 ? 0.0 : impl_->api.last_solution(branch); }
+double Sim::I_prev(int branch) const {
+    const Eigen::VectorXd &p = impl_->api.prev_solution;
+    return (branch < 0 || branch >= p.size()) ? 0.0 : p(branch);
+}
+void Sim::set_voltage_source(int handle, double v) {
+    if (handle >= 0) impl_->sys.B_static(handle) = v * impl_->sys.source_alpha;
+}
+void Sim::set_current_source(int handle, double i) {
+    if (handle >= 0) api_set_current_source_rec(&impl_->api, impl_->isrc[handle], i);
+}
 void Sim::init_state_slots(int n) { slots_resize(impl_->vm.slots, n); }
 void Sim::set_state_init(Phase init) {
     impl_->phases[kStateInit] = init;

@@ -154,7 +154,10 @@ void api_set_current_source(API *api, const char *name, double current) {
         fprintf(stderr, "[MNA API] error: SetCurrentSource(\"%s\") — current source not found\n", name);
         return;
     }
+    api_set_current_source_rec(api, rec, current);
+}
 
+void api_set_current_source_rec(API *api, CurrentSourceRecord *rec, double current) {
     // Not B += last - current: the rows are rebuilt from their sources' values
     // (System::restamp_current_row says why).
     rec->last_value = current;
