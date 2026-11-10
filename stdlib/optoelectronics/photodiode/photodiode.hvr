@@ -1,0 +1,128 @@
+import <semiconductors> as dev;
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Photodiode
+//
+//  A photodiode is an ordinary pn (or PIN) junction with a window. Light
+//  absorbed in and near its depletion region generates electron-hole pairs
+//  that the junction field sweeps apart, and the result is a current flowing
+//  from CATHODE to ANODE inside the device — the reverse direction — in
+//  proportion to the absorbed optical power. That is the textbook equivalent
+//  circuit, and it is what this module builds:
+//
+//        cathode ──┬──────────┬──────────┬──────────┐
+//                  │          │          │          │
+//             I_ph ↓       ─┴─ D      Rsh ▯      (Cj inside D)
+//                  │       ─▲─           │
+//        anode ────┴──────────┴──────────┘
+//
+//      the full SPICE level-1 Diode of <semiconductors>   (junction, Rs,
+//                                                         Cj(V), breakdown)
+//    + I_ph = responsivity * P, cathode -> anode           (the light)
+//    + Rsh, a shunt resistance                             (the dark current)
+//
+//  Everything the diode models carries over unchanged: the forward
+//  exponential that sets the open-circuit voltage in photovoltaic mode,
+//  the bias-dependent junction capacitance that sets the speed (a reverse
+//  bias widens the depletion region, lowers Cj, and makes the diode faster —
+//  which is why photodiodes are run reverse biased), and reverse breakdown.
+//
+//  Modes. With no bias and an open circuit the photocurrent forward-biases
+//  the junction until the diode current cancels it: that is Voc, logarithmic
+//  in light. Shorted, or into a transimpedance amplifier's virtual ground,
+//  the full photocurrent flows out: Isc, linear in light. Reverse biased
+//  through a load it is a current source of I_ph (plus dark current) with
+//  the capacitance Cj(VR) across it, and the load sees an RC response.
+//
+//  light_in
+//    The optical power reaching the sensitive area, in watts, read as the
+//    voltage of this node (V(light_in) = P), as for the phototransistor. It
+//    is only read — nothing is stamped on it — so it must be driven: an LED's
+//    light_out (see <optoelectronics/leds>) or a voltage_source used as a
+//    light level. Negative light is read as none.
+//
+//    A data sheet usually states irradiance Ee (mW/cm^2) and a radiant
+//    sensitive area A; the power to drive is P = Ee * A. 1 mW/cm^2 on 7.5 mm^2
+//    (0.075 cm^2) is 75 uW.
+//
+//  Parameters
+//    Is ... Vt      The <semiconductors> Diode's, passed through untouched —
+//                   see its header. Cjo/Vj/M fit the data sheet's C(V) curve,
+//                   Is/N its open-circuit voltage, Bv/Ibv its breakdown.
+//    responsivity   A/W at the wavelength the card is calibrated for. Silicon
+//                   peaks near 0.6-0.7 A/W in the near infrared; the spectral
+//                   shape is not modelled, so a different wavelength means a
+//                   different responsivity (scale by the data sheet's relative
+//                   spectral sensitivity curve).
+//    Rsh            Shunt resistance, Ohm. The reverse dark current of a real
+//                   photodiode is generation current in the depletion region
+//                   and surface leakage, both far larger than the ideal
+//                   diode's Is; a shunt resistance is the standard way to
+//                   carry it, and it gives zero current at zero bias, so the
+//                   dark open-circuit voltage is zero as it should be. (A
+//                   constant dark-current SOURCE, as the phototransistor uses,
+//                   would forward-bias an unlit open diode.) Pass 0 for none.
+//    Tph            Photocurrent response time, s: a first-order lag between
+//                   the light and the photocurrent. Carriers generated
+//                   OUTSIDE the depletion region — deep in the substrate at
+//                   long wavelengths — have to diffuse to it before they
+//                   count, which adds a slow component that no amount of
+//                   reverse bias removes. This is a single-pole stand-in for
+//                   that diffusion tail (the real tail is not exponential and
+//                   depends on wavelength), used so a card can meet its data
+//                   sheet's rise and fall times where Cj*RL alone is faster.
+//                   Pass 0 for an instantaneous photocurrent, which leaves
+//                   the response purely RC-limited.
+//
+//  Not modelled: temperature (isothermal, like the Diode), the spectral
+//  response (one responsivity, one wavelength), the slight rise of the light
+//  current with reverse bias that most data sheets show, the angular
+//  response, and noise.
+// ─────────────────────────────────────────────────────────────────────────────
+
+analog module Photodiode<double Is,  double N,
+                         double Rs,
+                         double Ikf,
+                         double Isr, double Nr,
+                         double Bv,  double Ibv,
+                         double Cjo, double Vj, double M, double Fc,
+                         double Tt,
+                         double Vt,
+                         double responsivity, double Rsh, double Tph>()
+    [wire anode, wire cathode, wire light_in]
+{
+    module d = dev.Diode<Is, N, Rs, Ikf, Isr, Nr, Bv, Ibv,
+                         Cjo, Vj, M, Fc, Tt, Vt>()
+                        [anode, cathode];
+
+    // ── Dark current: shunt resistance ──────────────────────────────────────
+    // Stamped as a linear conductance current rather than R<Rsh>, so that
+    // Rsh = 0 can mean "none" (the R primitive rejects 0).
+    double g_sh = 0.0;
+    if (Rsh > 0.0) { g_sh = 1.0 / Rsh; }
+    double i_sh = g_sh * (V(anode) - V(cathode));
+    current_source<>(i_sh) [anode, cathode];
+
+    // ── Photocurrent ────────────────────────────────────────────────────────
+    double light = V(light_in);
+    if (light < 0.0) { light = 0.0; }
+    double i_gen = responsivity * light;
+
+    // The lag. The generated current is driven into an internal node ph,
+    // loaded by a 1 kOhm resistance and a capacitance Tph / 1 kOhm, both
+    // returned to the cathode — so the loop is closed inside the device and
+    // nothing net enters the cathode. V(ph) - V(cathode) is then the lagged
+    // photocurrent times 1 kOhm (50 uA -> 50 mV: the scale is chosen to keep
+    // the node in a well-resolved voltage range, and is invisible outside).
+    // With Tph = 0 the capacitance vanishes and the node just follows.
+    wire ph;
+    double r_lag = 1000.0;
+    double i_ph  = (V(ph) - V(cathode)) / r_lag;
+    double i_lag = ddt(Tph / r_lag * (V(ph) - V(cathode)));
+    current_source<>(i_gen) [cathode, ph];
+    current_source<>(i_ph)  [ph, cathode];
+    current_source<>(i_lag) [ph, cathode];
+
+    // The photocurrent itself: out of the cathode, into the anode.
+    current_source<>(i_ph) [cathode, anode];
+}

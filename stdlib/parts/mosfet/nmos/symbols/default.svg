@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-32 -32 76 64" data-title="N-channel MOSFET"
+     fill="none" stroke="#000" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+  <style>.fill{fill:#000}.bold{stroke-width:3.2}.dash{stroke-dasharray:3 2.5}[data-pin]{fill:#d00;stroke:none}</style>
+  <circle cx="19.2" cy="5.6" r="20.8" class="bold"/>
+  <path d="M-32 16 H6.4"/>
+  <rect x="6.4" y="-4.8" width="1.6" height="20.8" class="fill"/>
+  <rect x="11.2" y="-8.48" width="4" height="7.36" class="fill"/>
+  <rect x="11.2" y="1.92" width="4" height="7.36" class="fill"/>
+  <rect x="11.2" y="12.32" width="4" height="7.36" class="fill"/>
+  <path d="M15.2 -4.8 H32 V-32 M15.2 16 H32 V32 M15.2 5.6 H32 V16"/>
+  <polygon points="20.16,5.6 27.2,2.72 27.2,8.48" class="fill"/>
+  <circle data-pin="gate" data-alias="g" data-dir="left" cx="-32" cy="16" r="2"/>
+  <circle data-pin="drain" data-alias="d" data-dir="up" cx="32" cy="-32" r="2"/>
+  <circle data-pin="source" data-alias="s" data-dir="down" cx="32" cy="32" r="2"/>
+</svg>

@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-48 -48 96 96" data-title="Optocoupler (LED + phototransistor)"
+     fill="none" stroke="#000" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+  <style>.fill{fill:#000}.bold{stroke-width:3.2}.dash{stroke-dasharray:3 2.5}[data-pin]{fill:#d00;stroke:none}</style>
+  <rect x="-40" y="-40" width="80" height="80" class="dash"/>
+  <path d="M-48 -32 H-20 V-12"/>
+  <polygon points="-30,-12 -10,-12 -20,6" class="fill"/>
+  <rect x="-30" y="6" width="20" height="4" class="fill"/>
+  <path d="M-20 10 V32 H-48"/>
+  <path d="M-6 -6 H3 M-6 4 H3"/>
+  <polygon points="8,-6 2,-9 2,-3" class="fill"/>
+  <polygon points="8,4 2,1 2,7" class="fill"/>
+  <rect x="14" y="-12" width="4" height="24" class="fill"/>
+  <path d="M18 -4 L30 -16 V-32 H48 M18 4 L30 16 V32 H48"/>
+  <polygon points="28.88,14.88 26,8 22,12" class="fill"/>
+  <path d="M16 12 V48" data-if-pin="base"/>
+  <circle data-pin="anode" data-alias="a +" data-dir="left" cx="-48" cy="-32" r="2"/>
+  <circle data-pin="cathode" data-alias="k -" data-dir="left" cx="-48" cy="32" r="2"/>
+  <circle data-pin="collector" data-alias="c" data-dir="right" cx="48" cy="-32" r="2"/>
+  <circle data-pin="emitter" data-alias="e" data-dir="right" cx="48" cy="32" r="2"/>
+  <circle data-pin="base" data-alias="b" data-dir="down" data-optional="" cx="16" cy="48" r="2"/>
+</svg>

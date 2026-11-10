@@ -1,0 +1,72 @@
+import <optoelectronics/leds> as leds;
+import <optoelectronics/phototransistor> as pt;
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Optocoupler — infrared LED + NPN phototransistor in one package
+//
+//  The two halves are the library's own models, joined by an internal light
+//  node and nothing else, which is the point of the device: input and output
+//  share no electrical path at all.
+//
+//      anode ─▶|─ cathode          (LED: light = eta * I_F, in watts)
+//                  ┊  light
+//      collector ─┤◀ base           (Phototransistor: I_base,ph =
+//                 emitter            responsivity * light + Idark)
+//
+//  Current transfer ratio. With the base open and the transistor active, the
+//  collector current is ~Bf times the photocurrent, so
+//
+//      CTR = I_C / I_F  ≈  Bf * eta * responsivity
+//
+//  — and, because the transistor is the full Gummel-Poon model, CTR is not a
+//  constant: it falls at low I_F (Ise/Ne, the gain loss of a starved base) and
+//  at high I_F (Ikf, high injection), and collapses in saturation, which is the
+//  shape of every optocoupler's CTR-vs-I_F curve. Part cards
+//  (<parts/optocoupler>) set eta to put the curve where the data sheet does.
+//
+//  Speed comes from the phototransistor's capacitances (its large base-
+//  collector photodiode, and its diffusion charge Tf): microseconds, falling
+//  with load resistance — again what the data sheets show.
+//
+//  The LED gets its terminal capacitance (led_Ct, the data sheet's Ct at 0 V)
+//  in parallel; the bare LED model has none. Besides being real, it is what
+//  lets a current-source step into the input solve: without it the anode
+//  must jump from 0 V to the forward voltage within one Newton step.
+//
+//  Not modelled: isolation (there is no path to break down), CTR's
+//  temperature dependence (the models are isothermal), and LED ageing.
+//
+//  LED parameters are the LED model's (Is, n, Vt, Vf_clamp — see
+//  <optoelectronics/leds>) with eta in W/A, plus led_Ct; the rest are the
+//  phototransistor's.
+// ─────────────────────────────────────────────────────────────────────────────
+
+module Optocoupler<double led_Is, double led_n, double led_Vf_clamp, double eta, double led_Ct,
+                   double Is,  double Nf,  double Nr,
+                   double Bf,  double Br,
+                   double Vaf, double Var,
+                   double Ikf, double Ikr,
+                   double Ise, double Ne,
+                   double Isc, double Nc,
+                   double Rb,  double Rbm, double Irb,
+                   double Re,  double Rc,
+                   double Cje, double Vje, double Mje,
+                   double Cjc, double Vjc, double Mjc,
+                   double Fc,  double Tf,  double Tr,
+                   double Cjs, double Vt,
+                   double responsivity, double Idark>()
+    [wire anode, wire cathode, wire collector, wire emitter, wire base]
+{
+    wire light;
+
+    module led = leds.LED<led_Is, led_n, Vt, led_Vf_clamp, eta>()
+                         [anode, cathode, light];
+    C<led_Ct>() [anode, cathode];
+
+    module q = pt.Phototransistor<Is, Nf, Nr, Bf, Br, Vaf, Var, Ikf, Ikr,
+                                  Ise, Ne, Isc, Nc, Rb, Rbm, Irb, Re, Rc,
+                                  Cje, Vje, Mje, Cjc, Vjc, Mjc,
+                                  Fc, Tf, Tr, Cjs, Vt,
+                                  responsivity, Idark>()
+                                 [base, collector, emitter, light];
+}

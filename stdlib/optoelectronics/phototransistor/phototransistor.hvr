@@ -1,0 +1,96 @@
+import <semiconductors/bjt> as dev;
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  NPN Phototransistor
+//
+//  A phototransistor is an ordinary bipolar transistor whose base-collector
+//  junction is a large, exposed photodiode. Light absorbed there generates a
+//  photocurrent that flows from collector to base INSIDE the device — i.e. it
+//  is injected into the base exactly as an external base current would be —
+//  and the transistor multiplies it by its current gain. That is the whole
+//  model, and it is how SPICE libraries build phototransistors too:
+//
+//      the full Gummel-Poon NPN of <semiconductors/bjt>
+//    + current_source(responsivity * P + Idark) from collector to base
+//
+//  So everything the NPN models carries over unchanged: Early effect,
+//  saturation (Vce(sat) under strong light), high-injection gain roll-off
+//  (Ikf: the light current flattens at high irradiance), low-current gain
+//  loss (Ise/Ne: a dim phototransistor has less gain), and the junction and
+//  diffusion capacitances that make phototransistors SLOW — the base is large,
+//  and with the base open its charge has nowhere to go but through the
+//  transistor, so rise and fall times are microseconds, not nanoseconds.
+//
+//  light_in
+//    The optical power reaching the die, in watts, read as the voltage of
+//    this node (V(light_in) = P). It is only read — nothing is stamped on it —
+//    so it must be driven by something: an LED's light_out (see
+//    <optoelectronics/leds>, or <optoelectronics/optocoupler> where the two
+//    are paired), or a voltage_source used as a light level. Negative light
+//    is read as none.
+//
+//  responsivity   A/W — photocurrent per watt absorbed. A silicon junction is
+//                 ~0.5 A/W in the near infrared; fold geometry and coupling
+//                 into it as you see fit.
+//  Idark          A — the base-collector leakage that is the dark current's
+//                 source; with the base open the collector sees ~Bf*Idark.
+//
+//  base
+//    Brought out as a pin, as on 3-pin parts (and 6-pin optocouplers). For a
+//    2-pin part leave it on a wire of its own: the transistor then runs with
+//    the base open, the usual configuration. A resistor from base to emitter
+//    trades sensitivity for speed, as on the real device.
+// ─────────────────────────────────────────────────────────────────────────────
+
+analog module Phototransistor<double Is,  double Nf,  double Nr,
+                              double Bf,  double Br,
+                              double Vaf, double Var,
+                              double Ikf, double Ikr,
+                              double Ise, double Ne,
+                              double Isc, double Nc,
+                              double Rb,  double Rbm, double Irb,
+                              double Re,  double Rc,
+                              double Cje, double Vje, double Mje,
+                              double Cjc, double Vjc, double Mjc,
+                              double Fc,  double Tf,  double Tr,
+                              double Cjs, double Vt,
+                              double responsivity, double Idark>()
+    [wire base, wire collector, wire emitter, wire light_in]
+{
+    module q = dev.NPN<Is, Nf, Nr, Bf, Br, Vaf, Var, Ikf, Ikr, Ise, Ne,
+                       Isc, Nc, Rb, Rbm, Irb, Re, Rc,
+                       Cje, Vje, Mje, Cjc, Vjc, Mjc,
+                       Fc, Tf, Tr, Cjs, Vt>()
+                      [base, collector, emitter];
+
+    double light = V(light_in);
+    if (light < 0.0) { light = 0.0; }
+    double i_ph = responsivity * light + Idark;
+
+    // Generated in the base-collector junction: out of the collector, into
+    // the base (a current_source's current leaves its first terminal).
+    current_source<>(i_ph) [collector, base];
+}
+
+// A generic silicon NPN phototransistor: current gain ~500, 0.5 A/W, 1 nA of
+// junction leakage, and capacitances that give microsecond switching. Not a
+// specific part — a reasonable starting point for light sensing. Optocoupler
+// part cards (<parts/optocoupler>) use the same model with their own values.
+analog module PhototransistorNPN<>()
+    [wire base, wire collector, wire emitter, wire light_in]
+{
+    module pt = Phototransistor<20f, 1.0, 1.0,      // Is, Nf, Nr
+                                500.0, 1.0,          // Bf, Br
+                                100.0, 0.0,          // Vaf, Var
+                                50m, 0.0,            // Ikf, Ikr
+                                100f, 1.5,           // Ise, Ne
+                                0.0, 2.0,            // Isc, Nc
+                                100.0, 0.0, 0.0,     // Rb, Rbm, Irb
+                                0.5, 10.0,           // Re, Rc
+                                30p, 0.75, 0.33,     // Cje, Vje, Mje
+                                15p, 0.75, 0.33,     // Cjc, Vjc, Mjc
+                                0.5, 4n, 100n,       // Fc, Tf, Tr
+                                0.0, 0.026,          // Cjs, Vt
+                                0.5, 1n>()           // responsivity, Idark
+                               [base, collector, emitter, light_in];
+}

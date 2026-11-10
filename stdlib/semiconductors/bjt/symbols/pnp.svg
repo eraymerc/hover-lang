@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-32 -32 64 64" data-title="PNP transistor"
+     fill="none" stroke="#000" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+  <style>.fill{fill:#000}.bold{stroke-width:3.2}.dash{stroke-dasharray:3 2.5}[data-pin]{fill:#d00;stroke:none}</style>
+  <circle cx="6.4" cy="0" r="20.8" class="bold"/>
+  <path d="M-32 0 H-1.6"/>
+  <rect x="-1.6" y="-13.6" width="4" height="27.2" class="fill"/>
+  <path d="M2.4 -4 L16 -17.6 V-32 M2.4 4 L16 17.6 V32"/>
+  <circle data-pin="base" data-alias="b" data-dir="left" cx="-32" cy="0" r="2"/>
+  <polygon points="5.92,-7.52 12.8,-10.4 8.8,-14.4" class="fill"/>
+  <circle data-pin="emitter" data-alias="e" data-dir="up" cx="16" cy="-32" r="2"/>
+  <circle data-pin="collector" data-alias="c" data-dir="down" cx="16" cy="32" r="2"/>
+</svg>

@@ -20,11 +20,18 @@
 #                        pn-junction model math (jexp, vcrit_of, q_dep, rb_of)
 #   semiconductors/      diode, plus bjt/ and mosfet/ subdirectories
 #   parts/               real part cards built on those models — bjt/npn/,
-#                        bjt/pnp/, mosfet/nmos/, mosfet/pmos/ and diode/
+#                        bjt/pnp/, mosfet/nmos/, mosfet/pmos/, diode/,
+#                        optocoupler/, photodiode/ and photoresistor/
 #   electromechanical/   pmsm (uses math)
-#   optoelectronics/     leds/ only — no .hvr files at its own root, so
-#                        `import <optoelectronics>` is an error and you write
-#                        `import <optoelectronics/leds>`
+#   optoelectronics/     leds/, phototransistor/, photodiode/,
+#                        photoresistor/ and optocoupler/ — no .hvr files at
+#                        its own root, so `import <optoelectronics>` is an
+#                        error and you write e.g. `import <optoelectronics/leds>`
+#
+# symbols/ folders beside the .hvr files hold the schematic symbols hoverdeck
+# draws those modules with: <module name>.svg, or default.svg for every module
+# in the directory (the part cards). Format: hoverdeck's
+# internal/hvr/symbols/README.md. The compiler never reads them.
 #
 # Dependencies BETWEEN these directories are internal and need no declaration:
 # they ship in one archive, so there is nothing to resolve. semiconductors

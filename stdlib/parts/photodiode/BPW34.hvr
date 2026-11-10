@@ -1,0 +1,96 @@
+import <optoelectronics/photodiode> as opd;
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  BPW34 — silicon PIN photodiode, 7.5 mm^2, visible to near infrared
+//
+//  Source: Vishay Semiconductors "BPW34, BPW34S — Silicon PIN Photodiode"
+//  data sheet, Document Number 81521, Rev. 2.1, 23-Aug-11
+//  (www.vishay.com/docs/81521/bpw34.pdf): Basic Characteristics table and
+//  Figs. 3, 5 and 6, Tamb = 25 C. Fitted to the TYPICAL values. OSRAM and
+//  others make parts under the same name that differ in detail.
+//
+//  Light input. light_in is the optical power on the die in watts. The data
+//  sheet states irradiance Ee at 950 nm and a radiant sensitive area of
+//  7.5 mm^2 = 0.075 cm^2, so its reference Ee = 1 mW/cm^2 is
+//
+//      P = 1 mW/cm^2 * 0.075 cm^2 = 75 uW,
+//
+//  and the card's responsivity is the reverse light current at that point
+//  over 75 uW: 50 uA / 75 uW = 0.667 A/W. That is the responsivity AT 950 nm
+//  (near the 900 nm peak); for another wavelength scale the power by the
+//  data sheet's Fig. 7 relative spectral sensitivity. For the data sheet's
+//  illuminance figures (standard illuminant A), 1 klx corresponds to about
+//  112 uW of "950 nm-equivalent" power here (75 uA / 0.667 A/W).
+//
+//  Values from the data sheet -> this card:
+//
+//    Ira      reverse light current, Ee = 1 mW/cm^2, 950 nm, VR = 5 V:
+//             50 uA typ (40 min)                     -> 50.0 uA
+//             Fig. 3, Ee = 0.1 mW/cm^2: ~5 uA         -> 5.0 uA (linear)
+//    Ik       short-circuit current, same light:
+//             47 uA typ                              -> 50.0 uA  (+6 %, below)
+//    Vo       open-circuit voltage, same light:
+//             350 mV typ                             -> 350 mV
+//    Iro      reverse dark current, VR = 10 V, E = 0:
+//             2 nA typ (30 max)                      -> 2.00 nA
+//    CD       diode capacitance, f = 1 MHz, E = 0:
+//               VR    0 V   0.5 V  1 V   3 V   10 V   50 V
+//               ds    70    ~50    ~41   25    ~15.5  ~8.5   pF  (0 V, 3 V:
+//               card  70     47     39   26.4   16.1   8.1   pF   table; rest
+//                                                                 Fig. 6)
+//             3 V max is 40 pF.
+//    V(BR)    breakdown, IR = 100 uA, E = 0: 60 V min -> 60.0 V at 100 uA
+//    tr / tf  100 / 100 ns typ, VR = 10 V, RL = 1 kOhm, 820 nm
+//                                                    -> 99 / 99 ns
+//
+//  How each was fitted:
+//    responsivity  Ira at VR = 5 V, as above.
+//    Cjo, Vj, M    least-squares fit to the C(V) curve, Cjo pinned to the
+//                  table's 70 pF; within ~10 % from 0.1 V to 50 V (the fit
+//                  sags most just above 0 V, 62 pF at 0.1 V against ~69).
+//    Is (N = 1)    from Vo: the junction must carry the 50 uA photocurrent at
+//                  350 mV, so Is = 50 uA / e^(0.35/0.026) = 71 pA. Only one
+//                  Vo point is published, so N = 1 is assumed, not fitted:
+//                  Vo's slope against light (60 mV per decade at N = 1) is
+//                  this card's, not the data sheet's.
+//    Rsh           carries the dark current: (2 nA - Is) at 10 V -> 5.2 GOhm.
+//                  The data sheet gives Iro at 10 V only; a shunt makes it
+//                  proportional to VR (1 nA at 5 V), where real generation
+//                  current grows more slowly than that.
+//    Bv, Ibv       exactly the specified point. 60 V is the guaranteed
+//                  MINIMUM (and the absolute-maximum VR), so a typical part
+//                  breaks down somewhat higher than this card does.
+//    Tph           Cj(10 V) * RL = 16 pF * 1 kOhm alone gives a 10-90 % time
+//                  of only ~35 ns; the published 100 ns at 820 nm includes the
+//                  slow diffusion of carriers generated below the depletion
+//                  region, which Tph = 40 ns stands in for. Other loads
+//                  scale as the two poles combine: with RL = 50 Ohm the card
+//                  gives 88 ns, set almost entirely by Tph.
+//
+//  Known deviations:
+//    · Ik is 50 uA, not 47: the model's photocurrent does not depend on bias,
+//      while the real part's light current rises a little with VR (Fig. 5,
+//      ~45 uA at 0.1 V to ~52 uA at 50 V). The card matches the VR = 5 V
+//      number, the one with a guaranteed minimum.
+//    · Forward voltage, series resistance and stored charge are not on the
+//      data sheet: Rs = 1 Ohm and Tt = 0 are nominal, giving ~0.50 V at
+//      10 mA forward. A photodiode is rarely driven forward harder than its
+//      own photocurrent does it.
+//    · Not modelled: temperature (TKVo -2.6 mV/K, TKIk 0.1 %/K, the dark
+//      current's doubling every ~7 K of Fig. 1), spectral response (one
+//      wavelength), angular response (+-65 deg half sensitivity) and noise
+//      (NEP 4e-14 W/sqrt(Hz)).
+// ─────────────────────────────────────────────────────────────────────────────
+
+analog module DBPW34<>()[wire anode, wire cathode, wire light_in] {
+    module d = opd.Photodiode<71p, 1.0,             // Is, N
+                              1.0,                  // Rs
+                              0.0,                  // Ikf
+                              0.0, 2.0,             // Isr, Nr
+                              60.0, 100u,           // Bv, Ibv
+                              70p, 0.37, 0.44, 0.5, // Cjo, Vj, M, Fc
+                              0.0,                  // Tt
+                              0.026,                // Vt
+                              0.667, 5.2G, 40n>()   // responsivity (A/W), Rsh, Tph
+                             [anode, cathode, light_in];
+}

@@ -1,0 +1,41 @@
+import <optoelectronics/photoresistor> as ph;
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  GL5528 — 5 mm CdS photoresistor (LDR)
+//
+//  Source: Shenzhen Senba Optical & Electronic Co., Ltd., "GL55 Series
+//  Photoresistor — CdS Photoresistor Manual" (6 pages, D55-CdS-e), Types and
+//  Specifications table, Test Conditions and Fig. 3. The GL5528 is sold by
+//  several makers under the same number with near-identical sheets. Light is
+//  standard illuminant A (2856 K), the cell pre-lit 2 h at 400-600 lux.
+//  Data sheet -> what this card measures (Hover, ndf2):
+//
+//    R at 10 lux     10-20 kOhm                  -> 14.10 kOhm (geometric
+//                                                   middle of the range)
+//    gamma           0.6 = lg(R10/R100)          -> 0.600: R100 = 3.542 kOhm
+//    R at 1 lux      (Fig. 3 band ~58-300 kOhm)  -> 54.4 kOhm
+//    Rdark           1 MOhm, 10 s after 10 lux   -> 0.997 MOhm at 0 lux
+//                    is removed                     (1.000 below 0 lux)
+//    rise time       20 ms ("increase")          -> 20.0 ms
+//    decay time      30 ms ("decrease")          -> 29.9 ms
+//                    (conditions not stated; the card uses the conventional
+//                    ones — 63 % of the conductance change for a step from
+//                    dark to 10 lux and back, see <optoelectronics/photoresistor>)
+//    max voltage     150 V DC, in the dark       (not modelled)
+//    max power       100 mW at 25 C              (not modelled)
+//    spectral peak   540 nm                      (not modelled: lux in)
+//    temperature     -30 to +70 C; R rises ~0.3 %/K below 25 C (not modelled)
+//
+//  Fig. 3 (the GL5528's resistance band) sits higher and steeper than the
+//  table: about 16-48 kOhm at 10 lux and a mid-band slope near 0.68. The
+//  card follows the table, which is the specification; the figure's band
+//  spans a parts spread of 3x, wider than one card can represent anyway.
+//
+//  light_in is illuminance in LUX (1 V = 1 lux) — see the model's header.
+// ─────────────────────────────────────────────────────────────────────────────
+
+analog module RGL5528<>()[wire a, wire b, wire light_in] {
+    module r = ph.Photoresistor<14.1k, 0.6, 1Meg,   // R10, gamma, Rdark
+                                20m, 30m>()         // t_rise, t_decay
+                               [a, b, light_in];
+}

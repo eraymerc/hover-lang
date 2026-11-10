@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-48 -48 96 96" data-title="Operational amplifier"
+     fill="none" stroke="#000" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+  <style>.fill{fill:#000}.bold{stroke-width:3.2}.dash{stroke-dasharray:3 2.5}[data-pin]{fill:#d00;stroke:none}</style>
+  <polygon points="-31.2,-35.68 30.56,0 -31.2,35.68" class="bold"/>
+  <path d="M-48 -16 H-31.2 M-48 16 H-31.2 M30.56 0 H48"/>
+  <path d="M-27 -16 H-21"/>
+  <path d="M-27 16 H-21 M-24 13 V19"/>
+  <path d="M0 -48 V-17.7" data-if-pin="vpos"/>
+  <path d="M0 17.7 V48" data-if-pin="vneg"/>
+  <circle data-pin="minus" data-alias="- in- inn inm neg inv" data-dir="left" cx="-48" cy="-16" r="2"/>
+  <circle data-pin="plus" data-alias="+ in+ inp pos noninv" data-dir="left" cx="-48" cy="16" r="2"/>
+  <circle data-pin="out" data-alias="o output vout" data-dir="right" cx="48" cy="0" r="2"/>
+  <circle data-pin="vpos" data-alias="v+ vcc vdd vp" data-dir="up" data-optional="" cx="0" cy="-48" r="2"/>
+  <circle data-pin="vneg" data-alias="v- vee vss vn" data-dir="down" data-optional="" cx="0" cy="48" r="2"/>
+</svg>

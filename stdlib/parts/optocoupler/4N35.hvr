@@ -1,0 +1,56 @@
+import <optoelectronics/optocoupler> as oc;
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  4N35 — 6-pin phototransistor optocoupler with the base brought out
+//
+//  Source: onsemi "4N35 — 6-Pin General Purpose Phototransistor Optocouplers"
+//  data sheet (Rev. P0, September 2022), Electrical Characteristics tables
+//  and Figs. 1-12, Ta = 25 C. Other makers' 4N35s (Vishay, Lite-On) differ in
+//  detail. Values from the data sheet -> this card:
+//
+//    VF       1.20 V typ (1.50 max) at IF = 10 mA     -> 1.18 V
+//    Cin      30 pF typ, V = 0, 1 MHz                 -> 30 pF (led_Ct)
+//    CTR      100 % min at IF = 10 mA, VCE = 10 V; Fig. 2, VCE = 5 V:
+//               IF   1 mA   5 mA   10 mA  20 mA  50 mA
+//               ds   ~58    ~120   ~150   ~165   ~160   %
+//               card  58     126    150    162    156   %
+//    Ic(VCE)  Fig. 7: nearly flat (IF = 10 mA, ~14.5 -> 15.5 mA over 2-10 V)
+//                                                    -> 14.6 at 2 V, 15.6 at 10 V
+//    CCE      8 pF typ, VCE = 0                      -> Cjc in series with Cje, 8.5 pF
+//    ton/toff 10 / 9 us typ, IC = 2 mA, VCC = 10 V, RL = 100 Ohm
+//                                                    -> 12.8 / 3.2 us
+//             Fig. 9, IF = 10 mA, VCC = 10 V, RL = 100 Ohm: tr, tf ~2 us
+//                                                    -> 1.4 / 1.3 us
+//    VCE(sat) 0.3 V max, IF = 10 mA, IC = 0.5 mA; Fig. 8: ~0.045 V typ
+//                                                    -> 0.068 V
+//    ICEO     50 nA max at VCE = 10 V; Fig. 12: ~0.3 nA typ at 25 C
+//                                                    -> 0.30 nA
+//
+//  KNOWN DEVIATION: turn-off at IC = 2 mA is ~3x faster than the data
+//  sheet's 9 us. With the base open, the Gummel-Poon transistor turns off
+//  faster than it turns on, and no choice of its capacitances matched ton,
+//  toff and the Fig. 9 times together; the card favours ton, Fig. 9 and CCE.
+//
+//  The internal transistor's parameters are NOT the manufacturer's: they are
+//  chosen so the model reproduces the figures above. A resistor from base to
+//  emitter (Figs. 4, 5, 10, 11) trades CTR for turn-off speed, as on the
+//  real part — that is what the base pin is for.
+// ─────────────────────────────────────────────────────────────────────────────
+
+analog module U4N35<>()[wire anode, wire cathode, wire collector, wire emitter, wire base] {
+    module u = oc.Optocoupler<5f, 1.6, 2.0, 0.01059, 30p,  // LED: Is, n, Vf_clamp, eta (W/A), Ct
+                              20f, 1.0, 1.0,              // Is, Nf, Nr
+                              500.0, 1.0,                 // Bf, Br
+                              120.0, 0.0,                 // Vaf, Var
+                              200m, 0.0,                  // Ikf, Ikr
+                              25p, 2.0,                   // Ise, Ne
+                              0.0, 2.0,                   // Isc, Nc
+                              100.0, 0.0, 0.0,            // Rb, Rbm, Irb
+                              0.5, 10.0,                  // Re, Rc
+                              170p, 0.75, 0.33,           // Cje, Vje, Mje
+                              9p, 0.75, 0.33,             // Cjc, Vjc, Mjc
+                              0.5, 0.5n, 100n,            // Fc, Tf, Tr
+                              0.0, 0.026,                 // Cjs, Vt
+                              0.5, 0.3n>()                // responsivity (A/W), Idark
+                             [anode, cathode, collector, emitter, base];
+}

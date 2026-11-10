@@ -1,0 +1,51 @@
+import <optoelectronics/optocoupler> as oc;
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  PC817 — 4-pin phototransistor optocoupler
+//
+//  Source: SHARP "PC817 Series" data sheet (Electro-optical Characteristics
+//  table and Figs. 4-11, Ta = 25 C). Fitted to the TYPICAL part those curves
+//  show; the PC817 is sold in CTR ranks from 50 % to 600 % (A 80-160 %,
+//  B 130-260 %, C 200-400 %, D 300-600 %), so a given part can sit well above
+//  or below this one. Values from the data sheet -> this card:
+//
+//    VF       1.2 V typ (1.4 max) at IF = 20 mA       -> 1.21 V
+//    Ct       30 pF typ, V = 0, 1 kHz                 -> 30 pF (led_Ct)
+//    CTR      Fig. 4, VCE = 5 V:
+//               IF   1 mA   5 mA   10 mA  20 mA  50 mA
+//               ds   ~77    ~120   ~132   ~136   ~105   %
+//               card  75     120    129    128    112   %
+//    Ic(VCE)  Fig. 6, IF = 10 mA: ~11 mA at 1 V rising to ~14 mA at 9 V
+//                                                    -> 12.0 at 2 V, 14.3 at 10 V
+//    tr / tf  4 / 3 us typ (18 max), VCE = 2 V, IC = 2 mA, RL = 100 Ohm
+//                                                    -> 4.1 / 2.9 us
+//    fc       80 kHz typ, same conditions (0.35/tr: consistent with tr)
+//    VCE(sat) 0.1 V typ (0.2 max), IF = 20 mA, IC = 1 mA; Fig. 8: ~0.08 V
+//                                                    -> 0.083 V
+//    ICEO     1e-7 A max at VCE = 20 V; Fig. 9: ~1.5 nA typ at 25 C
+//                                                    -> 1.6 nA
+//
+//  The internal transistor's parameters are NOT the manufacturer's (none is
+//  published for the PC817): they are chosen so the model reproduces the
+//  figures above. The LED's Is/n are fitted to VF the same way. The base is
+//  not brought out on this package; it is an internal wire.
+// ─────────────────────────────────────────────────────────────────────────────
+
+analog module UPC817<>()[wire anode, wire cathode, wire collector, wire emitter] {
+    wire base;
+    module u = oc.Optocoupler<5f, 1.6, 2.0, 0.00712, 30p,  // LED: Is, n, Vf_clamp, eta (W/A), Ct
+                              20f, 1.0, 1.0,              // Is, Nf, Nr
+                              500.0, 1.0,                 // Bf, Br
+                              40.0, 0.0,                  // Vaf, Var
+                              100m, 0.0,                  // Ikf, Ikr
+                              12p, 2.0,                   // Ise, Ne
+                              0.0, 2.0,                   // Isc, Nc
+                              100.0, 0.0, 0.0,            // Rb, Rbm, Irb
+                              0.5, 10.0,                  // Re, Rc
+                              30p, 0.75, 0.33,            // Cje, Vje, Mje
+                              15p, 0.75, 0.33,            // Cjc, Vjc, Mjc
+                              0.5, 3.2n, 100n,            // Fc, Tf, Tr
+                              0.0, 0.026,                 // Cjs, Vt
+                              0.5, 1.25n>()               // responsivity (A/W), Idark
+                             [anode, cathode, collector, emitter, base];
+}

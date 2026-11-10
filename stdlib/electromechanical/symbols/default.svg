@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-32 -32 64 56" data-title="Three-phase motor"
+     fill="none" stroke="#000" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+  <style>.fill{fill:#000}.bold{stroke-width:3.2}.dash{stroke-dasharray:3 2.5}[data-pin]{fill:#d00;stroke:none}[data-logic]{fill:#c90;stroke:none}</style>
+  <circle cx="0" cy="0" r="20" class="bold"/>
+  <path d="M-16 -32 V-12 M0 -32 V-20 M16 -32 V-12"/>
+  <path d="M-8 7 V-5 L0 4 L8 -5 V7"/>
+  <circle data-pin="va" data-alias="a u" data-dir="up" cx="-16" cy="-32" r="2"/>
+  <circle data-pin="vb" data-alias="b v" data-dir="up" cx="0" cy="-32" r="2"/>
+  <circle data-pin="vc" data-alias="c w" data-dir="up" cx="16" cy="-32" r="2"/>
+  <!-- The measured outputs leave from a short rail under the motor, drawn
+       only when at least one of them is connected. -->
+  <path d="M0 20 V24 M-24 24 H24" data-if-pin="omega_m_out i_d_out i_q_out theta_e_out"/>
+  <circle data-logic="omega_m_out" data-alias="omega speed" data-flow="out" data-dir="down" cx="-24" cy="24" r="2"/>
+  <circle data-logic="i_d_out" data-alias="i_d id" data-flow="out" data-dir="down" cx="-8" cy="24" r="2"/>
+  <circle data-logic="i_q_out" data-alias="i_q iq" data-flow="out" data-dir="down" cx="8" cy="24" r="2"/>
+  <circle data-logic="theta_e_out" data-alias="theta_e theta" data-flow="out" data-dir="down" cx="24" cy="24" r="2"/>
+</svg>

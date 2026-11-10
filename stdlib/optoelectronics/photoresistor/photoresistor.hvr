@@ -1,0 +1,184 @@
+from <math> import exp, log, log1p, log10, pow, sqrt;
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Photoresistor — CdS light-dependent resistor (LDR)
+//
+//  light_in IS IN LUX
+//  ──────────────────
+//  The illuminance on the cell, in lux, read as the voltage of this node
+//  (V(light_in) = E, so 1 V = 1 lux). It is only read — nothing is stamped on
+//  it — so it must be driven: a voltage_source used as a light level, or a
+//  behavioural block. Negative light is read as darkness.
+//
+//  Note that this is NOT the unit of the other optoelectronic models: the
+//  phototransistor (and so the optocoupler) reads light_in as OPTICAL POWER IN
+//  WATTS, and an LED's light_out is scaled to suit that. LDR data sheets are
+//  photometric — every number on them is given at so many lux of standard
+//  illuminant A (2856 K) — so lux is the unit the cards can be checked
+//  against. Wiring an LED's light_out straight into an LDR's light_in is
+//  therefore a unit error, not a light path: convert first (lux = W/m^2 of
+//  the source's spectrum times its luminous efficacy, ~683 lm/W at 555 nm,
+//  divided over the lit area).
+//
+//  Bright light and `.op;`: a light node is an ordinary node at E volts, and
+//  the operating-point solver moves a node at most 0.05 V per iteration
+//  (500 per source-stepping rung), which reaches at most ~250 V on the
+//  0.1-alpha rungs. So a deck whose light level at t = 0 is above ~250 lux
+//  gets "OP FAILED — continuing from an unconverged bias", with or without
+//  `.op;` (the bias-point solve runs either way). The transient itself is
+//  fine at any light level: it pins the light node on its first step and the
+//  cell then adapts at its own speed, as a real one would. To start a bright
+//  scene adapted, begin it at <= 250 lux, or let the run settle first.
+//
+//  Static law
+//  ──────────
+//  A CdS cell is a resistor whose conductance follows illuminance as a power
+//  law, R = R10 * (E / 10 lux)^(-gamma), in parallel with a dark leakage:
+//
+//      G_ss(E) = 1/Rdark + G1 * (E / 10)^g
+//
+//  G1 and g are solved from the card so that the TWO data-sheet points come
+//  out exact, dark leakage included: R(10 lux) = R10 and R(100 lux) =
+//  R10 / 10^gamma (gamma is defined on data sheets as lg(R10/R100)). Without
+//  that correction a 1 MOhm dark leakage would pull a 14 kOhm R10 down by 1.4 %.
+//  The parallel conductance saturates smoothly at Rdark in the dark — there
+//  is no clamp in this file, so every derivative Newton sees is the true one
+//  (see the header of <semiconductors/diode> on why that matters).
+//
+//  Dynamics: slow, and slower to recover
+//  ─────────────────────────────────────
+//  CdS cells respond in tens of milliseconds and recover in the dark more
+//  slowly than they light up (trap emptying). The model carries an internal
+//  state
+//
+//      u = ln(G * Rdark)     (u = 0 dark-adapted, ~4.3 at 10 lux for R10/Rdark
+//                             = 1/71, ~7 at 1000 lux)
+//
+//  which relaxes toward its static value u_ss(E) = ln(G_ss(E) * Rdark) as a
+//  first-order lag, with one time constant while u is rising (light came on)
+//  and another while it is falling (light went off). Lagging the LOG of
+//  conductance gives the familiar shapes: a sigmoidal, delayed rise from
+//  darkness, and a decay that is fast in the first few percent and then
+//  creeps toward the dark resistance.
+//
+//  The state is the voltage of an internal node s, held by a capacitor C and
+//  a current C * (u - u_ss) * k, so du/dt = (u_ss - u) * k: a real state of
+//  the circuit, integrated by the active solver like any capacitor, and
+//  initialised by `.op;` to the operating point (the cell adapted to the
+//  light at t = 0). WITHOUT `.op;` a transient starts from u = 0, i.e. from a
+//  fully dark-adapted cell — which is what u = ln(G*Rdark) was chosen for.
+//
+//  C is 1 uF rather than 1 F, and that is not cosmetic. C cancels out of the
+//  dynamics but sets the size of the row's residual, and the transient's
+//  trust-region Newton accepts a step only if the residual norm falls. When
+//  the light steps out of darkness, (E/10)^g has an enormous slope at E ~ 0,
+//  so the first iterates put this row's residual far above the light
+//  source's own (10 V for a 10-lux step); at 1 F the trust region then
+//  refused to move the light node at all and the run stopped at the step
+//  ("convergence blocked by row main.light"). At 1 uF the row weighs in at
+//  microamps and the same step converges. Its accuracy is unaffected: the
+//  step test on u is in volts, and u is held to the node tolerance.
+//
+//  The rising/falling choice is a smooth blend, not an if: with d = u_ss - u,
+//      w = (1 + d / sqrt(d^2 + 0.01^2)) / 2      (1 rising, 0 falling)
+//      k = w / tau_r + (1 - w) / tau_d
+//  The rate (u_ss - u) * k is continuous either way (it is zero at d = 0);
+//  the blend also makes its derivative continuous. Its width, 0.01 in ln G,
+//  is 1 % of conductance — invisible at any timing a data sheet specifies.
+//
+//  t_rise, t_decay: what the numbers mean
+//  ──────────────────────────────────────
+//  The card takes the DATA-SHEET times, and the time constants above are
+//  derived from them, under the conventional photocell definitions (the GL55
+//  sheets do not spell theirs out; these follow Hamamatsu's CdS cell sheets):
+//
+//    t_rise    a dark-adapted cell is lit with 10 lux: the time for its
+//              conductance to cover 63 % (1 - 1/e) of the change from the
+//              dark to the final 10-lux value.
+//    t_decay   the 10 lux is removed after the cell has settled: the time for
+//              its conductance to fall by 63 %, i.e. to 37 % (1/e) of the
+//              way from dark to the 10-lux value.
+//
+//  A log-domain lag covers those 63 % in conductance in a fraction of a time
+//  constant that depends on the step's size in ln G (u_f = ln(Rdark/R10)):
+//      tau_r = t_rise  / ln(u_f / (u_f - ln(1 + 0.632*(Rdark/R10 - 1))))
+//      tau_d = t_decay / ln(u_f / ln(1 + 0.368*(Rdark/R10 - 1)))
+//  For a GL5528 (20/30 ms, R10 14.1k, Rdark 1M) that is tau_r ~ 8.9 ms and
+//  tau_d ~ 115 ms. A step to or from a different illuminance follows the
+//  same two time constants; real cells are somewhat faster in bright light
+//  and much slower after a long dark rest, neither of which is modelled.
+//  Light flickering faster than the cell (a lamp at 100 Hz) settles nearer
+//  the bright end of the swing, since the cell lights up faster than it
+//  recovers — a real CdS effect, here with the model's two constants.
+//
+//  "Dark resistance" on a CdS data sheet is not a static value: the cell
+//  keeps climbing for minutes after the light goes. Data sheets quote it at a
+//  stated time (GL55: 10 s after removing 10 lux), and the model treats
+//  Rdark as the value it settles to — it is reached well within those 10 s
+//  (GL5528: 95 % of it 0.5 s after the light goes).
+//
+//  The resistor itself is non-polar: i = (V(a) - V(b)) * G flows from a to b
+//  for either sign, and G >= 1/Rdark > 0 keeps the matrix regular even
+//  in the dark.
+//
+//  Not modelled: temperature (the GL55 curve rises ~0.3 %/K below 25 C and
+//  flattens above), spectral response
+//  (a card is valid for illuminant A), light history beyond the single lag,
+//  noise, and the voltage/power ratings, which are only documented on the
+//  part cards. Parameters:
+//
+//    R10      Ohm  resistance at 10 lux (after light adaptation)
+//    gamma         lg(R10/R100): the log-log slope between 10 and 100 lux
+//    Rdark    Ohm  dark resistance; must be > R10
+//    t_rise   s    rise time,  as defined above
+//    t_decay  s    decay time, as defined above
+// ─────────────────────────────────────────────────────────────────────────────
+
+analog module Photoresistor<double R10, double gamma, double Rdark,
+                            double t_rise, double t_decay>()
+    [wire a, wire b, wire light_in]
+{
+    // ── Static law: fitted through R(10) = R10 and R(100) = R10/10^gamma ────
+    double gd  = 1.0 / Rdark;
+    double g1  = 1.0 / R10 - gd;
+    double gex = log10((pow(10.0, gamma) / R10 - gd) / g1);
+
+    // Smooth positive part of the light. Its floor at E = 0 is 5e-7 lux,
+    // which adds ~0.3 % of a GL5528's dark conductance; below zero it falls
+    // as 1/|E|. The floor exists because (E/10)^g has an infinite slope at
+    // E = 0 — the derivative must stay finite where darkness begins.
+    double e_raw = V(light_in);
+    double e_pos = 0.5 * (e_raw + sqrt(e_raw * e_raw + 1.0e-12));
+
+    // u_ss = ln(G_ss * Rdark) = ln(1 + (g1/gd) * (E/10)^g)
+    double u_ss = log1p(g1 * Rdark * exp(gex * log(e_pos / 10.0)));
+
+    // ── Rise/decay time constants from the data-sheet times ────────────────
+    double a1    = Rdark / R10 - 1.0;
+    double u_f   = log1p(a1);
+    double tau_r = t_rise  / log(u_f / (u_f - log1p(0.6321205588 * a1)));
+    double tau_d = t_decay / log(u_f / log1p(0.3678794412 * a1));
+
+    // ── The lagging state u = V(s): du/dt = (u_ss - u) * k ──────────────────
+    wire s;
+    C<1u>() [s, gnd];
+
+    double u  = V(s);
+    double d  = u_ss - u;
+    double w  = 0.5 * (1.0 + d / sqrt(d * d + 1.0e-4));
+    double k  = w / tau_r + (1.0 - w) / tau_d;
+    double i_s = -1.0e-6 * d * k;       // 1e-6: the capacitor's 1 uF (header)
+    current_source<>(i_s) [s, gnd];
+
+    // ── The resistor ────────────────────────────────────────────────────────
+    // exp(u) continues as its own tangent above u = 30 (Rdark / 1e13: no
+    // cell gets there; 1e5 lux is u ~ 10). Only Newton iterates do: the
+    // first iterate after a step out of darkness linearises (E/10)^g at
+    // E ~ 0, where its slope is enormous, and can land u far out —
+    // u's own row is linear, so the next iterate is right, PROVIDED this one
+    // did not overflow to inf. Value and slope are continuous at the seam.
+    double g = gd * exp(u);
+    if (u > 30.0) { g = gd * exp(30.0) * (u - 29.0); }
+    double i_r = (V(a) - V(b)) * g;
+    current_source<>(i_r) [a, b];
+}

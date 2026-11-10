@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-32 -32 48 64" data-title="Photoresistor (LDR)"
+     fill="none" stroke="#000" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+  <style>.fill{fill:#000}.bold{stroke-width:3.2}.dash{stroke-dasharray:3 2.5}[data-pin]{fill:#d00;stroke:none}</style>
+  <path d="M0 -32 V-20.8 M0 20.8 V32"/>
+  <rect x="-8.8" y="-20.8" width="17.6" height="41.6" class="bold"/>
+  <path d="M-32 -32 H-26 V-22"/>
+  <path d="M-26 -32 L-12 -18 M-26 -22 L-12 -8"/>
+  <polygon points="-12,-18 -14.12,-24.36 -18.36,-20.12" class="fill"/>
+  <polygon points="-12,-8 -14.12,-14.36 -18.36,-10.12" class="fill"/>
+  <circle data-pin="light_in" data-alias="light" data-dir="left" cx="-32" cy="-32" r="2"/>
+  <circle data-pin="a" data-alias="p 1 +" data-dir="up" cx="0" cy="-32" r="2"/>
+  <circle data-pin="b" data-alias="n 2 -" data-dir="down" cx="0" cy="32" r="2"/>
+</svg>
