@@ -14,6 +14,7 @@
 // it buys.
 .tran(0, 40m, 1u);   // 40 ms = two full 50 Hz cycles
 .solver(ndf2);
+.zcd;
 
 import <parts/mosfet/nmos> as nfet;
 import <parts/mosfet/pmos> as pfet;

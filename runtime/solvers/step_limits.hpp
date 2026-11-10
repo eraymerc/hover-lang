@@ -1,5 +1,7 @@
 #pragma once
 
+#include <algorithm>
+
 // ─────────────────────────────────────────────────────────────────────────────
 // INTERNAL STEP-SIZE GUARDS
 //
@@ -152,5 +154,47 @@ struct RejectRun {
     bool exhausted(double next_dt) const {
         if (dt_at_start == 0.0) return false;
         return !(next_dt >= dt_at_start * REJECT_DT_RATIO);
+    }
+};
+
+// ── FIRST STEP AFTER AN EVENT — SPICE'S BREAKPOINT RULE ──────────────────────
+//
+// After a .zcd event or a clock tick that changed what the logic drives, the
+// next step is at most EVENT_STEP_FRACTION of the step the controller wanted
+// before the event cut it short (ngspice dctran.c: CKTdelta = MIN(CKTdelta,
+// .1 * CKTsaveDelta) on the first timepoint after a breakpoint). The event is
+// a switching edge whose transient (a gate charging, a bridge slewing) is
+// still ahead; starting at the full pre-event step only buys a string of
+// Newton failures and truncation rejections on the way down to it —
+// examples/MOSFET/h_bridge_inverter.hvr failed 1000, 500 and 250 ns attempts
+// after each edge before one went through. The truncation-error controller
+// then grows the step again by up to 2x per step.
+inline constexpr double EVENT_STEP_FRACTION = 0.1;
+
+struct EventStepCap {
+    double before     = 0.0;    // the controller's step when the event cut it; 0 = unknown
+    double applied_at = -1.0;   // event time the cap was last applied at
+    double cap        = 0.0;    // and the cap it gave
+
+    // At a .zcd cut: the step that was cut. Kept across the retries that land
+    // on the same event.
+    void note_cut(double dt) { if (before == 0.0) before = dt; }
+
+    // On the first step after an event at time t. `preferred` (the
+    // controller's current step) stands in when no cut was recorded — a tick,
+    // or an event that fell at the very end of its step. Never below `floor`,
+    // never above dt. Computed once per event: a retry of the same step
+    // (rejected, so it starts from the same t and sees the event again) is
+    // held to the SAME cap, not divided by ten once more — and it does need
+    // holding, because a rejection restores the checkpoint's vm->time_step,
+    // the uncapped pre-event step.
+    double apply(double dt, double preferred, double floor, double t) {
+        if (t != applied_at) {
+            applied_at = t;
+            const double ref = before > 0.0 ? before : preferred;
+            before = 0.0;
+            cap = std::max(EVENT_STEP_FRACTION * ref, floor);
+        }
+        return std::min(dt, cap);
     }
 };

@@ -39,6 +39,19 @@
 // Order selection is by available history, not by an error estimate:
 // a step after a reset (run start, clock tick, zero crossing, rejection) has
 // only y_n and runs BDF1; NDF then takes NDF1 with two points, NDF2 with three.
+//
+// A RESTART cuts the FORMULA's order only; the points stay valid for the
+// truncation-error estimate (lte.hpp), which counts them separately (`known`).
+// That is SPICE's breakpoint rule (ngspice dctran.c: CKTorder = 1 at a
+// breakpoint, while CKTterr keeps differencing CKTstates[] across it): the
+// integrated quantities — capacitor and inductor state, ddt()/idt() slots —
+// are continuous through a switching event, only their derivatives break, and
+// a difference taken across the break is exactly what makes the controller
+// shrink the step into the transient. Until 0.9 a restart also blinded the
+// estimate (it needs p+1 points), so the step right after every .zcd event or
+// clock tick was taken with no error control at all, at the full pre-event
+// size: examples/MOSFET/h_bridge_inverter.hvr crossed each ~40 ns gate
+// transient in one 150-1000 ns backward-Euler step.
 // A step ratio above W_MAX also falls back to BDF1 for that step: variable-step
 // BDF2 is zero-stable only for w < 1 + sqrt(2), and a step that follows a
 // tiny one (landing on a tick or a zero crossing) can have w in the thousands.
@@ -50,18 +63,21 @@
 struct BdfHistory {
     // y[0] = y_n, y[1] = y_{n-1}, y[2] = y_{n-2}; h[0] = t_n - t_{n-1},
     // h[1] = t_{n-1} - t_{n-2}. `points` counts how many of y[] are valid
-    // since the last reset (1..3).
+    // since the last restart (1..3) for the FORMULA; `known` counts them since
+    // the last reset, for the error estimate only.
     Eigen::VectorXd y[3];
     double h[2] = {0.0, 0.0};
     int points = 1;
+    int known  = 1;
 
     static constexpr double W_MAX = 2.0;
 
     void reset(const Eigen::VectorXd &y_now) {
         y[0] = y[1] = y[2] = y_now;
         points = 1;
+        known  = 1;
     }
-    // Forget everything before y_n — the next step runs BDF1.
+    // The next step runs BDF1; the older points remain for the LTE estimate.
     void restart() { points = 1; }
 
     void accept(const Eigen::VectorXd &y_new, double dt) {
@@ -71,6 +87,7 @@ struct BdfHistory {
         h[1] = h[0];
         h[0] = dt;
         points = std::min(points + 1, 3);
+        known  = std::min(known + 1, 3);
     }
 
     // The order a step of length dt can run at, given the history and a cap.

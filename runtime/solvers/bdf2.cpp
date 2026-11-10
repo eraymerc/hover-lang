@@ -53,6 +53,7 @@ void BDF2::run(VM *vm) {
     bool restart_after_event = false;   // the last step ended on a .zcd event
     RejectRun reject_run;    // bounds the halving spiral — see step_limits.hpp
     JacRefresh jac;          // within-step re-form policy — see newton_core.hpp
+    EventStepCap event_cap;  // first step after an event — see step_limits.hpp
 
     while (vm->time < vm->end_time) {
         attempt++;
@@ -75,7 +76,11 @@ void BDF2::run(VM *vm) {
         api_update_solution(vm->api, x_guess);
         vm_run_digital(vm);
         vm_run_phase_b(vm);
-        if (vm->tick_changed || restart_after_event) hist.restart();
+        if (vm->tick_changed || restart_after_event) {
+            hist.restart();
+            dt = event_cap.apply(dt, vm->time_step, 2.0 * lte_min_step(max_dt), vm->time);
+            vm->solver->sys->dt = dt;
+        }
 
         bool converged   = false;
         double alpha;
@@ -288,7 +293,11 @@ void BDF2::run(VM *vm) {
             // rectifier step it was written to rescue. That narrow a margin
             // means this needs a better-founded test, not a tuned constant.
             reject_run.note(dt);
-            vm->time_step *= 0.5;
+            // Back off from the step that FAILED, not from vm->time_step: the
+            // restore above put back the checkpoint's preferred step, which is
+            // larger whenever this step was shortened (a clock tick, the first
+            // step after an event — step_limits.hpp).
+            vm->time_step = 0.5 * dt;
             // Restart at BDF1. With the variable-step coefficients
             // (bdf_history.hpp) a halved step would still be a valid BDF2 step,
             // and dropping the restart was tried — it broke
@@ -365,6 +374,7 @@ void BDF2::run(VM *vm) {
             const double s_ev = vm_locate_event(vm, checkpoint, x_guess, dt);
             if (s_ev > 0.0 && s_ev < 1.0 - 2.0 * ZCD_FRAC && s_ev * dt > lte_min_step(max_dt)) {
                 vm_restore_state(vm, checkpoint);
+                event_cap.note_cut(dt);
                 vm->time_step = s_ev * dt;
                 step_trace("bdf2", attempt, vm->time, dt, iters, "zcd-cut");
                 continue;

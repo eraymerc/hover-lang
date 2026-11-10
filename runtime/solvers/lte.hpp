@@ -46,8 +46,9 @@
 // Step control, also SPICE's: the worst ratio r = |LTE| / tolerance over all
 // components. r > 1 rejects the step; either way the next step is
 // h * 0.9 * r^(-1/(p+1)), clamped to [h/4, 2h] and to the ceiling. When there
-// are not yet enough accepted points for an estimate (right after the start or
-// a restart), the old iteration-count rule is used for that one step.
+// are not yet enough accepted points for an estimate (right after the start),
+// the old iteration-count rule is used for that one step. A restart (.zcd
+// event, clock tick) does NOT blind the estimate: see bdf_history.hpp.
 // ─────────────────────────────────────────────────────────────────────────────
 
 #include <Eigen/Dense>
@@ -120,7 +121,7 @@ struct LteStep {
 // too short for a (p+1)-th difference (needs p+1 accepted points).
 inline double lte_ratio(const LteStep &st, LteMethod m) {
     const BdfHistory &H = *st.hist;
-    if (H.points < m.p + 1) return -1.0;
+    if (H.known < m.p + 1) return -1.0;   // points since reset, NOT since restart
     const int    npts = m.p + 2;
     double t[4] = {st.dt, 0.0, -H.h[0], -(H.h[0] + H.h[1])};
     double fact = 1.0;

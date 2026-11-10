@@ -30,6 +30,7 @@ void NDF2::run(VM *vm) {
     n_nodes = vm->solver->sys->num_nodes;
     RejectRun reject_run;   // bounds the back-off spiral — see step_limits.hpp
     JacRefresh jac;         // within-step re-form policy — see newton_core.hpp
+    EventStepCap event_cap; // first step after an event — see step_limits.hpp
 
     int n = (int)vm->solver->last_solution.size();
     hist.reset(vm->solver->last_solution);
@@ -59,6 +60,23 @@ void NDF2::run(VM *vm) {
         vm->solver->sys->dt = dt;
         jac.begin_step();
 
+        Eigen::VectorXd x_guess = hist.y[0];
+
+        // The step's logic pass comes first: whether this step must restart
+        // the history depends on what it did. A clock tick restarts it only if
+        // it changed what the logic drives (vm->tick_changed, item 13); a step
+        // that follows a .zcd event always does. It has to precede the recipe
+        // below — until 0.9 it ran after it, so the step right after an event
+        // still used the NDF2 formula across the discontinuity.
+        api_update_solution(vm->api, x_guess);
+        vm_run_digital(vm);
+        vm_run_phase_b(vm);
+        if (vm->tick_changed || restart_after_event) {
+            hist.restart();
+            dt = event_cap.apply(dt, vm->time_step, 2.0 * lte_min_step(max_dt), vm->time);
+            vm->solver->sys->dt = dt;
+        }
+
         // Order by available history (bdf_history.hpp). THE KAPPA SIGN NOTE
         // that lived here — the correction is SUBTRACTED; with a plus, a
         // capacitor at rest read as discharging 14-31 % per step and the
@@ -75,16 +93,6 @@ void NDF2::run(VM *vm) {
         slots_begin(vm->slots, alpha, w, 0.0);
         if (vm->slots.size() > 0 && alpha != jac_alpha) jacobian_valid = false;
 
-        Eigen::VectorXd x_guess = hist.y[0];
-
-        // The step's logic pass comes first: whether this step must restart
-        // the history depends on what it did. A clock tick restarts it only if
-        // it changed what the logic drives (vm->tick_changed, item 13); a step
-        // that follows a .zcd event always does.
-        api_update_solution(vm->api, x_guess);
-        vm_run_digital(vm);
-        vm_run_phase_b(vm);
-        if (vm->tick_changed || restart_after_event) hist.restart();
         bool converged = false;
         int  iters = 0;
         bool jacobian_current_this_step = false;
@@ -165,7 +173,11 @@ void NDF2::run(VM *vm) {
                 continue;
             }
             reject_run.note(dt);
-            vm->time_step *= 0.5;
+            // Back off from the step that FAILED, not from vm->time_step: the
+            // restore above put back the checkpoint's preferred step, which is
+            // larger whenever this step was shortened (a clock tick, the first
+            // step after an event — step_limits.hpp).
+            vm->time_step = 0.5 * dt;
             step_trace("ndf2", attempt, vm->time, dt, iters, "reject");
             // NOTE: the history is deliberately NOT restarted here. An earlier
             // version reset it to 0 on every convergence failure, which
@@ -218,6 +230,7 @@ void NDF2::run(VM *vm) {
             const double s_ev = vm_locate_event(vm, checkpoint, x_guess, dt);
             if (s_ev > 0.0 && s_ev < 1.0 - 2.0 * ZCD_FRAC && s_ev * dt > lte_min_step(max_dt)) {
                 vm_restore_state(vm, checkpoint);
+                event_cap.note_cut(dt);
                 vm->time_step = s_ev * dt;
                 step_trace("ndf2", attempt, vm->time, dt, iters, "zcd-cut");
                 continue;

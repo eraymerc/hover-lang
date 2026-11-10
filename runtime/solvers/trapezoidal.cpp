@@ -43,6 +43,7 @@ void Trapezoidal::run(VM *vm) {
     double jac_alpha = -1.0;      // alpha the held Jacobian was formed under (see the slots note)
     bool force_euler = true; // ALWAYS start the simulation with a Backward Euler step
     bool restart_after_event = false;   // the last step ended on a .zcd event
+    EventStepCap event_cap;             // first step after an event — see step_limits.hpp
 
     // Accepted points for the truncation-error estimate (lte.hpp). This solver
     // keeps no multistep history of its own; this one only feeds the estimate.
@@ -64,8 +65,14 @@ void Trapezoidal::run(VM *vm) {
         api_update_solution(vm->api, vm->solver->last_solution);
         vm_run_digital(vm);
         // A tick that changed what the logic drives, or a step that follows a
-        // .zcd event, starts with backward Euler and fresh history (item 13).
-        if (vm->tick_changed || restart_after_event) { force_euler = true; lhist.restart(); }
+        // .zcd event, starts with backward Euler (item 13) and a short step
+        // (SPICE's breakpoint rule, step_limits.hpp). The error estimate keeps
+        // its points (bdf_history.hpp).
+        if (vm->tick_changed || restart_after_event) {
+            force_euler = true;
+            lhist.restart();
+            dt = event_cap.apply(dt, vm->time_step, 2.0 * lte_min_step(max_dt), vm->time);
+        }
 
         vm->time += dt;
         vm->solver->sys->dt = dt;
@@ -195,6 +202,7 @@ void Trapezoidal::run(VM *vm) {
             const double s_ev = vm_locate_event(vm, checkpoint, x_guess, dt);
             if (s_ev > 0.0 && s_ev < 1.0 - 2.0 * ZCD_FRAC && s_ev * dt > lte_min_step(max_dt)) {
                 vm_restore_state(vm, checkpoint);
+                event_cap.note_cut(dt);
                 vm->time_step = s_ev * dt;
                 step_trace("trap", attempt, vm->time, dt, iters, "zcd-cut");
                 continue;

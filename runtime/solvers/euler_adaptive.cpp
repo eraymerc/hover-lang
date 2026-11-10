@@ -128,6 +128,8 @@ void EulerAdaptive::run(VM *vm) {
     BdfHistory lhist;
     lhist.reset(vm->solver->last_solution);
     bool restart_after_event = false;   // the step just accepted ended on a .zcd event
+    bool after_event = false;           // the last ACCEPTED step ended on one
+    EventStepCap event_cap;             // first step after an event — see step_limits.hpp
     const std::vector<char> state_rows = lte_state_rows(*vm->solver->sys);
 
     while (vm->time < vm->end_time) {
@@ -137,6 +139,12 @@ void EulerAdaptive::run(VM *vm) {
         // End this step on the next clock tick if it would cross one. Local
         // to the step: the controller's own preferred step is untouched.
         if (!vm->clocks.empty()) dt = vm_limit_step(vm, dt);
+        // SPICE's breakpoint rule (step_limits.hpp): the step after an event
+        // starts short. (Clock ticks are not seen here: this solver's logic
+        // pass runs inside take_implicit_step.)
+        if (after_event) {
+            dt = event_cap.apply(dt, vm->time_step, 2.0 * lte_min_step(max_dt), vm->time);
+        }
 
         StepResult step = take_implicit_step(vm, dt);
 
@@ -146,6 +154,7 @@ void EulerAdaptive::run(VM *vm) {
             const double s_ev = vm_locate_event(vm, checkpoint, vm->solver->last_solution, dt);
             if (s_ev > 0.0 && s_ev < 1.0 - 2.0 * ZCD_FRAC && s_ev * dt > lte_min_step(max_dt)) {
                 vm_restore_state(vm, checkpoint);
+                event_cap.note_cut(dt);
                 vm->time_step = s_ev * dt;
                 step_trace("euler_adaptive", attempt, vm->time, dt, step.iters, "zcd-cut");
                 continue;
@@ -155,6 +164,7 @@ void EulerAdaptive::run(VM *vm) {
 
         double lte_r = -1.0;
         const LteMethod lm = lte_be();
+        const bool event_this_step = restart_after_event;
         if (step.converged) {
             if (restart_after_event) { lhist.restart(); restart_after_event = false; }
             // TRUNCATION ERROR (lte.hpp). take_implicit_step has already
@@ -173,6 +183,7 @@ void EulerAdaptive::run(VM *vm) {
                 continue;
             }
             lhist.accept(vm->solver->last_solution, dt);
+            after_event = event_this_step;
         }
 
         if (step.converged) {
@@ -199,7 +210,11 @@ void EulerAdaptive::run(VM *vm) {
         } else {
             vm_restore_state(vm, checkpoint);
             reject_run.note(dt);
-            vm->time_step *= 0.5;
+            // Back off from the step that FAILED, not from vm->time_step: the
+            // restore above put back the checkpoint's preferred step, which is
+            // larger whenever this step was shortened (a clock tick, the first
+            // step after an event — step_limits.hpp).
+            vm->time_step = 0.5 * dt;
             step_trace("euler_adaptive", attempt, vm->time, dt, step.iters, "reject");
             if (reject_run.exhausted(vm->time_step)) {
                 fprintf(stderr, "[Adaptive] FATAL: Failed to converge at t=%.3e\n", vm->time);
