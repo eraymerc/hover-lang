@@ -7,9 +7,10 @@
 
 .save(main.motor_a, main.motor_b, main.omega_node, main.loadCmd,
       main.cmd_TL, main.cmd_BL, main.cmd_TR, main.cmd_BR);
-.op;   // Settle the bridge/motor bias point before the switching sequence.
-.tran(0, 400m, 20u);
+//.op;   // Settle the bridge/motor bias point before the switching sequence.
+.tran(0, 2000m, 20u);
 .solver(ndf2);
+.zcd;
 
 // The H-bridge sequencer runs on a 1 kHz timer tick, as it would on a
 // microcontroller. Its commands can only change on a tick, and ticks are
@@ -21,6 +22,7 @@
 import <parts/mosfet/nmos> as nfet;
 import <parts/mosfet/pmos> as pfet;
 
+from <math> import tanh;
 // ═══════════════════════════════════════════════════════════════
 //  DC MOTOR MODEL (electromechanical analogy)
 // ═══════════════════════════════════════════════════════════════
@@ -37,7 +39,7 @@ import <parts/mosfet/pmos> as pfet;
 //   J      -> capacitance (energy storage = inertia)
 //   B      -> 1/Rdamp     (viscous damping / friction)
 //   Kt*ia  -> VCCS current sourced from the sense-resistor voltage
-//   Tload  -> driven in via loadCmd from the LoadTorque digital block
+//   Tload  -> driven in via loadCmd from the LoadTorque analog block
 //
 // omega_node's voltage IS shaft speed (rad/s), directly .save-able.
 
@@ -59,7 +61,13 @@ module DCMotor<double Ra, double La, double gm_torque, double Ke,
     // ── Mechanical side ──
     C<Jcap>()  [omega_node, gnd];                // rotor inertia
     R<Rdamp>() [omega_node, gnd];                // viscous damping / friction
-    VCCS<gm_torque>() [omega_node, gnd, b, s];   // Kt*ia torque current
+    // Kt*ia torque current, INTO omega_node: positive armature current must
+    // speed the rotor up, so that the back-EMF Ke*w above opposes the drive.
+    // (A VCCS's current leaves its first terminal. Written [omega_node, gnd]
+    // the torque pulled omega the other way, the back-EMF AIDED the supply —
+    // positive feedback held only by Rdamp — and the motor ran at ~4x its
+    // physical speed drawing 13 A at full speed.)
+    VCCS<gm_torque>() [gnd, omega_node, b, s];
 
     current_source<>(loadCmd) [gnd, omega_node];
 }
@@ -67,19 +75,20 @@ module DCMotor<double Ra, double La, double gm_torque, double Ke,
 // Not clocked: this is a model of the motor's physics (friction always
 // opposes motion), not controller firmware, so it follows the solver.
 //
-// Recomputes the opposing load current every step based on the *current*
-// sign of omega, so it always fights whichever direction the rotor is
+// Recomputes the opposing load current every step from the *current*
+// speed, so it always fights whichever direction the rotor is
 // actually spinning.
-digital module LoadTorque<double Tload>
-(input double omega, output double loadCmd) []
+analog module LoadTorque<double Tload, double wsat>
+(output double loadCmd) [wire omega_node]
 {
-    if (omega > 0.0) {
-        loadCmd = -Tload;
-    } else if (omega < 0.0) {
-        loadCmd = Tload;
-    } else {
-        loadCmd = 0.0;
-    }
+    // The shaft speed, read straight off the mechanical node.
+    double omega = V(omega_node);
+    // Friction that saturates at Tload once the shaft is really turning and
+    // passes smoothly through zero speed: tanh(omega / wsat). A pure sign()
+    // would jump by 2*Tload as omega crosses zero; real friction does not, and
+    // a smooth torque needs no event handling. wsat is the speed by which it
+    // has reached ~76 % of Tload.
+    loadCmd = 0.0 - Tload * tanh(omega / wsat);
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -222,10 +231,12 @@ module main<>() []
     module bridge = HBridge<47>
                     (cmd_TL, cmd_BL, cmd_TR, cmd_BR) [vcc, motor_a, motor_b];
 
-    // Read shaft speed from the previous solve, then compute a load
-    // current that opposes whichever direction it's currently spinning.
-    state double omega = V(omega_node);
-    module loadTorque = LoadTorque<10m>(omega, loadCmd) [];
+    // A load current that opposes whichever direction the shaft is spinning.
+    // LoadTorque reads the speed itself, through its wire port. (It used to be
+    // handed `state double omega = V(omega_node);` from here — but a state
+    // initialiser is not re-evaluated, and that one was dropped altogether, so
+    // omega stayed 0 and the friction torque never engaged.)
+    module loadTorque = LoadTorque<10m, 5>(loadCmd) [omega_node];
 
     // Ra=2ohm, La=5mH, gm_torque=50 (=Kt/1milliohm, Kt=0.05 N*m/A),
     // Ke=0.05 V*s/rad, J=200uF-equivalent (0.0002 kg*m^2),

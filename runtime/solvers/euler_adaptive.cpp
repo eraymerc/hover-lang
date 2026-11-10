@@ -75,7 +75,7 @@ EulerAdaptive::StepResult EulerAdaptive::take_implicit_step(VM *vm, double dt) {
         if (iter == 0) jac.seed(conv.worst_ratio);
 
         if (newton_converged(x_new, x_guess, n_nodes, rtol, atol, abstol, conv)) {
-            if (vm_kcl_ratio(vm, x_new, alpha, x_anchor, nullptr, KCL_RTOL, KCL_ATOL, rtol, atol, abstol) > KCL_VETO)
+            if (vm_noncon_ratio(vm, x_new, x_guess, KCL_RTOL, KCL_ATOL) > KCL_VETO)
             { x_guess = x_new; continue; }   // iterate on: the limiters release (KCL VETO, newton_core.hpp)
             x_guess = x_new;
             converged = true;
@@ -127,6 +127,7 @@ void EulerAdaptive::run(VM *vm) {
     // Accepted points for the truncation-error estimate (lte.hpp).
     BdfHistory lhist;
     lhist.reset(vm->solver->last_solution);
+    bool restart_after_event = false;   // the step just accepted ended on a .zcd event
     const std::vector<char> state_rows = lte_state_rows(*vm->solver->sys);
 
     while (vm->time < vm->end_time) {
@@ -137,27 +138,25 @@ void EulerAdaptive::run(VM *vm) {
         // to the step: the controller's own preferred step is untouched.
         if (!vm->clocks.empty()) dt = vm_limit_step(vm, dt);
 
-        if (vm->zcd_enabled) {
-            vm->time += dt;
-
-            api_update_solution(vm->api, checkpoint.last_solution);
-            vm_run_digital(vm);
-            vm_run_analog(vm);
-
-            if (vm_detect_discontinuity(vm, checkpoint)) {
-                dt = vm_isolate_zero_crossing(vm, checkpoint, dt);
-                vm_restore_state(vm, checkpoint);
-                vm->time_step = dt;
-            } else {
-                vm_restore_state(vm, checkpoint);
-            }
-        }
-
         StepResult step = take_implicit_step(vm, dt);
+
+        // .zcd (vm/zcd.hpp): the step is already committed, so a logic jump
+        // inside it rolls it back and re-solves it to end just after the jump.
+        if (step.converged && vm->zcd_enabled) {
+            const double s_ev = vm_locate_event(vm, checkpoint, vm->solver->last_solution, dt);
+            if (s_ev > 0.0 && s_ev < 1.0 - 2.0 * ZCD_FRAC && s_ev * dt > lte_min_step(max_dt)) {
+                vm_restore_state(vm, checkpoint);
+                vm->time_step = s_ev * dt;
+                step_trace("euler_adaptive", attempt, vm->time, dt, step.iters, "zcd-cut");
+                continue;
+            }
+            if (s_ev > 0.0) restart_after_event = true;
+        }
 
         double lte_r = -1.0;
         const LteMethod lm = lte_be();
         if (step.converged) {
+            if (restart_after_event) { lhist.restart(); restart_after_event = false; }
             // TRUNCATION ERROR (lte.hpp). take_implicit_step has already
             // committed the step, slots included: the new value is now h0 and
             // the older ones h1, h2. A rejection rolls all of it back.

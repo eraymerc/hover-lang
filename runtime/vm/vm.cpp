@@ -59,18 +59,16 @@ void vm_commit_slots_at(VM *vm, const Eigen::VectorXd &x) {
     slots_commit(vm->slots);
 }
 
-double vm_kcl_ratio(VM *vm, const Eigen::VectorXd &x, double alpha,
-                    const Eigen::VectorXd &x_history, const Eigen::VectorXd *correction,
-                    double rtol, double atol,
-                    double step_rtol, double vntol, double abstol,
-                    int *worst_row) {
-    // A PROBE: it must leave the solver bit-for-bit where it found it. Not just
-    // logically — current sources are stamped into B_static incrementally
-    // (B += new - last), so an extra drive pass re-rounds B even when it
-    // writes the same values, and examples/Diode/rectifier.hvr sits close
-    // enough to its convergence edge that this alone turned a clean run into a
-    // FATAL at 15.5 ms. So B_static and every source's last value are saved
-    // and put back exactly, and the analog outputs are recomputed at the
+double vm_noncon_ratio(VM *vm, const Eigen::VectorXd &x, const Eigen::VectorXd &x_iter,
+                       double rtol, double atol, int *worst_row) {
+    // A PROBE: it must leave the solver bit-for-bit where it found it. While
+    // current sources were stamped into B_static incrementally (B += new -
+    // last, until 0.9 — System::restamp_current_row), an extra drive pass
+    // re-rounded B even when it wrote the same values, and that alone turned
+    // examples/Diode/rectifier.hvr into a FATAL at 15.5 ms. Node rows are now
+    // rebuilt from the source values, but the save/restore stays: it costs
+    // nothing next to the two analog passes. B_static and every source's last
+    // value are put back exactly, and the analog outputs are recomputed at the
     // caller's own read-view and Newton history (a deterministic re-run).
     API    *api = vm->api;
     System *sys = vm->solver->sys;
@@ -81,33 +79,40 @@ double vm_kcl_ratio(VM *vm, const Eigen::VectorXd &x, double alpha,
     cs_saved.reserve(sys->current_sources.size());
     for (const auto &kv : sys->current_sources) cs_saved.push_back(kv.second.last_value);
 
+    // The devices at x as the NEXT Newton iteration would see them: limited
+    // against the iterate x was solved from...
     api->last_solution = x;
-    api->prev_solution = x;          // nr_prev(v) == v: every limiter passes through
+    api->prev_solution = x_iter;
     vm_run_analog(vm);
     vm_run_phase_b(vm);
+    const Eigen::VectorXd b_lim = sys->B_static;
+    // ...and with every limiter released (nr_prev(v) == v).
+    api->prev_solution = x;
+    vm_run_analog(vm);
+    vm_run_phase_b(vm);
+    const Eigen::VectorXd &b_true = sys->B_static;
 
-    const Eigen::VectorXd gx   = sys->G * x;
-    const Eigen::VectorXd cdot = sys->C * (x_history - x);
-    // Residual the step tolerance alone can account for (see vm.hpp).
-    Eigen::VectorXd tol(x.size());
-    for (int j = 0; j < x.size(); j++)
-        tol(j) = step_rtol * std::abs(x(j)) + (j < sys->num_nodes ? vntol : abstol);
-    const Eigen::VectorXd allowed = sys->G.cwiseAbs() * tol + alpha * (sys->C.cwiseAbs() * tol);
     double worst = 0.0;
     int    wrow  = -1;
     for (int i = 0; i < x.size(); i++) {
-        double rhs = sys->B_static(i) + alpha * cdot(i);
-        if (correction) rhs += (*correction)(i);
-        const double r = rhs - gx(i);
-        double traffic = std::abs(gx(i)) + alpha * std::abs(cdot(i)) + std::abs(sys->B_static(i));
-        if (correction) traffic += std::abs((*correction)(i));
-        traffic += allowed(i) / rtol;   // so rtol*traffic covers it in full
-        const double ratio = std::abs(r) / (rtol * traffic + atol);
+        const double d     = std::abs(b_true(i) - b_lim(i));
+        const double scale = std::max(std::abs(b_true(i)), std::abs(b_lim(i)));
+        const double ratio = d / (rtol * scale + atol);
         if (!(ratio <= worst)) { worst = ratio; wrow = i; }   // NaN counts as worst
+    }
+    static const bool trace = getenv("HOVER_TRACE_KCL") != nullptr;
+    if (trace && worst > 10.0 && wrow >= 0) {
+        std::string name = wrow < sys->num_nodes ? sys->node_names[wrow] : std::string("branch?");
+        if (wrow >= sys->num_nodes)
+            for (const auto &kv : sys->branch_map) if (kv.second == wrow) { name = "I(" + kv.first + ")"; break; }
+        fprintf(stderr, "[noncon] t=%.12e ratio=%.3e row=%d %s limited=%.6e true=%.6e\n",
+                vm->time, worst, wrow, name.c_str(), b_lim(wrow), b_true(wrow));
     }
 
     api->last_solution = last_saved;
     api->prev_solution = prev_saved;
+    // Leave the analog outputs as the caller had them, evaluated at its own
+    // read-view: this is a probe and must not change what the solver does next.
     vm_run_analog(vm);
     sys->B_static = b_saved;
     size_t k = 0;
@@ -632,8 +637,22 @@ void vm_boot(VM *vm) {
     } else {
         printf("[VM] No .op directive — solving bias point; capacitors and inductors start uncharged (add .op; for the DC operating point)\n");
     }
+    // NON-CONSTANT STATE INITIALISERS (`state double x = V(node);`) take their
+    // value at t = 0, as a declaration does. Until 0.9 codegen dropped them and
+    // wrote 0. Without .op the t = 0 state is the circuit at rest (the t = 0
+    // row below: every node and branch 0), so they are evaluated there, before
+    // the bias point; with .op, t = 0 IS the operating point, so after it.
+    if (vm->state_init && !vm->op_enabled) {
+        vm->time = 0.0;
+        api_peek_solution(vm->api, Eigen::VectorXd::Zero(vm->solver->sys->size));
+        vm->state_init(vm);
+    }
     double bias_step = 0.0;
     vm_solve_dc(vm, vm->op_enabled, &bias_step);
+    if (vm->state_init && vm->op_enabled) {
+        api_peek_solution(vm->api, vm->solver->last_solution);
+        vm->state_init(vm);
+    }
 
     // THE FIRST ROWS. Every solver logs a step only after advancing time, so
     // the state the run starts from has to be logged here or it appears

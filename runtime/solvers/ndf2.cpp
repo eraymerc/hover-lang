@@ -44,6 +44,7 @@ void NDF2::run(VM *vm) {
     double jac_alpha = -1.0;   // alpha the held Jacobian was formed under
 
     long attempt = 0;   // counts ATTEMPTS, not accepted steps — see step_trace.hpp
+    bool restart_after_event = false;   // the last step ended on a .zcd event
 
     while (vm->time < vm->end_time) {
         attempt++;
@@ -53,26 +54,6 @@ void NDF2::run(VM *vm) {
         // to the step: the controller's own preferred step is untouched.
         if (!vm->clocks.empty()) {
             dt = vm_limit_step(vm, dt);
-            // A tick at this step's start changes the circuit's inputs: do not
-            // integrate across it with pre-tick history (see vm_tick_due).
-            if (vm_tick_due(vm)) hist.restart();
-        }
-
-        if (vm->zcd_enabled) {
-            vm->time += dt;
-
-            api_update_solution(vm->api, checkpoint.last_solution);
-            vm_run_digital(vm);
-            vm_run_analog(vm);
-
-            if (vm_detect_discontinuity(vm, checkpoint)) {
-                dt = vm_isolate_zero_crossing(vm, checkpoint, dt);
-                vm_restore_state(vm, checkpoint);
-                vm->time_step = dt;
-                hist.restart();
-            } else {
-                vm_restore_state(vm, checkpoint);
-            }
         }
 
         vm->solver->sys->dt = dt;
@@ -95,13 +76,19 @@ void NDF2::run(VM *vm) {
         if (vm->slots.size() > 0 && alpha != jac_alpha) jacobian_valid = false;
 
         Eigen::VectorXd x_guess = hist.y[0];
+
+        // The step's logic pass comes first: whether this step must restart
+        // the history depends on what it did. A clock tick restarts it only if
+        // it changed what the logic drives (vm->tick_changed, item 13); a step
+        // that follows a .zcd event always does.
+        api_update_solution(vm->api, x_guess);
+        vm_run_digital(vm);
+        vm_run_phase_b(vm);
+        if (vm->tick_changed || restart_after_event) hist.restart();
         bool converged = false;
         int  iters = 0;
         bool jacobian_current_this_step = false;
 
-        api_update_solution(vm->api, x_guess);
-        vm_run_digital(vm);
-        vm_run_phase_b(vm);
 
         if (!jacobian_valid) {
             jacobian = vm_compute_jacobian(vm, x_guess);
@@ -141,7 +128,7 @@ void NDF2::run(VM *vm) {
             if (iter == 0) jac.seed(conv.worst_ratio);
 
             if (newton_converged(x_new, x_guess, n_nodes, rtol, atol, abstol, conv)) {
-                if (vm_kcl_ratio(vm, x_new, alpha, x_blend, nullptr, KCL_RTOL, KCL_ATOL, rtol, atol, abstol) > KCL_VETO) {
+                if (vm_noncon_ratio(vm, x_new, x_guess, KCL_RTOL, KCL_ATOL) > KCL_VETO) {
                     step_trace("ndf2", attempt, vm->time, dt, iters, "kcl-veto");
                     x_guess = x_new;
                     continue;   // iterate on: the limiters release next time (KCL VETO, newton_core.hpp)
@@ -223,6 +210,21 @@ void NDF2::run(VM *vm) {
         jacobian_valid = false;
 
         reject_run.clear();
+        // .zcd: a logic output that jumps inside this step (vm/zcd.hpp). The step
+        // is re-solved to end just after the jump; the one that does is
+        // accepted and the next step restarts the history.
+        bool event_here = false;
+        if (vm->zcd_enabled) {
+            const double s_ev = vm_locate_event(vm, checkpoint, x_guess, dt);
+            if (s_ev > 0.0 && s_ev < 1.0 - 2.0 * ZCD_FRAC && s_ev * dt > lte_min_step(max_dt)) {
+                vm_restore_state(vm, checkpoint);
+                vm->time_step = s_ev * dt;
+                step_trace("ndf2", attempt, vm->time, dt, iters, "zcd-cut");
+                continue;
+            }
+            event_here = s_ev > 0.0;
+        }
+
         // TRUNCATION ERROR (lte.hpp). The slots are evaluated at the new
         // point first: their error counts, and their commit waits for the verdict.
         vm_eval_slots_at(vm, x_guess);
@@ -241,6 +243,7 @@ void NDF2::run(VM *vm) {
         }
         slots_commit(vm->slots);
         hist.accept(x_guess, dt);
+        restart_after_event = event_here;
 
         solver_advance_time(vm->solver, x_guess);
         vm->time += dt;

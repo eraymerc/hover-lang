@@ -16,7 +16,7 @@
 namespace hvr {
 
 namespace {
-enum PhaseSlot { kStructural, kDigital, kAnalog, kDriveSources, kLog, kSaveState, kRestoreState, kSlots };
+enum PhaseSlot { kStructural, kDigital, kAnalog, kDriveSources, kLog, kSaveState, kRestoreState, kStateInit, kSlots };
 enum class Field;
 }
 
@@ -220,6 +220,10 @@ void Sim::set_voltage_source(const char *name, double v) { api_set_voltage_sourc
 void Sim::set_current_source(const char *name, double i) { api_set_current_source(&impl_->api, name, i); }
 void Sim::set_value(const char *key, double v) { impl_->vm.values[key] = v; }
 void Sim::init_state_slots(int n) { slots_resize(impl_->vm.slots, n); }
+void Sim::set_state_init(Phase init) {
+    impl_->phases[kStateInit] = init;
+    impl_->vm.state_init = &run_phase<kStateInit>;
+}
 double Sim::ddt(int slot, double q) { return slots_ddt(impl_->vm.slots, slot, q); }
 double Sim::idt(int slot, double x) { return slots_idt(impl_->vm.slots, slot, x); }
 double Sim::value(const char *key) const { return impl_->vm.values[key]; }

@@ -59,6 +59,12 @@ func (g *generator) emitStateVars() {
 	for _, name := range g.collectAllVars() {
 		ht := g.typeOf(name)
 		if si, isState := stateInits[name]; isState {
+			if g.isRuntimeStateInit(ht, si) {
+				g.runtimeStateInits = append(g.runtimeStateInits, runtimeStateInit{name, ht, si})
+				g.raw(fmt.Sprintf("static %s = %s; // state, set at t = 0 by init_states()",
+					ht.cVarDecl(name), formatTypedLiteral(0.0, ht.elem)))
+				continue
+			}
 			g.raw(fmt.Sprintf("static %s = %s; // state",
 				ht.cVarDecl(name), g.formatStateInitializer(ht, si)))
 		} else if ht.isArray() || ht.elem == CStruct {
@@ -264,6 +270,9 @@ func (g *generator) emitSimSetup(cfg simConfig, onSolverError string) {
 	}
 	g.line("sim.set_phases(phase_structural, phase_digital, phase_analog, phase_b,")
 	g.line("               phase_log, save_state_vars, restore_state_vars);")
+	if len(g.runtimeStateInits) > 0 {
+		g.line("sim.set_state_init(init_states);")
+	}
 	for _, c := range cfg.clocks {
 		g.line("sim.add_clock(%s, %s, %s);", cStr(c.name), formatDoubleLiteral(c.period), c.phaseFunc())
 	}
@@ -290,6 +299,56 @@ func (g *generator) emitSimSetup(cfg simConfig, onSolverError string) {
 // real call: a static initialized from an extern function runs once at startup
 // and needs no vm. Any other non-constant initializer can't run safely at file
 // scope (a Hover-function call would need vm before main), so it falls back to 0.
+// runtimeStateInit is one `state` scalar whose initialiser must be evaluated
+// at run time (see generator.runtimeStateInits).
+type runtimeStateInit struct {
+	name string
+	ht   hoverType
+	si   stateInit
+}
+
+// isRuntimeStateInit reports whether a state variable's initialiser cannot be
+// a C++ static initialiser: a scalar whose initialiser is an expression other
+// than a number literal or an extern call — V(node), I(element), time, a
+// parameter expression. Arrays and structs keep their literal path.
+func (g *generator) isRuntimeStateInit(ht hoverType, si stateInit) bool {
+	if ht.isArray() || ht.elem == CStruct || ht.isPointer() || si.value == nil {
+		return false
+	}
+	switch v := si.value.(type) {
+	case *ast.NumberExpression:
+		return false
+	case *ast.CallExpression:
+		// An extern (importc) call stays a C++ static initialiser, as before.
+		if decl := g.lookupFunctionDecl(callExpressionName(v.Function), si.logic); decl != nil && decl.IsExtern {
+			return false
+		}
+	}
+	return true
+}
+
+// emitStateInits emits init_states(): the non-constant `state` initialisers,
+// evaluated once at t = 0 (runtime/vm/vm.cpp vm_boot: at rest without .op,
+// at the operating point with it) — the value a declaration gives, at the
+// instant it is declared for. Before 0.9 `state double omega = V(omega_node);`
+// compiled to a plain 0.
+func (g *generator) emitStateInits() {
+	if len(g.runtimeStateInits) == 0 {
+		return
+	}
+	g.raw(`// ── STATE INITIALISERS — non-constant 'state' initial values, at t = 0 ─────`)
+	g.raw(`static void init_states(hvr::Sim &sim) {`)
+	g.push()
+	g.line("(void)sim;")
+	for _, r := range g.runtimeStateInits {
+		code, ct := g.emitExpr(r.si.value, r.si.logic)
+		g.line("%s = %s;", r.name, castToHover(code, ct, r.ht))
+	}
+	g.pop()
+	g.raw(`}`)
+	g.raw(``)
+}
+
 func (g *generator) formatStateInitializer(ht hoverType, si stateInit) string {
 	if ht.isArray() {
 		return g.formatArrayLiteral(ht.elem, ht.structName, ht.dims, si.value)

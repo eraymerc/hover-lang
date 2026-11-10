@@ -183,6 +183,44 @@ struct System {
         return (it != current_sources.end()) ? &it->second : nullptr;
     }
 
+    // ── Node rows of B_static, rebuilt rather than updated ───────────────────
+    // A node row of B_static holds nothing but current sources (voltage
+    // sources live in branch rows). It used to be kept INCREMENTALLY —
+    // B += last - new on every update — and that is not exact: once a value of
+    // magnitude M has passed through a row, the row carries a rounding residue
+    // of order eps*M for good. Junction models put huge values through their
+    // rows on wild Newton iterates (a Schottky's breakdown term,
+    // Ibv * e^40 = 2.35e15 A, is a few ulps of 0.5 A), and after one such
+    // excursion examples/DCMotor/h_bridge.hvr carried a permanent phantom
+    // ~1e6 A in two node rows: every later step "converged" to a state with a
+    // forward-biased freewheel diode conducting backwards (sorunlar.txt item
+    // 14). Rebuilding a row as the plain sum of its sources' current values
+    // makes it a pure function of those values, with no memory of the past.
+    std::vector<std::vector<const CurrentSourceRecord *>> cs_rows;
+    size_t cs_rows_count = (size_t)-1;
+
+    void restamp_current_row(int row) {
+        if (row < 0) return;
+        if (cs_rows_count != current_sources.size() || (int)cs_rows.size() != num_nodes) {
+            // (Re)index after registration; pointers into an unordered_map are
+            // stable, and the iteration order fixes the summation order.
+            cs_rows.assign(num_nodes, {});
+            for (const auto &kv : current_sources) {
+                if (kv.second.n1 >= 0 && kv.second.n1 < num_nodes) cs_rows[kv.second.n1].push_back(&kv.second);
+                if (kv.second.n2 >= 0 && kv.second.n2 < num_nodes && kv.second.n2 != kv.second.n1)
+                    cs_rows[kv.second.n2].push_back(&kv.second);
+            }
+            cs_rows_count = current_sources.size();
+        }
+        if (row >= num_nodes) return;
+        double b = 0.0;
+        for (const CurrentSourceRecord *r : cs_rows[row]) {
+            if (r->n1 == row) b -= r->last_value;   // current leaves n1
+            if (r->n2 == row) b += r->last_value;   // and enters n2
+        }
+        B_static(row) = b;
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // DEBUG
     // ─────────────────────────────────────────────────────────────────────────

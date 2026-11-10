@@ -83,6 +83,10 @@ public:
     // Number of ddt()/idt() call sites (one slot each). Call before init_vm.
     void init_state_slots(int n);
 
+    // The phase that evaluates the non-constant `state` initialisers; run once,
+    // at t = 0 (after .op when there is one). Call after set_phases.
+    void set_state_init(Phase init);
+
     // What the logger records: MNA node voltages, then VM signals (values
     // published with set_value). init_logger fixes the column set.
     void log_node(const char *name);

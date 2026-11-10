@@ -99,6 +99,10 @@ struct VM {
     void (*phase_analog)(VM *vm);
     void (*phase_b)(VM *vm);
     void (*phase_log)(VM *vm);  // copies C globals into vm->values for logger
+    // Evaluates the `state` initialisers that are not compile-time constants —
+    // `state double x = V(node);` and the like — at t = 0 (vm_boot). Null when
+    // the deck has none.
+    void (*state_init)(VM *vm) = nullptr;
 
     // save_state_vars / restore_state_vars copy every Hover `state`
     // variable's current C++ global value into/from vm->values, under the
@@ -137,6 +141,15 @@ struct VM {
     double failed_at = 0.0;
     void (*run_clock)(VM *vm, int index) = nullptr;
 
+    // Set by vm_run_clocks: true when a tick ran at this step's start AND
+    // changed what the logic drives into the circuit (vm_drive_vector before
+    // vs after). A tick that changes nothing must not restart the
+    // integrators' history (docs/hoveR_sorunlar.txt item 13).
+    bool tick_changed = false;
+    // True while vm_locate_event re-runs the logic along a step: clock ticks
+    // must not fire there (vm/zcd.cpp).
+    bool in_probe = false;
+
     // Pre-allocated Jacobian scratch — used by implicit solvers
     Eigen::MatrixXd jacobian_scratch;
     Eigen::VectorXd base_b_scratch;
@@ -163,29 +176,28 @@ void vm_commit_slots_at(VM *vm, const Eigen::VectorXd &x);
 // estimate needs the new point's values before the step is accepted).
 void vm_eval_slots_at(VM *vm, const Eigen::VectorXd &x);
 
-// KCL check at a step-converged x: the worst row of |r_i| / (rtol*traffic_i +
-// atol), where r is the TRUE nonlinear residual and traffic_i the magnitude of
-// the currents flowing in row i (residual_converged's yardstick). "True" means
-// device models are evaluated with nr_prev() == x, so no junction or FET
-// limiter clips anything: a point that only balances because a limiter is
-// holding a device voltage away from its node voltages is exactly the false
-// convergence SPICE's CKTnoncon exists to refuse. correction is the solver's
-// PHYSICAL extra RHS term (trapezoidal's trap_base), never the Norton term.
-// The API's read-view and Newton history are restored afterwards.
+// SPICE's CKTnoncon, recovered without the models' help: is a junction or FET
+// limiter still active at the step-converged x? The device models limit their
+// own voltages (pnjlim, fetlim, limvds, written in Hover), so the runtime
+// cannot see the flag SPICE's devices raise. It can see its consequence: the
+// devices are evaluated at x twice — limited against x_iter, the iterate x was
+// solved from (what the next iteration would use), and with every limiter
+// released (nr_prev() == x) — and the worst row of
+// |B_true - B_limited| / (rtol * max(|B_true|, |B_limited|) + atol) is
+// returned. At a genuine solution x == x_iter to tolerance, no limiter clips
+// anything and the two evaluations are bit-identical; a point a limiter is
+// holding differs by the very current the limiter is withholding.
 //
-// The yardstick also includes what the Newton STEP tolerance already allows:
-// sum_j (|G_ij| + alpha*|C_ij|) * tol_j, tol_j = step_rtol*|x_j| + vntol (nodes)
-// or abstol (branches). Without it the veto contradicted the step test on stiff
-// rows: an inductor carrying 13.4 A at a 0.26 ns step has alpha*L ~ 2e7, so the
-// 13 mA the step test accepts is a 1e5 V residual on a row whose own traffic is
-// ~10 V — examples/MOSFET/mosfet_h_bridge.hvr was vetoed on every iteration at
-// its 198 ms commutation and stopped. A limiter-held false solution leaves a
-// residual the size of the row's whole current, far above this term.
-double vm_kcl_ratio(VM *vm, const Eigen::VectorXd &x, double alpha,
-                    const Eigen::VectorXd &x_history, const Eigen::VectorXd *correction,
-                    double rtol, double atol,
-                    double step_rtol, double vntol, double abstol,
-                    int *worst_row = nullptr);
+// This replaced a residual check (KCL with limiters released, scaled by each
+// row's current "traffic"), which could not be scaled right from node
+// voltages alone: the net row current vanishes on balanced rows (a DC motor's
+// mechanical node in steady state — damping and torque currents of 0.67 A
+// cancelling to 2e-6 A), so round-off read as a violation and
+// mosfet_h_bridge.hvr stopped at its 198 ms commutation; the sum of term
+// magnitudes swells with common mode, so a BJT left off while commanded on
+// passed, and h_bridge.hvr split into runs ending at 64 and at 5 rad/s.
+double vm_noncon_ratio(VM *vm, const Eigen::VectorXd &x, const Eigen::VectorXd &x_iter,
+                       double rtol, double atol, int *worst_row = nullptr);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PHASE EXECUTION
@@ -211,13 +223,11 @@ double vm_limit_step(const VM *vm, double dt);
 void vm_run_clocks(VM *vm);
 void vm_reset_clocks(VM *vm);
 
-// True when a step starting at vm->time will run at least one clock tick.
-// A tick changes the digital outputs — the inputs the analog side sees — so
-// a multistep solver (bdf2, ndf2) must not carry history across it, exactly
-// as at a zero crossing: it restarts at order 1, which SPICE does at its
-// breakpoints too. Without that, every tick leaks a small error that acts as
-// artificial damping and can turn an unstable sampled loop into a stable one.
-bool vm_tick_due(const VM *vm);
+// (vm_tick_due, "will this step run a tick", is gone: the solvers restart
+// their history on vm->tick_changed instead — only when the tick changed what
+// the logic drives. Carrying history across a tick that DID change the inputs
+// still leaks an error that acts as artificial damping, which is why it is
+// restarted then, as SPICE does at its breakpoints.)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // JACOBIAN

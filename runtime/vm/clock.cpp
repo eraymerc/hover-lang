@@ -29,6 +29,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 #include "vm.hpp"
+#include "zcd.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -53,18 +54,31 @@ static long tick_at(const VM *vm, const VMClock &c) {
 }
 
 void vm_run_clocks(VM *vm) {
+    vm->tick_changed = false;
+    if (vm->in_probe) return;   // a .zcd probe re-runs logic; ticks stay on step boundaries
+
+    bool due_any = false;
+    for (const VMClock &c : vm->clocks) if (tick_at(vm, c) > c.last_tick) { due_any = true; break; }
+    if (!due_any) return;
+
+    // Did the tick change anything the circuit sees? Compare the drive vector
+    // before and after (bit-exact: an unchanged output re-drives the same
+    // value). Only then do the solvers restart their history — before 0.9
+    // every tick did, though h_bridge.hvr's sequencer changes its outputs on
+    // 3 of 400 ticks. Outputs that feed an analog module directly rather than
+    // a source are not seen here; a controller drives the circuit through
+    // sources.
+    const Eigen::VectorXd before = vm_drive_vector(vm);
     for (int i = 0; i < (int)vm->clocks.size(); i++) {
         VMClock &c = vm->clocks[i];
         const long due = tick_at(vm, c);
         if (due > c.last_tick) {
-            // Normally due == last_tick + 1. More means the solver stepped
-            // over ticks (a fixed step longer than the period cannot happen —
-            // the compiler rejects it — so this is only a safety net); the
-            // module then runs once, late, rather than several times at once.
             c.last_tick = due;
             if (vm->run_clock) vm->run_clock(vm, i);
         }
     }
+    const Eigen::VectorXd after = vm_drive_vector(vm);
+    vm->tick_changed = !(before.size() == after.size() && (before.array() == after.array()).all());
 }
 
 double vm_limit_step(const VM *vm, double dt) {
@@ -79,12 +93,6 @@ double vm_limit_step(const VM *vm, double dt) {
     return dt;
 }
 
-bool vm_tick_due(const VM *vm) {
-    for (const VMClock &c : vm->clocks) {
-        if (tick_at(vm, c) > c.last_tick) return true;
-    }
-    return false;
-}
 
 void vm_reset_clocks(VM *vm) {
     for (VMClock &c : vm->clocks) c.last_tick = -1;

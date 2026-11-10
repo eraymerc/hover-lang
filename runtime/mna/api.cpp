@@ -141,20 +141,11 @@ void api_set_voltage_source(API *api, const char *name, double voltage) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // WRITE — SetCurrentSource
-// Unstamps old value from B_static then stamps new value.
+// Records the new value and rebuilds the node rows it touches as the sum of
+// their sources (System::restamp_current_row). Until 0.9 this was the Go
+// port's incremental unstamp/stamp, B += last - current, which leaves a
+// rounding residue behind every large value — see restamp_current_row.
 // No G change — LU stays valid.
-//
-// Mirrors Go:
-//   func (api *API) SetCurrentSource(name string, current float64) {
-//       rec := api.sys.CurrentSources[name]
-//       // unstamp old
-//       B_static[rec.N1] += rec.LastValue
-//       B_static[rec.N2] -= rec.LastValue
-//       // stamp new
-//       B_static[rec.N1] -= current
-//       B_static[rec.N2] += current
-//       rec.LastValue = current
-//   }
 // ─────────────────────────────────────────────────────────────────────────────
 
 void api_set_current_source(API *api, const char *name, double current) {
@@ -164,13 +155,9 @@ void api_set_current_source(API *api, const char *name, double current) {
         return;
     }
 
-    // Unstamp old value
-    if (rec->n1 >= 0) api->sys->B_static(rec->n1) += rec->last_value;
-    if (rec->n2 >= 0) api->sys->B_static(rec->n2) -= rec->last_value;
-
-    // Stamp new value
-    if (rec->n1 >= 0) api->sys->B_static(rec->n1) -= current;
-    if (rec->n2 >= 0) api->sys->B_static(rec->n2) += current;
-
+    // Not B += last - current: the rows are rebuilt from their sources' values
+    // (System::restamp_current_row says why).
     rec->last_value = current;
+    api->sys->restamp_current_row(rec->n1);
+    api->sys->restamp_current_row(rec->n2);
 }

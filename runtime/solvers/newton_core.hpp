@@ -58,36 +58,29 @@ struct ConvergenceReport {
 
 // KCL VETO — the false-convergence guard (docs/hoveR_sorunlar.txt item 21).
 //
-// newton_converged only asks whether the iterate stopped moving. Two things in
-// this engine let it stop at a point that is not a solution:
-//   * junction and FET limiters (pnjlim, fetlim, limvds) are written in the
-//     models and evaluate each device at a voltage held near the previous
-//     iterate, so a stalled iterate can balance limited currents while the
-//     true ones are nowhere near balance — SPICE refuses convergence whenever a
-//     limiter is active (CKTnoncon) for exactly this reason;
-//   * rtol scales with |x|, so a node that has run away to kilovolts is judged
-//     against a tolerance of volts.
-// Measured on examples/MOSFET/h_bridge_inverter.hvr (500 ns ceiling): a step
-// accepted with bridge_b jumping from -0.78 V to -11.9 kV — a node the NMOS
-// body diode clamps at -0.7 V — after which the run continued to 40 ms on that
-// value.
+// newton_converged only asks whether the iterate stopped moving. Junction and
+// FET limiters (pnjlim, fetlim, limvds) are written in the models and evaluate
+// each device at a voltage held near the previous iterate, so an iterate can
+// stop moving while a limiter is still withholding current — a point that
+// balances LIMITED currents, not the true ones. SPICE refuses convergence while
+// any limiter is active (CKTnoncon). Measured here without that rule:
+// examples/MOSFET/h_bridge_inverter.hvr (500 ns ceiling) accepted bridge_b
+// jumping from -0.78 V to -11.9 kV, and with a 10 us ceiling ran a leg to
+// 26.3 V on a 24 V supply.
 //
-// So a step-converged x must also satisfy KCL with every limiter released
-// (vm_kcl_ratio: true residual of row i over rtol*traffic_i + atol, with
-// rtol = 1e-3 and atol = 1e-9). The veto threshold was set from measurements
-// over every accepted step of the healthy decks — worst ratio 5.5 (rectifier),
-// 2.0 (npn_amp), 1.2 (optocoupler), at most 0.01 elsewhere — against the
-// inverter, where hundreds of steps exceed 10 and the worst reach 1000 (a
-// residual as large as all the current in the row). A vetoed point is NOT a
-// failed step: Newton iterates on from it, as SPICE does under CKTnoncon. The
-// iterate stopped moving because the limiters held the devices near the
-// previous iterate; on the next iteration nr_prev() IS that point, the
-// limiters let go, the true currents enter the Jacobian and x moves again.
-// Failing the step instead was tried first, and it is wrong in a way that only
-// shows with small steps: after the 202 ms tick of examples/DCMotor/h_bridge
-// .hvr, every step from 1e-9 s down to 1e-27 s was vetoed after one iteration
-// and halved, ending in a FATAL. Only max_iter ends the loop, and then the
-// caller's usual recovery (re-form the Jacobian, then cut dt) takes over.
+// vm_noncon_ratio (vm.hpp) recovers the rule: the devices are evaluated at the
+// step-converged x both limited and released, and a point where they differ by
+// more than KCL_VETO * (KCL_RTOL * |I| + KCL_ATOL) — 1 % of the device current
+// — is not converged. At a genuine solution the two evaluations are identical.
+//
+// A vetoed point is NOT a failed step: Newton iterates on from it, as SPICE
+// does. On the next iteration nr_prev() IS that point, the limiters let go,
+// the true currents enter the Jacobian and x moves again. Failing the step
+// instead was tried first and is wrong in a way that only shows with small
+// steps: after the 202 ms tick of examples/DCMotor/h_bridge.hvr every step
+// from 1e-9 s down to 1e-27 s was vetoed and halved, ending in a FATAL. Only
+// max_iter ends the loop, and then the caller's usual recovery (re-form the
+// Jacobian, then cut dt) takes over.
 constexpr double KCL_RTOL  = 1e-3;
 constexpr double KCL_ATOL  = 1e-9;
 constexpr double KCL_VETO  = 10.0;

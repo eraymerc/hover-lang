@@ -116,7 +116,11 @@ void stamp_ac_current(System *sys, int n1, int n2, double mag, double phase_deg)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // VCCS — Voltage-Controlled Current Source
-// I_out = gm * (V_nc1 - V_nc2), current flows into n1 and out of n2.
+// I_out = gm * (V_nc1 - V_nc2), current LEAVES n1 and enters n2 (through the
+// source, n1 -> n2), as a current_source[n1, n2] does: the G[n1][...] entries
+// below are on the current-leaving side of G*x = B. (This line used to say the
+// opposite, and the DC motor examples were written to it — their torque ran
+// backwards; examples/DCMotor/h_bridge.hvr has the story.)
 // Pure G stamp — no new branch variable needed.
 //
 //   G[n1][nc1] += gm    G[n1][nc2] -= gm

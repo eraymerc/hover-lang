@@ -92,6 +92,12 @@ type generator struct {
 	// silently doing the wrong thing).
 	usingPrevAPI bool
 
+	// runtimeStateInits are the `state` variables whose initialiser is not a
+	// compile-time constant (`state double x = V(node);`): declared 0 at file
+	// scope and assigned by init_states(), which the runtime runs once at
+	// t = 0. Until 0.9 such initialisers were dropped and the variable was 0.
+	runtimeStateInits []runtimeStateInit
+
 	// stateSlots numbers the ddt()/idt() call sites, one runtime slot per call
 	// site per module instance (runtime/vm/state_slots.hpp). Keyed by operator,
 	// instance prefix and the elaborator's call-site tag, so an expression
@@ -145,6 +151,7 @@ func (g *generator) emit() error {
 	g.emitPhaseAnalog()
 	g.emitPhaseB()
 	g.emitStateVarSnapshot()
+	g.emitStateInits()
 	g.emitBuildNetlist()
 	if err := g.emitMain(); err != nil {
 		return err

@@ -42,6 +42,7 @@ void Trapezoidal::run(VM *vm) {
     bool jacobian_valid = false;
     double jac_alpha = -1.0;      // alpha the held Jacobian was formed under (see the slots note)
     bool force_euler = true; // ALWAYS start the simulation with a Backward Euler step
+    bool restart_after_event = false;   // the last step ended on a .zcd event
 
     // Accepted points for the truncation-error estimate (lte.hpp). This solver
     // keeps no multistep history of its own; this one only feeds the estimate.
@@ -59,61 +60,20 @@ void Trapezoidal::run(VM *vm) {
         // to the step: the controller's own preferred step is untouched.
         if (!vm->clocks.empty()) {
             dt = vm_limit_step(vm, dt);
-            // A tick changes the circuit's inputs: take this step as Backward
-            // Euler, as after a zero crossing, so stiff modes do not ring.
-            if (vm_tick_due(vm)) { force_euler = true; lhist.restart(); }
         }
-        bool zcd_triggered = false;
-
-        // 1. ZCD Breakpoint Detection
-        //
-        // BUG FIX: vm_run_digital() must NOT be called inside this block.
-        // This block's entire purpose is a DISPOSABLE probe — it runs
-        // analog forward by a trial dt purely to check for a sign change
-        // (vm_detect_discontinuity), then vm_restore_state() unconditionally
-        // rolls back every side effect from this probe, on every call,
-        // regardless of whether a discontinuity was actually found.
-        //
-        // The original code called vm_run_digital() here too, which means
-        // any digital module's state changes (e.g. a state variable like
-        // omega_ref being ramped up by reference_generator) were computed
-        // and then immediately discarded by the restore below — and
-        // crucially, digital logic was NEVER run again anywhere else in
-        // this solver's main loop (only vm_run_analog/vm_run_phase_b run
-        // inside the Newton loop further down). The net effect: any
-        // digital-only state variable stayed at its initial value for the
-        // entire simulation, confirmed directly — omega_ref read back as
-        // exactly 0.0 for all 10001 logged timesteps on a real circuit,
-        // with and without .zcd enabled, while the identical circuit
-        // under euler_fixed (which calls vm_run_digital() once, plainly,
-        // with no rollback) ramped correctly.
-        if (vm->zcd_enabled) {
-            vm->time += dt;
-            api_update_solution(vm->api, checkpoint.last_solution);
-            vm_run_analog(vm);
-
-            if (vm_detect_discontinuity(vm, checkpoint)) {
-                dt = vm_isolate_zero_crossing(vm, checkpoint, dt);
-                zcd_triggered = true;
-            }
-            vm_restore_state(vm, checkpoint); // Rewind for the actual integration step
-        }
-
-        // Digital logic runs exactly once per step, AFTER the disposable
-        // ZCD probe (if any) has already been rolled back — so its
-        // result is computed fresh against the real, restored state and
-        // is never discarded. This matches euler_fixed's unconditional,
-        // un-rolled-back vm_run_digital() call.
         api_update_solution(vm->api, vm->solver->last_solution);
         vm_run_digital(vm);
+        // A tick that changed what the logic drives, or a step that follows a
+        // .zcd event, starts with backward Euler and fresh history (item 13).
+        if (vm->tick_changed || restart_after_event) { force_euler = true; lhist.restart(); }
 
         vm->time += dt;
         vm->solver->sys->dt = dt;
         jac.begin_step();
 
-        // 2. Determine Integration Method for this step
-        // We use Euler if recovering from a failed step, or if ZCD just triggered
-        if (zcd_triggered) { force_euler = true; lhist.restart(); }
+        // 2. Determine Integration Method for this step: Euler at the start,
+        // when recovering from a failed step, after a tick that changed the
+        // logic's outputs, and after a .zcd event.
 
         // No "alpha changed, rebuild the matrix" flag is needed here any more:
         // solver_solve_rhs refactorizes whenever g_dirty is set OR alpha differs
@@ -203,7 +163,7 @@ void Trapezoidal::run(VM *vm) {
             if (iter == 0) jac.seed(conv.worst_ratio);
 
             if (newton_converged(x_new, x_guess, n_nodes, rtol, atol, abstol, conv)) {
-                if (vm_kcl_ratio(vm, x_new, alpha, x_anchor, phys_correction, KCL_RTOL, KCL_ATOL, rtol, atol, abstol) > KCL_VETO) {
+                if (vm_noncon_ratio(vm, x_new, x_guess, KCL_RTOL, KCL_ATOL) > KCL_VETO) {
                     step_trace("trap", attempt, vm->time, dt, iters, "kcl-veto");
                     x_guess = x_new;
                     continue;   // iterate on: the limiters release next time (KCL VETO, newton_core.hpp)
@@ -228,6 +188,20 @@ void Trapezoidal::run(VM *vm) {
         }
 
         // 5. Adaptive Timestep Control & Recovery
+        // .zcd: a logic output that jumps inside this step (vm/zcd.hpp): re-solve
+        // the step to end just after it; the step that does is accepted.
+        bool event_here = false;
+        if (converged && vm->zcd_enabled) {
+            const double s_ev = vm_locate_event(vm, checkpoint, x_guess, dt);
+            if (s_ev > 0.0 && s_ev < 1.0 - 2.0 * ZCD_FRAC && s_ev * dt > lte_min_step(max_dt)) {
+                vm_restore_state(vm, checkpoint);
+                vm->time_step = s_ev * dt;
+                step_trace("trap", attempt, vm->time, dt, iters, "zcd-cut");
+                continue;
+            }
+            event_here = s_ev > 0.0;
+        }
+
         if (converged) {
             // TRUNCATION ERROR (lte.hpp), before anything is committed.
             vm_eval_slots_at(vm, x_guess);
@@ -284,8 +258,10 @@ void Trapezoidal::run(VM *vm) {
                 step_trace("trap", attempt, vm->time, dt, iters, "accept");
             }
 
-            // Only use Euler on the step immediately following a ZCD event
-            force_euler = zcd_triggered;
+            // Euler only on the step after a .zcd event (set at the next step
+            // start, together with a fresh history).
+            force_euler = false;
+            restart_after_event = event_here;
 
         } else {
             // Convergence Failed.

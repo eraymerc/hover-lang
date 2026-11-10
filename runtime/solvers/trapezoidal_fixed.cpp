@@ -40,16 +40,18 @@ void TrapezoidalFixed::run(VM *vm) {
     double alpha_trap  = 2.0 / vm->time_step;
     double alpha_euler = 1.0 / vm->time_step;
 
-    // A step that starts on a clock tick is a Backward Euler step — SPICE's
-    // rule at breakpoints. The trapezoidal rule is A-stable but not L-stable:
+    // A step that starts on a clock tick that changed the logic's outputs is a
+    // Backward Euler step — SPICE's rule at breakpoints. The trapezoidal rule is A-stable but not L-stable:
     // restarted from inputs a tick has just changed, its stiff modes ring at
     // full amplitude, sign flipping every step, and never decay. One BE step
     // damps them. (At t = 0 the bias point already is a BE step — see vm_boot.)
     while (vm->time < vm->end_time) {
-        const bool tick = !vm->clocks.empty() && vm_tick_due(vm);
         api_update_solution(vm->api, vm->solver->last_solution);
         vm_run_digital(vm);
         vm_run_phase_b(vm);
+        // Backward Euler on a step whose tick changed what the logic drives
+        // (item 13): a tick that changes nothing leaves the rule alone.
+        const bool tick = vm->tick_changed;
 
         x_anchor = vm->solver->last_solution;
         b_old    = vm->solver->sys->B_static;
@@ -130,8 +132,7 @@ void TrapezoidalFixed::run(VM *vm) {
                 // solver cannot reject the step, so if max_iter runs out the
                 // point is still taken — reported by the not-converged warning
                 // below instead of passing silently (KCL VETO, newton_core.hpp).
-                if (vm_kcl_ratio(vm, x_new, alpha_this_iter, x_anchor, using_euler ? nullptr : &trap_base,
-                                 KCL_RTOL, KCL_ATOL, rtol, atol, atol) > KCL_VETO) {
+                if (vm_noncon_ratio(vm, x_new, x_guess, KCL_RTOL, KCL_ATOL) > KCL_VETO) {
                     x_guess = x_new;
                     continue;
                 }
