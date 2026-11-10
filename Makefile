@@ -314,13 +314,15 @@ stdlib-archives:
 # Must match cxxStd in runtimebuild.go — the standard users' runtimes are
 # built with.
 CXX_STD    := -std=c++20
+# Must match cxxOpt in runtimebuild.go.
+CXX_OPT    := -O3 -ffp-contract=off -fwrapv -fno-strict-aliasing
 CHECK_DIR  := $(RUNTIME_DIR)/build/check
 CHECK_SRCS := $(shell find $(RUNTIME_DIR) -name '*.cpp' -not -path '$(RUNTIME_DIR)/build/*')
 CHECK_OBJS := $(patsubst $(RUNTIME_DIR)/%.cpp,$(CHECK_DIR)/%.o,$(CHECK_SRCS))
 
 $(CHECK_DIR)/%.o: $(RUNTIME_DIR)/%.cpp
 	@mkdir -p $(dir $@)
-	$(ZIG) c++ $(CXX_STD) -O3 -Wall -Wextra \
+	$(ZIG) c++ $(CXX_STD) $(CXX_OPT) -Wall -Wextra \
 		-I$(RUNTIME_DIR) -I$(RUNTIME_DIR)/Eigen -MMD -MP -c $< -o $@
 
 check-runtime: $(CHECK_OBJS)

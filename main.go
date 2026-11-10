@@ -576,12 +576,8 @@ func main() {
 		fmt.Printf("[Compile] Linking FFI sources: %s\n", strings.Join(ffiSources, ", "))
 	}
 
-	compileArgs := []string{
-		"c++",
-		cxxStd,
-		"-O3",
-		"-w",
-	}
+	compileArgs := append([]string{"c++", cxxStd}, cxxOpt...) // runtimebuild.go: why these
+	compileArgs = append(compileArgs, "-w")
 	if libraryMode {
 		compileArgs = append(compileArgs, "-shared")
 		if runtime.GOOS != "windows" {

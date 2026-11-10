@@ -43,6 +43,37 @@ const zigStampName = ".zig-version"
 // check-runtime target mirrors it as CXX_STD.
 const cxxStd = "-std=c++20"
 
+// cxxOpt is the optimisation and floating-point contract for the same three
+// compiles, for the same reason. -O3 itself keeps IEEE semantics (no
+// reassociation, unlike -ffast-math), but three things around it do not hold
+// by default and are pinned here:
+//
+//	-ffp-contract=off   clang fuses a*b + c into one FMA where the CPU has one.
+//	                    The build is native (no -target), so the last bits of
+//	                    a result depended on the machine — and in a switching
+//	                    circuit a last-bit difference can move an edge by a
+//	                    step. Off, that source of machine dependence is gone.
+//	                    Not every source: the build still targets the host
+//	                    CPU, so Eigen may vectorise (and order its sums)
+//	                    differently with and without AVX, and exp/log/pow can
+//	                    differ in the last bit between C libraries (and the
+//	                    wasm playground's). Bit-identical results across
+//	                    machines would also need a fixed -mcpu and libm.
+//	-fwrapv             signed integer overflow (a Hover `int` counter) wraps,
+//	                    instead of being undefined behaviour -O3 may exploit.
+//	-fno-strict-aliasing importc/FFI code may view memory through another type.
+//
+// The runtime's stamp records these, so a runtime built with other flags is
+// caught by checkRuntimeLib and rebuilt with `hover --setup`. The Makefile's
+// check-runtime target and web/build.mjs mirror them.
+var cxxOpt = []string{"-O3", "-ffp-contract=off", "-fwrapv", "-fno-strict-aliasing"}
+
+// runtimeStamp is what the runtime archive is stamped with: the Zig version
+// and the compile flags it was built with, one per line.
+func runtimeStamp(zigVersion string) string {
+	return zigVersion + "\n" + cxxStd + " " + strings.Join(cxxOpt, " ") + "\n"
+}
+
 // runtimeBuildDir is where compiled objects and the final archive live,
 // alongside the shipped sources.
 func runtimeBuildDir(runtimeDir string) string { return filepath.Join(runtimeDir, "build") }
@@ -171,12 +202,12 @@ func buildRuntime(zigPath, runtimeDir string) error {
 				// No -target: a native build is the Zig default, and it
 				// detects the host libc properly instead of guessing a
 				// triple.
-				args := []string{
-					"c++", cxxStd, "-O3", "-w",
-					"-I" + runtimeDir,
-					"-I" + filepath.Join(runtimeDir, "Eigen"),
+				args := append([]string{"c++", cxxStd}, cxxOpt...)
+				args = append(args, "-w",
+					"-I"+runtimeDir,
+					"-I"+filepath.Join(runtimeDir, "Eigen"),
 					"-c", srcs[i], "-o", objs[i],
-				}
+				)
 				out, err := exec.Command(zigPath, args...).CombinedOutput()
 				if err != nil {
 					fail(fmt.Errorf("compiling %s: %w\n%s", srcs[i], err, out))
@@ -200,7 +231,7 @@ func buildRuntime(zigPath, runtimeDir string) error {
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(zigStampPath(runtimeDir), []byte(version+"\n"), 0o644); err != nil {
+	if err := os.WriteFile(zigStampPath(runtimeDir), []byte(runtimeStamp(version)), 0o644); err != nil {
 		return fmt.Errorf("writing zig version stamp: %w", err)
 	}
 
@@ -235,7 +266,9 @@ func warmLinkCache(zigPath string) {
 
 	fmt.Println("[Setup] Warming Zig's C++ link cache...")
 	// Same flags as a real compile, so the cached artifacts actually hit.
-	cmd := exec.Command(zigPath, "c++", cxxStd, "-O3", "-w", src, "-o", filepath.Join(dir, "warm"))
+	args := append([]string{"c++", cxxStd}, cxxOpt...)
+	args = append(args, "-w", src, "-o", filepath.Join(dir, "warm"))
+	cmd := exec.Command(zigPath, args...)
 	_ = cmd.Run()
 }
 
@@ -253,7 +286,8 @@ func checkRuntimeLib(zigPath, runtimeDir string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("[Compile] Runtime library has no Zig version stamp — rebuild it with `hover --setup`")
 	}
-	built := strings.TrimSpace(string(stamp))
+	lines := strings.SplitN(strings.TrimSpace(string(stamp)), "\n", 2)
+	built := strings.TrimSpace(lines[0])
 
 	current, err := zigVersionOf(zigPath)
 	if err != nil {
@@ -262,6 +296,12 @@ func checkRuntimeLib(zigPath, runtimeDir string) (string, error) {
 	if built != current {
 		return "", fmt.Errorf("[Compile] Runtime library was built with Zig %s but you now have Zig %s. "+
 			"Linking across toolchain versions produces undefined C++ symbols — run `hover --setup` to rebuild", built, current)
+	}
+	// The second line is the compile flags (runtimeStamp). A runtime built
+	// with other floating-point or overflow rules than sim.cpp gets would mix
+	// two arithmetics in one simulation; a stamp without the line predates it.
+	if want := strings.TrimSpace(strings.SplitN(runtimeStamp(current), "\n", 2)[1]); len(lines) < 2 || strings.TrimSpace(lines[1]) != want {
+		return "", fmt.Errorf("[Compile] Runtime library was built with different compiler flags than this hover uses (%s) — run `hover --setup` to rebuild", want)
 	}
 	return libPath, nil
 }

@@ -47,7 +47,10 @@ const EXAMPLES = [
 ];
 
 // Must match the flags the worker compiles sim.cpp with.
-const CXXFLAGS = ['-std=c++20', '-O2', '-fno-exceptions', '-w'];
+// The floating-point and overflow rules match cxxOpt in runtimebuild.go (no FMA
+// contraction, wrapping int overflow). That removes one source of difference
+// from a native run; libm and vectorisation can still differ in the last bit.
+const CXXFLAGS = ['-std=c++20', '-O2', '-ffp-contract=off', '-fwrapv', '-fno-strict-aliasing', '-fno-exceptions', '-w'];
 
 function parseArgs(argv) {
   const opts = {};
