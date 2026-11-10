@@ -6,8 +6,8 @@
 // Generated code talks to the runtime exclusively through hvr::Sim. Its
 // implementation (System, Solver, API, VM, the solver strategy — everything
 // built on Eigen and the STL) lives behind a pointer in runtime/hvr_sim/hvr_sim.cpp,
-// so this header includes nothing but <cmath> and <type_traits>, for the
-// hvr::Dual number type below. Two consequences, both deliberate:
+// so this header includes nothing but <type_traits>, for the hvr::Dual number
+// type below (whose operations are compiled into the runtime — hvr_sim/dual.cpp). Two consequences, both deliberate:
 //
 //   * Compiling a sim.cpp no longer parses Eigen. The runtime's numerical
 //     core is compiled once, with the runtime, and never again per program;
@@ -52,7 +52,6 @@
 // the branch taken — a finite difference would have returned a secant there.
 // ─────────────────────────────────────────────────────────────────────────────
 
-#include <cmath>
 #include <type_traits>
 
 namespace hvr {
@@ -85,69 +84,34 @@ struct Dual {
 
 // Set when a gradient needed more than Dual::K entries. Cleared and checked
 // by the runtime around each AD Jacobian (vm_compute_jacobian).
-inline bool &dual_overflow() { static bool f = false; return f; }
+bool &dual_overflow();
 
-namespace detail {
-// r.grad = ca*a.grad + cb*b.grad (merge of two sorted lists).
-inline void lin(Dual &r, double ca, const Dual &a, double cb, const Dual &b) {
-    int p = 0, q = 0, m = 0;
-    while (p < a.n || q < b.n) {
-        int idx; double val;
-        if (q >= b.n || (p < a.n && a.i[p] < b.i[q])) { idx = a.i[p]; val = ca * a.d[p]; p++; }
-        else if (p >= a.n || b.i[q] < a.i[p])          { idx = b.i[q]; val = cb * b.d[q]; q++; }
-        else { idx = a.i[p]; val = ca * a.d[p] + cb * b.d[q]; p++; q++; }
-        if (m < Dual::K) { r.i[m] = idx; r.d[m] = val; m++; }
-        else dual_overflow() = true;
-    }
-    r.n = m;
-}
-// r.grad = c*a.grad
-inline void scale(Dual &r, double c, const Dual &a) {
-    r.n = a.n;
-    for (int k = 0; k < a.n; k++) { r.i[k] = a.i[k]; r.d[k] = c * a.d[k]; }
-}
-// f(a) with value fv and derivative df
-inline Dual unary(const Dual &a, double fv, double df) {
-    Dual r(fv);
-    if (a.n) scale(r, df, a);
-    return r;
-}
-// f(a, b) with value fv and partial derivatives fa, fb
-inline Dual binary(const Dual &a, const Dual &b, double fv, double fa, double fb) {
-    Dual r(fv);
-    if (a.n == 0)      { if (b.n) scale(r, fb, b); }
-    else if (b.n == 0) { scale(r, fa, a); }
-    else               { lin(r, fa, a, fb, b); }
-    return r;
-}
-}  // namespace detail
+
 
 // ── Arithmetic ───────────────────────────────────────────────────────────────
-inline Dual operator+(const Dual &a) { return a; }
-inline Dual operator-(const Dual &a) { Dual r(-a.v); detail::scale(r, -1.0, a); return r; }
+Dual operator+(const Dual &a);
+Dual operator-(const Dual &a);
 
-inline Dual operator+(const Dual &a, const Dual &b) { return detail::binary(a, b, a.v + b.v, 1.0, 1.0); }
-inline Dual operator+(const Dual &a, double b) { Dual r = a; r.v = a.v + b; return r; }
-inline Dual operator+(double a, const Dual &b) { Dual r = b; r.v = a + b.v; return r; }
+Dual operator+(const Dual &a, const Dual &b);
+Dual operator+(const Dual &a, double b);
+Dual operator+(double a, const Dual &b);
 
-inline Dual operator-(const Dual &a, const Dual &b) { return detail::binary(a, b, a.v - b.v, 1.0, -1.0); }
-inline Dual operator-(const Dual &a, double b) { Dual r = a; r.v = a.v - b; return r; }
-inline Dual operator-(double a, const Dual &b) { Dual r(a - b.v); detail::scale(r, -1.0, b); return r; }
+Dual operator-(const Dual &a, const Dual &b);
+Dual operator-(const Dual &a, double b);
+Dual operator-(double a, const Dual &b);
 
-inline Dual operator*(const Dual &a, const Dual &b) { return detail::binary(a, b, a.v * b.v, b.v, a.v); }
-inline Dual operator*(const Dual &a, double b) { Dual r(a.v * b); detail::scale(r, b, a); return r; }
-inline Dual operator*(double a, const Dual &b) { Dual r(a * b.v); detail::scale(r, a, b); return r; }
+Dual operator*(const Dual &a, const Dual &b);
+Dual operator*(const Dual &a, double b);
+Dual operator*(double a, const Dual &b);
 
-inline Dual operator/(const Dual &a, const Dual &b) {
-    return detail::binary(a, b, a.v / b.v, 1.0 / b.v, -a.v / (b.v * b.v));
-}
-inline Dual operator/(const Dual &a, double b) { Dual r(a.v / b); detail::scale(r, 1.0 / b, a); return r; }
-inline Dual operator/(double a, const Dual &b) { Dual r(a / b.v); detail::scale(r, -a / (b.v * b.v), b); return r; }
+Dual operator/(const Dual &a, const Dual &b);
+Dual operator/(const Dual &a, double b);
+Dual operator/(double a, const Dual &b);
 
-inline Dual &operator+=(Dual &a, const Dual &b) { a = a + b; return a; }
-inline Dual &operator-=(Dual &a, const Dual &b) { a = a - b; return a; }
-inline Dual &operator*=(Dual &a, const Dual &b) { a = a * b; return a; }
-inline Dual &operator/=(Dual &a, const Dual &b) { a = a / b; return a; }
+Dual &operator+=(Dual &a, const Dual &b);
+Dual &operator-=(Dual &a, const Dual &b);
+Dual &operator*=(Dual &a, const Dual &b);
+Dual &operator/=(Dual &a, const Dual &b);
 
 // ── Comparisons: on the value ────────────────────────────────────────────────
 #define HVR_DUAL_CMP(op)                                                          \
@@ -163,78 +127,54 @@ HVR_DUAL_CMP(<) HVR_DUAL_CMP(>) HVR_DUAL_CMP(<=) HVR_DUAL_CMP(>=) HVR_DUAL_CMP(=
 // empty), and a call with only doubles still resolves to <math.h>. The set
 // here is exactly the one codegen/autodiff.go accepts; any other extern in an
 // analog block makes the compiler leave the AD Jacobian out.
-inline Dual exp(const Dual &a)   { const double e = std::exp(a.v); return detail::unary(a, e, e); }
-inline Dual exp2(const Dual &a)  { const double e = std::exp2(a.v); return detail::unary(a, e, e * 0.69314718055994531); }
-inline Dual expm1(const Dual &a) { return detail::unary(a, std::expm1(a.v), std::exp(a.v)); }
-inline Dual log(const Dual &a)   { return detail::unary(a, std::log(a.v), 1.0 / a.v); }
-inline Dual log10(const Dual &a) { return detail::unary(a, std::log10(a.v), 1.0 / (a.v * 2.3025850929940457)); }
-inline Dual log2(const Dual &a)  { return detail::unary(a, std::log2(a.v), 1.0 / (a.v * 0.69314718055994531)); }
-inline Dual log1p(const Dual &a) { return detail::unary(a, std::log1p(a.v), 1.0 / (1.0 + a.v)); }
-inline Dual sqrt(const Dual &a)  { const double s = std::sqrt(a.v); return detail::unary(a, s, 0.5 / s); }
-inline Dual cbrt(const Dual &a)  { const double c = std::cbrt(a.v); return detail::unary(a, c, 1.0 / (3.0 * c * c)); }
-inline Dual fabs(const Dual &a)  { return detail::unary(a, std::fabs(a.v), a.v > 0.0 ? 1.0 : (a.v < 0.0 ? -1.0 : 0.0)); }
+Dual exp(const Dual &a);
+Dual exp2(const Dual &a);
+Dual expm1(const Dual &a);
+Dual log(const Dual &a);
+Dual log10(const Dual &a);
+Dual log2(const Dual &a);
+Dual log1p(const Dual &a);
+Dual sqrt(const Dual &a);
+Dual cbrt(const Dual &a);
+Dual fabs(const Dual &a);
 
-inline Dual sin(const Dual &a)   { return detail::unary(a, std::sin(a.v), std::cos(a.v)); }
-inline Dual cos(const Dual &a)   { return detail::unary(a, std::cos(a.v), -std::sin(a.v)); }
-inline Dual tan(const Dual &a)   { const double c = std::cos(a.v); return detail::unary(a, std::tan(a.v), 1.0 / (c * c)); }
-inline Dual asin(const Dual &a)  { return detail::unary(a, std::asin(a.v), 1.0 / std::sqrt(1.0 - a.v * a.v)); }
-inline Dual acos(const Dual &a)  { return detail::unary(a, std::acos(a.v), -1.0 / std::sqrt(1.0 - a.v * a.v)); }
-inline Dual atan(const Dual &a)  { return detail::unary(a, std::atan(a.v), 1.0 / (1.0 + a.v * a.v)); }
-inline Dual sinh(const Dual &a)  { return detail::unary(a, std::sinh(a.v), std::cosh(a.v)); }
-inline Dual cosh(const Dual &a)  { return detail::unary(a, std::cosh(a.v), std::sinh(a.v)); }
-inline Dual tanh(const Dual &a)  { const double t = std::tanh(a.v); return detail::unary(a, t, 1.0 - t * t); }
-inline Dual asinh(const Dual &a) { return detail::unary(a, std::asinh(a.v), 1.0 / std::sqrt(a.v * a.v + 1.0)); }
-inline Dual acosh(const Dual &a) { return detail::unary(a, std::acosh(a.v), 1.0 / std::sqrt(a.v * a.v - 1.0)); }
-inline Dual atanh(const Dual &a) { return detail::unary(a, std::atanh(a.v), 1.0 / (1.0 - a.v * a.v)); }
-inline Dual erf(const Dual &a)   { return detail::unary(a, std::erf(a.v), 1.1283791670955126 * std::exp(-a.v * a.v)); }
-inline Dual erfc(const Dual &a)  { return detail::unary(a, std::erfc(a.v), -1.1283791670955126 * std::exp(-a.v * a.v)); }
+Dual sin(const Dual &a);
+Dual cos(const Dual &a);
+Dual tan(const Dual &a);
+Dual asin(const Dual &a);
+Dual acos(const Dual &a);
+Dual atan(const Dual &a);
+Dual sinh(const Dual &a);
+Dual cosh(const Dual &a);
+Dual tanh(const Dual &a);
+Dual asinh(const Dual &a);
+Dual acosh(const Dual &a);
+Dual atanh(const Dual &a);
+Dual erf(const Dual &a);
+Dual erfc(const Dual &a);
 
 // Piecewise constant: the value, no gradient.
-inline Dual floor(const Dual &a)     { return Dual(std::floor(a.v)); }
-inline Dual ceil(const Dual &a)      { return Dual(std::ceil(a.v)); }
-inline Dual trunc(const Dual &a)     { return Dual(std::trunc(a.v)); }
-inline Dual round(const Dual &a)     { return Dual(std::round(a.v)); }
-inline Dual nearbyint(const Dual &a) { return Dual(std::nearbyint(a.v)); }
-inline Dual rint(const Dual &a)      { return Dual(std::rint(a.v)); }
-inline long lround(const Dual &a)    { return std::lround(a.v); }
-inline long lrint(const Dual &a)     { return std::lrint(a.v); }
-inline Dual ldexp(const Dual &a, int e) { return detail::unary(a, std::ldexp(a.v, e), std::ldexp(1.0, e)); }
+Dual floor(const Dual &a);
+Dual ceil(const Dual &a);
+Dual trunc(const Dual &a);
+Dual round(const Dual &a);
+Dual nearbyint(const Dual &a);
+Dual rint(const Dual &a);
+long lround(const Dual &a);
+long lrint(const Dual &a);
+Dual ldexp(const Dual &a, int e);
 
-inline Dual pow(const Dual &a, const Dual &b) {
-    const double p = std::pow(a.v, b.v);
-    // The log term only when the exponent actually varies: a constant
-    // exponent on a non-positive base is common (a junction's (1 - v/Vj)^(1-M))
-    // and log() of it would poison the derivative with NaN for nothing.
-    const double fa = (a.n && b.v != 0.0) ? b.v * std::pow(a.v, b.v - 1.0) : 0.0;
-    const double fb = b.n ? p * std::log(a.v) : 0.0;
-    return detail::binary(a, b, p, fa, fb);
-}
-inline Dual atan2(const Dual &y, const Dual &x) {
-    const double r2 = x.v * x.v + y.v * y.v;
-    return detail::binary(y, x, std::atan2(y.v, x.v), x.v / r2, -y.v / r2);
-}
-inline Dual hypot(const Dual &a, const Dual &b) {
-    const double h = std::hypot(a.v, b.v);
-    return detail::binary(a, b, h, a.v / h, b.v / h);
-}
-inline Dual fmod(const Dual &a, const Dual &b) {
-    return detail::binary(a, b, std::fmod(a.v, b.v), 1.0, -std::trunc(a.v / b.v));
-}
-inline Dual remainder(const Dual &a, const Dual &b) {
-    return detail::binary(a, b, std::remainder(a.v, b.v), 1.0, -std::nearbyint(a.v / b.v));
-}
-inline Dual copysign(const Dual &a, const Dual &b) {
-    const double s = (std::signbit(a.v) == std::signbit(b.v)) ? 1.0 : -1.0;
-    return detail::unary(a, std::copysign(a.v, b.v), s);
-}
-inline Dual fdim(const Dual &a, const Dual &b) { return a.v > b.v ? a - b : Dual(std::fdim(a.v, b.v)); }
-inline Dual fmax(const Dual &a, const Dual &b) { return (b.v > a.v) ? b : a; }
-inline Dual fmin(const Dual &a, const Dual &b) { return (b.v < a.v) ? b : a; }
-inline Dual fma(const Dual &a, const Dual &b, const Dual &c) {
-    Dual r = a * b + c;
-    r.v = std::fma(a.v, b.v, c.v);
-    return r;
-}
+Dual pow(const Dual &a, const Dual &b);
+Dual atan2(const Dual &y, const Dual &x);
+Dual hypot(const Dual &a, const Dual &b);
+Dual fmod(const Dual &a, const Dual &b);
+Dual remainder(const Dual &a, const Dual &b);
+Dual copysign(const Dual &a, const Dual &b);
+Dual fdim(const Dual &a, const Dual &b);
+Dual fmax(const Dual &a, const Dual &b);
+Dual fmin(const Dual &a, const Dual &b);
+Dual fma(const Dual &a, const Dual &b, const Dual &c);
+
 
 }  // namespace hvr
 
