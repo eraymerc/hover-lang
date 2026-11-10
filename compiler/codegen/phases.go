@@ -130,7 +130,7 @@ func (g *generator) emitPhaseLog(vmSignals, branchCurrents []string) {
 
 // emitStateVarSnapshot emits save_state_vars and restore_state_vars,
 // which copy every Hover `state`-declared variable's value into/from
-// vm->values, under the same dotted Hover name phase_log uses.
+// vm->state_vals, by an index fixed here.
 //
 // These exist solely so vm_save_state/vm_restore_state (snapshot.cpp) can
 // actually roll back real program state during a ZCD probe or solver step
@@ -167,42 +167,49 @@ func (g *generator) emitStateVarSnapshot() {
 	}
 	sort.Strings(mangledNames)
 
-	// save_state_vars: state global -> vm->values[dottedName]
-	g.raw(`// ── STATE SNAPSHOT — save 'state' variables into vm->values ─────────────────`)
+	// Scalar state variables get consecutive indices into vm->state_vals —
+	// the same order in both functions. (Until 0.9 they went into vm->values
+	// by dotted name: a string build and a hash per variable on every
+	// snapshot, and the solvers and .zcd probes take several per step.)
+	scalars := make([]string, 0, len(mangledNames))
+	for _, mangled := range mangledNames {
+		ht := g.typeOf(mangled)
+		if ht.isArray() || ht.isPointer() || ht.elem == CStruct {
+			continue
+		}
+		scalars = append(scalars, mangled)
+	}
+
+	// save_state_vars: state global -> vm->state_vals[k]
+	g.raw(`// ── STATE SNAPSHOT — save 'state' variables into vm->state_vals ─────────────`)
 	g.raw(`// Used by vm_save_state (snapshot.cpp) so ZCD probes and rejected solver`)
 	g.raw(`// steps can actually be rolled back — see emitStateVarSnapshot in codegen.`)
 	g.raw(`static void save_state_vars(hvr::Sim &sim) {`)
 	g.push()
 	g.line("(void)sim;")
-	for _, mangled := range mangledNames {
+	for k, mangled := range scalars {
 		ht := g.typeOf(mangled)
-		if ht.isArray() || ht.isPointer() || ht.elem == CStruct {
-			continue
-		}
-		g.line(`sim.set_value(%s, %s);`, cStr(dottedNames[mangled]), emitCast(mangled, ht.elem, CDouble))
+		g.line(`sim.set_state_var(%d, %s);  // %s`, k, emitCast(mangled, ht.elem, CDouble), dottedNames[mangled])
 	}
 	g.pop()
 	g.raw(`}`)
 	g.raw(``)
 
-	// restore_state_vars: vm->values[dottedName] -> state global, cast back
+	// restore_state_vars: vm->state_vals[k] -> state global, cast back
 	//
 	// Struct-typed state (like array/pointer state) is excluded, same as
-	// above: vm->values is a map<string,double>, which has no way to hold
-	// an aggregate. A struct-typed `state` variable therefore won't be
+	// above: vm->state_vals holds doubles, which have no way to hold an
+	// aggregate. A struct-typed `state` variable therefore won't be
 	// rolled back by a ZCD probe or a rejected solver step the way a
 	// scalar `state` variable is — a known limitation of this first
 	// version of struct support, not a silently-wrong cast.
-	g.raw(`// ── STATE SNAPSHOT — restore 'state' variables from vm->values ──────────────`)
+	g.raw(`// ── STATE SNAPSHOT — restore 'state' variables from vm->state_vals ──────────`)
 	g.raw(`static void restore_state_vars(hvr::Sim &sim) {`)
 	g.push()
 	g.line("(void)sim;")
-	for _, mangled := range mangledNames {
+	for k, mangled := range scalars {
 		ht := g.typeOf(mangled)
-		if ht.isArray() || ht.isPointer() || ht.elem == CStruct {
-			continue
-		}
-		g.line(`%s = %s;`, mangled, emitCast(fmt.Sprintf(`sim.value(%s)`, cStr(dottedNames[mangled])), CDouble, ht.elem))
+		g.line(`%s = %s;`, mangled, emitCast(fmt.Sprintf(`sim.state_var(%d)`, k), CDouble, ht.elem))
 	}
 	g.pop()
 	g.raw(`}`)

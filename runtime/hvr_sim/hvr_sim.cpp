@@ -220,6 +220,15 @@ double Sim::I_prev(const char *element) const { return api_I_prev(&impl_->api, e
 void Sim::set_voltage_source(const char *name, double v) { api_set_voltage_source(&impl_->api, name, v); }
 void Sim::set_current_source(const char *name, double i) { api_set_current_source(&impl_->api, name, i); }
 void Sim::set_value(const char *key, double v) { impl_->vm.values[key] = v; }
+void Sim::set_state_var(int k, double v) {
+    std::vector<double> &s = impl_->vm.state_vals;
+    if (k >= (int)s.size()) s.resize(k + 1, 0.0);
+    s[k] = v;
+}
+double Sim::state_var(int k) const {
+    const std::vector<double> &s = impl_->vm.state_vals;
+    return (k >= 0 && k < (int)s.size()) ? s[k] : 0.0;
+}
 
 int Sim::node_handle(const char *net) const {
     const int idx = impl_->sys.resolve_node(net);

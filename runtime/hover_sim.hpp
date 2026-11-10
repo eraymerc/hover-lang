@@ -148,9 +148,13 @@ public:
     double ddt(int slot, double q);
     double idt(int slot, double x);
 
-    // The VM's named-value table: logged signals and state snapshots.
+    // The VM's named-value table: the logged signals.
     void   set_value(const char *key, double v);
     double value(const char *key) const;
+    // `state` variables for snapshots (save_state_vars / restore_state_vars),
+    // by index. The table grows on demand; an index never written reads 0.
+    void   set_state_var(int k, double v);
+    double state_var(int k) const;
 
 private:
     struct Impl;

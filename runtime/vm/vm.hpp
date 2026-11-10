@@ -59,6 +59,9 @@ struct VM {
     // ── Program ──────────────────────────────────────────────────────────────
     // ── Signal store ─────────────────────────────────────────────────────────
     std::unordered_map<std::string, double> values;
+    // `state` variables as save_state_vars last copied them, by codegen index
+    // (Sim::set_state_var). What a snapshot rolls back.
+    std::vector<double> state_vals;
 
     // ── MNA layer ────────────────────────────────────────────────────────────
     API    *api;
@@ -105,8 +108,8 @@ struct VM {
     void (*state_init)(VM *vm) = nullptr;
 
     // save_state_vars / restore_state_vars copy every Hover `state`
-    // variable's current C++ global value into/from vm->values, under the
-    // same dotted Hover name phase_log uses. This is what lets
+    // variable's current C++ global value into/from vm->state_vals, by the
+    // index codegen gives it (until 0.9: vm->values, by dotted name). This is what lets
     // vm_save_state/vm_restore_state (snapshot.cpp) actually roll back
     // real program state during a ZCD probe or solver step rejection —
     // without these, vm->values only ever reflects whatever phase_log

@@ -221,6 +221,41 @@ struct System {
         B_static(row) = b;
     }
 
+    // ── Batched restamping during a drive pass ───────────────────────────────
+    // phase_b writes every driven source, and a MOSFET's internal node carries
+    // 6-8 of them: restamping both rows on each write summed the same row many
+    // times over, and phase_b runs n+2 times per numerical Jacobian. While
+    // cs_defer is set (vm_run_phase_b) a write only marks its rows; the pass
+    // ends with flush_current_rows(), which sums each marked row once. The
+    // sum is the same expression in the same order as an immediate restamp,
+    // so B_static comes out bit for bit as before. Writes outside a drive pass
+    // (the public by-name API) still restamp at once.
+    bool             cs_defer = false;
+    // Set after the first drive pass. Until then every write restamps, even an
+    // unchanged one: stamp_netlist builds the rows incrementally, and the
+    // first pass is what puts each driven row into its summed form — exactly
+    // the rows, and the form, they had before writes could be skipped.
+    bool             cs_synced = false;
+    std::vector<char> cs_dirty;
+    std::vector<int>  cs_dirty_list;
+
+    void touch_current_row(int row) {
+        if (row < 0 || row >= num_nodes) return;
+        if (!cs_defer) { restamp_current_row(row); return; }
+        if ((int)cs_dirty.size() != num_nodes) cs_dirty.assign(num_nodes, 0);
+        if (!cs_dirty[row]) { cs_dirty[row] = 1; cs_dirty_list.push_back(row); }
+    }
+
+    void flush_current_rows() {
+        for (int row : cs_dirty_list) {
+            restamp_current_row(row);
+            cs_dirty[row] = 0;
+        }
+        cs_dirty_list.clear();
+        cs_defer  = false;
+        cs_synced = true;
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // DEBUG
     // ─────────────────────────────────────────────────────────────────────────

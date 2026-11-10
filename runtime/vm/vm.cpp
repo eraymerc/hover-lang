@@ -122,7 +122,12 @@ double vm_noncon_ratio(VM *vm, const Eigen::VectorXd &x, const Eigen::VectorXd &
 }
 
 void vm_run_phase_b(VM *vm) {
-    if (vm->phase_b) vm->phase_b(vm);
+    if (!vm->phase_b) return;
+    // Source rows are summed once at the end of the pass (System::cs_defer).
+    System *sys = vm->solver->sys;
+    sys->cs_defer = true;
+    vm->phase_b(vm);
+    sys->flush_current_rows();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

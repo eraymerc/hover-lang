@@ -159,8 +159,12 @@ void api_set_current_source(API *api, const char *name, double current) {
 
 void api_set_current_source_rec(API *api, CurrentSourceRecord *rec, double current) {
     // Not B += last - current: the rows are rebuilt from their sources' values
-    // (System::restamp_current_row says why).
+    // (System::restamp_current_row says why). A row is a pure function of
+    // those values, so a write that changes nothing — compared bit for bit,
+    // which also keeps the sign of a zero — leaves it alone: in a Jacobian
+    // column most sources do not move.
+    if (api->sys->cs_synced && std::memcmp(&rec->last_value, &current, sizeof current) == 0) return;
     rec->last_value = current;
-    api->sys->restamp_current_row(rec->n1);
-    api->sys->restamp_current_row(rec->n2);
+    api->sys->touch_current_row(rec->n1);
+    api->sys->touch_current_row(rec->n2);
 }
