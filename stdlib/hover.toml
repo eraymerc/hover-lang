@@ -22,11 +22,17 @@
 #   parts/               real part cards built on those models — bjt/npn/,
 #                        bjt/pnp/, mosfet/nmos/, mosfet/pmos/, diode/,
 #                        optocoupler/, photodiode/ and photoresistor/
-#   electromechanical/   pmsm (uses math)
+#   electromechanical/   pmsm, ipmsm, spmsm (uses math)
 #   optoelectronics/     leds/, phototransistor/, photodiode/,
 #                        photoresistor/ and optocoupler/ — no .hvr files at
 #                        its own root, so `import <optoelectronics>` is an
 #                        error and you write e.g. `import <optoelectronics/leds>`
+#   analog/              opamp/
+#   power/               inverter bridges and their modulators —
+#                        inverter/averaged/, inverter/ideal/ (switching
+#                        function), inverter/switched/ (Ron/Roff + diode),
+#                        modulation/reference/, modulation/pwm/ and
+#                        modulation/deadtime/; no .hvr files at its root
 #
 # symbols/ folders beside the .hvr files hold the schematic symbols hoverdeck
 # draws those modules with: <module name>.svg, or default.svg for every module

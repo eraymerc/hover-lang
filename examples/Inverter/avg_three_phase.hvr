@@ -1,0 +1,94 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  HVR Testbench — Averaged Three-Phase Inverter into an RL Load, 50 Hz
+//  Validates: the averaged (level A) three-phase bridge, third-harmonic
+//             injection up to m = 2/√3, and DC-link power balance
+// ─────────────────────────────────────────────────────────────────────────────
+//
+//              ┌────────────────────┐
+//     48 V ────┤ dc_p             a ├──[4 Ohm]──[5 mH]──┐
+//              │ Averaged         b ├──[4 Ohm]──[5 mH]──┼── n  (floating
+//              │ Bridge3Ph        c ├──[4 Ohm]──[5 mH]──┘       star point)
+//     gnd  ────┤ dc_n               │
+//              └────────────────────┘
+//
+//  The reference is SineDuty3Ph at m = 1.15 with k3 = 1/6: past the m = 1
+//  limit of plain sine modulation, inside the 2/√3 = 1.155 limit that third-
+//  harmonic injection reaches. The largest duty is 0.5 + 0.5·1.15·√3/2 =
+//  0.998, so nothing clips. The injected 3rd harmonic is zero sequence: all
+//  three poles carry it together, the floating star point n follows it, and
+//  it appears in no line-to-line voltage and no load current.
+//
+//  ── Why an RL load and not the stdlib PMSM ──────────────────────────────────
+//
+//  Both run (the bridge is indifferent to its load), but an open-loop,
+//  fixed-frequency inverter is a poor way to drive a permanent-magnet
+//  machine. Applied at standstill, a 50 Hz field gives a torque that
+//  alternates and averages to zero — the PMSM model has no damper winding —
+//  so whether the rotor pulls into step depends on its inertia and load:
+//  tried here with the bridge at m = 0.8 and PMSM<0.5, 2m, 2m, 0.05, 4, J,
+//  1e-4>, J = 1e-4 kg·m² locks on to 78.54 rad/s within 100 ms, while J = 1e-2
+//  only shakes at ±2.4 rad/s, drawing 25 A of locked-rotor current
+//  indefinitely. Making it start reliably needs a V/f ramp or a speed and
+//  current loop, and then the deck is about the controller rather than the
+//  inverter. An unloaded machine in step also draws almost no current, so
+//  there is little left to check. The RL load has a closed-form steady
+//  state, and every number below can be checked by hand. The PMSM is the
+//  right load once a controller sits in front of the bridge: drive d_a,
+//  d_b, d_c from its dq voltage commands.
+//
+//  ── Expected result ─────────────────────────────────────────────────────────
+//
+//  Per phase, Z = 4 + j·2π·50·5m = 4 + j1.571 Ohm, |Z| = 4.297 Ohm, φ = 21.4°.
+//  Each pole's fundamental is m·Vdc/2 = 27.6 V, so
+//
+//      line-to-line amplitude  √3·m·Vdc/2      = 47.80 V   (≈ Vdc: the ceiling)
+//      phase-current amplitude m·Vdc/2 / |Z|   = 6.423 A
+//      load power              3/2·Î²·R        = 247.5 W  →  i_dc = 5.156 A
+//
+//  Into a balanced load the bridge draws a CONSTANT DC current: the three
+//  phases' power pulsations cancel, so a DC-link capacitor here would carry
+//  nothing in steady state — unlike the single-phase bridge, whose bus
+//  current swings at 100 Hz (avg_h_bridge.hvr).
+//
+//  Measured (20–40 ms): 47.805 V line-to-line, 27.600 V phase-to-neutral,
+//  6.4225 A, i_dc 5.1561 A with no ripple at all, bus power equal to load
+//  power to 1e-6, duties 0.002–0.998, and 4.600 V of 3rd harmonic on each
+//  pole (m·Vdc/2·k3) against < 1 µV in the line-to-line voltage. The same
+//  deck at k3 = 0 clips (duties pinned at 0 and 1) and gets 45.15 V
+//  line-to-line instead, with 6·f ripple on i_dc.
+
+.save(main.dc_p, main.a, main.b, main.c, main.n, main.d_a, main.d_b, main.d_c,
+      I(main.vsrc), I(main.bridge.leg_a.vleg), I(main.bridge.leg_b.vleg),
+      I(main.bridge.leg_c.vleg));
+.op;
+.tran(0, 40m, 10u);
+.solver(ndf2);
+
+import <power/inverter/averaged> as avg;
+import <power/modulation/reference> as ref;
+
+module main<>() []
+{
+    wire dc_p, a, b, c, a1, b1, c1, n;
+    state double d_a = 0.5, d_b = 0.5, d_c = 0.5;
+
+    // 1. DC link, stiff. (A source resistance and link capacitor work just as
+    // well in the transient, but the DC operating-point solve does not
+    // currently converge with a source resistance much below 1 Ohm feeding
+    // several amps, so the deck keeps the bus ideal.)
+    voltage_source vsrc<48>() [dc_p, gnd];
+
+    // 2. Reference: 50 Hz, m = 1.15, phase 0, k3 = 1/6.
+    module mod = ref.SineDuty3Ph<50, 1.15, 0, 0.16666666666667>(d_a, d_b, d_c) [];
+
+    // 3. Averaged two-level bridge, dc_n on ground.
+    module bridge = avg.AveragedBridge3Ph<>(d_a, d_b, d_c) [dc_p, gnd, a, b, c];
+
+    // 4. Star-connected RL load, neutral floating.
+    R<4>()  [a, a1];
+    R<4>()  [b, b1];
+    R<4>()  [c, c1];
+    L<5m>() [a1, n];
+    L<5m>() [b1, n];
+    L<5m>() [c1, n];
+}

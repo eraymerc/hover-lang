@@ -1,0 +1,134 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  Averaged (state-space average) voltage-source inverter — "level A"
+//
+//  The fastest of the library's three inverter abstractions. Each half-bridge
+//  leg is replaced by what it looks like averaged over one switching period:
+//  an ideal controlled voltage source whose value is the commanded duty d
+//  times the DC-link voltage, with the DC side drawing exactly the current
+//  that balances the power.
+//
+//      dc_p ──┬─────────────────┐
+//             │                 │
+//          i_dc = d·i_out    ┌──┴──┐
+//             ↓              │ +   │  V(a) − V(dc_n) = d · (V(dc_p) − V(dc_n))
+//             │              │ d·V │──── a  ──▶ i_out
+//             │              │ −   │
+//      dc_n ──┴──────────────┴─────┘
+//
+//  Where it comes from. A leg switches its output between dc_p (top device
+//  on, a fraction d of the time) and dc_n (bottom device on, the rest). Over
+//  a switching period the output voltage averages to
+//
+//      V(a) = d·V(dc_p) + (1 − d)·V(dc_n)
+//
+//  and, because the top device carries the output current only while it is
+//  on, the current drawn from dc_p averages to d·i_out (the bottom device's
+//  (1 − d)·i_out comes out of dc_n). Those two statements are the model, and
+//  they make it exactly lossless:
+//
+//      V(dc_p)·d·i_out + V(dc_n)·(1 − d)·i_out = V(a)·i_out
+//
+//  so the power leaving the DC link equals the power entering the load at
+//  every instant, and a DC-link capacitor sees the right ripple — the 2·f_out
+//  ripple of a single-phase bridge, and none at all from a balanced
+//  three-phase one.
+//
+//  Implementation. The leg source is a voltage_source named vleg, from a to
+//  dc_n, so its branch current is a solved unknown; the DC-side current
+//  source reads it with I(vleg). Both are evaluated inside the Newton loop
+//  (this is an analog module), so the coupling is implicit and the model is
+//  linear for a fixed duty: one Newton iteration per step. d is clamped to
+//  [0, 1] — an overmodulated reference saturates at the rail, as a real
+//  bridge does.
+//
+//  Sign. I(vleg) follows the passive convention (positive into a), so the
+//  current the leg delivers to its load is −I(vleg). To log a phase current,
+//  .save(I(main.<instance>.vleg)) for a lone leg, or
+//  I(main.<instance>.leg_a.vleg) for a phase of a bridge.
+//
+//  Use. Drive d from anything that produces a duty in [0, 1] — the sine
+//  references in <power/modulation/reference> plug in directly — and give
+//  each output an inductive path (a filter choke or an RL load), as a real
+//  inverter has. Two legs' outputs must never be tied together directly
+//  (two ideal voltage sources in parallel), and a leg straight across a
+//  capacitor is a voltage source charging a capacitor with no resistance:
+//  legal, but the current it draws is whatever the integrator makes of a
+//  step.
+//
+//  What the averaged model does NOT capture:
+//    - switching ripple: there is no carrier, so no current ripple in the
+//      chokes and no voltage ripple at the switching frequency anywhere.
+//      The output is the local average a filter would reconstruct. Use the
+//      switching-function bridge (<power/inverter/ideal>) to see the ripple.
+//    - dead time and its voltage error, and diode freewheeling: the source is
+//      ideal and bidirectional at every instant, so the output follows d·Vdc
+//      whatever the current's sign. The switched-resistor bridge
+//      (<power/inverter/switched>) has both.
+//    - discontinuous conduction (DCM): the leg is a stiff voltage source, so
+//      a choke current can reverse freely and never parks at zero.
+//    - losses: no on-resistance, no forward drops, no switching loss; the
+//      DC-side power equals the AC-side power exactly. (A series resistor on
+//      each output is the usual first-order conduction-loss patch.)
+//    - the bandwidth limit of the modulator: d is applied as given, so a
+//      reference faster than the would-be carrier is reproduced faithfully
+//      here and would not be by a real PWM stage.
+//
+//  Modules:
+//    AveragedLeg       [dc_p, dc_n, a]          (input d)
+//    AveragedHBridge   [dc_p, dc_n, a, b]       (input d_a, d_b)
+//    AveragedBridge3Ph [dc_p, dc_n, a, b, c]    (input d_a, d_b, d_c)
+//  The bridges are just legs sharing a DC link; their legs are leg_a, leg_b
+//  (and leg_c).
+// ─────────────────────────────────────────────────────────────────────────────
+
+analog module AveragedLeg<>(input double d)
+    [wire dc_p, wire dc_n, wire a]
+{
+    double duty = d;
+    if (duty < 0.0) { duty = 0.0; }
+    if (duty > 1.0) { duty = 1.0; }
+
+    // AC side: the averaged switch-node voltage, referred to dc_n.
+    double v_leg = duty * (V(dc_p) - V(dc_n));
+    voltage_source vleg<>(v_leg) [a, dc_n];
+
+    // DC side: duty times the output current, drawn out of dc_p and returned
+    // into dc_n. The output current is −I(vleg) (passive sign convention).
+    double i_dc = 0.0 - duty * I(vleg);
+    current_source<>(i_dc) [dc_p, dc_n];
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  Single-phase full bridge (H-bridge): two legs on one DC link
+// ═══════════════════════════════════════════════════════════════
+//
+//  V(a) − V(b) = (d_a − d_b)·Vdc. With the bipolar sine reference
+//  (d_a = 0.5 + 0.5·m·sin, d_b = 0.5 − 0.5·m·sin) that is m·Vdc·sin on a
+//  constant Vdc/2 common mode; the DC-link current is (d_a − d_b)·i_a, which
+//  carries the single-phase bridge's 2·f_out power pulsation.
+
+module AveragedHBridge<>(input double d_a, input double d_b)
+    [wire dc_p, wire dc_n, wire a, wire b]
+{
+    module leg_a = AveragedLeg<>(d_a) [dc_p, dc_n, a];
+    module leg_b = AveragedLeg<>(d_b) [dc_p, dc_n, b];
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  Three-phase two-level bridge: three legs on one DC link
+// ═══════════════════════════════════════════════════════════════
+//
+//  With d_k = 0.5 + 0.5·m·sin(θ − k·120°), each pole sits at Vdc/2 plus a
+//  phase voltage of amplitude m·Vdc/2, and the line-to-line voltage has
+//  amplitude √3·m·Vdc/2. Into a balanced load the DC-link current is
+//  constant. Any zero-sequence part of the duties (third-harmonic injection,
+//  for instance) moves all three poles together and cancels in every
+//  line-to-line voltage, which is what lets m reach 2/√3 ≈ 1.155 linearly.
+
+module AveragedBridge3Ph<>(input double d_a, input double d_b, input double d_c)
+    [wire dc_p, wire dc_n, wire a, wire b, wire c]
+{
+    module leg_a = AveragedLeg<>(d_a) [dc_p, dc_n, a];
+    module leg_b = AveragedLeg<>(d_b) [dc_p, dc_n, b];
+    module leg_c = AveragedLeg<>(d_c) [dc_p, dc_n, c];
+}

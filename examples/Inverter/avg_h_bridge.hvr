@@ -1,0 +1,92 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  HVR Testbench — Averaged H-Bridge DC/AC Inverter, 50 Hz
+//  Validates: the averaged (level A) bridge of <power/inverter/averaged>
+//             against the LC filter's analytic transfer, and its DC-side
+//             power balance
+// ─────────────────────────────────────────────────────────────────────────────
+//
+//  The same circuit as examples/MOSFET/h_bridge_inverter.hvr — 24 V bus,
+//  bipolar sine modulation at m = 0.8 and 50 Hz, 14 mH per leg, 1.4 µF split
+//  filter capacitors with the 68 Ohm common-mode damping leg, 200 Ohm load —
+//  with the four MOSFETs and the 20 kHz carrier replaced by their switching-
+//  period average. See that deck for why the filter is shaped the way it is.
+//
+//  What changes: no carrier, so no 20 kHz ripple and no dead-time or body-
+//  diode effects; the bridge legs are ideal controlled voltage sources at
+//  d·Vdc. In exchange the step is no longer bounded by the switching period,
+//  and the run takes well under a second.
+//
+//    vdc ──┬─ leg_a ── bridge_a ──[14 mH]── out_p ──┬─ 1.4 µF ─┐
+//          │                                        │          ├─ 68 Ohm ─ gnd
+//          │                                     200 Ohm       │  (cm_mid)
+//          │                                        │          │
+//          └─ leg_b ── bridge_b ──[14 mH]── out_n ──┴─ 1.4 µF ─┘
+//
+//  ── Expected result ─────────────────────────────────────────────────────────
+//
+//  The bridge's differential output is (d_a − d_b)·Vdc = m·Vdc·sin, 19.2 V
+//  peak, on a constant 12 V common mode. Differentially the filter is 28 mH in
+//  series feeding 0.7 µF (the two 1.4 µF in series) in parallel with 200 Ohm;
+//  the damping leg carries no differential current. At 50 Hz:
+//
+//      Z_out = 200 || 1/(j·ω·0.7µ) = 199.62 − j8.78 Ohm
+//      H     = Z_out / (Z_out + j·ω·28m),   ω·28m = 8.796 Ohm
+//      |H|   = 1.00097,  ∠H = −2.52°
+//
+//  (a hair above unity: 50 Hz is on the rising side of the filter's 1.14 kHz
+//  resonance), so V(out_p) − V(out_n) = 19.219 V peak, 13.590 V RMS, and
+//  0.9234 W into the load. The DC source supplies (d_a − d_b)·i_a: 38.5 mA,
+//  0.9234 W on average, swinging between 0 and 77 mA at 100 Hz — the single-
+//  phase bridge's 2·f power pulsation, which a real DC-link capacitor has to
+//  absorb. Measured: 19.2186 V peak at −2.523°, and bus power equal to load
+//  power to 1e-5; ngspice, with the same model written as B-sources, agrees
+//  to 30 µV once the start-up transient has decayed.
+//
+//  The common mode is solved at the operating point (.op): both capacitors at
+//  12 V, cm_mid at 0 V, and it stays there, because the bipolar reference
+//  never moves the bridge's common mode.
+
+.save(main.out_p, main.out_n, main.bridge_a, main.bridge_b, main.cm_mid,
+      main.d_a, main.d_b, main.v_cmd, I(main.vbus),
+      I(main.bridge.leg_a.vleg), I(main.bridge.leg_b.vleg));
+.op;
+.tran(0, 40m, 10u);   // two 50 Hz cycles; 10 us caps the logged sample spacing
+.solver(ndf2);
+
+import <power/inverter/averaged> as avg;
+import <power/modulation/reference> as ref;
+
+// The commanded bridge voltage, (d_a − d_b)·Vdc, logged next to the achieved
+// output so the two can be overlaid; the filter's +0.1 % / −2.5° is the only
+// difference between them.
+digital module Command<double vdc>(input double d_a, input double d_b,
+                                   output double v_cmd) []
+{
+    v_cmd = (d_a - d_b) * vdc;
+}
+
+module main<>() []
+{
+    wire vdc, bridge_a, bridge_b, out_p, out_n, cm_mid;
+    state double d_a = 0.5, d_b = 0.5, v_cmd = 0;
+
+    // 1. DC bus.
+    voltage_source vbus<24>() [vdc, gnd];
+
+    // 2. Bipolar sine reference: 50 Hz, m = 0.8, zero phase.
+    module mod = ref.SineDuty1Ph<50, 0.8, 0>(d_a, d_b) [];
+    module cmd = Command<24>(d_a, d_b, v_cmd) [];
+
+    // 3. Averaged power stage.
+    module bridge = avg.AveragedHBridge<>(d_a, d_b) [vdc, gnd, bridge_a, bridge_b];
+
+    // 4. LC output filter with the common-mode damping leg.
+    L<14m>()  [bridge_a, out_p];
+    L<14m>()  [bridge_b, out_n];
+    C<1.4u>() [out_p, cm_mid];
+    C<1.4u>() [out_n, cm_mid];
+    R<68>()   [cm_mid, gnd];
+
+    // 5. Load.
+    R<200>()  [out_p, out_n];
+}

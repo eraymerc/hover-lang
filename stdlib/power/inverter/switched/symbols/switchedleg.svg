@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-32 -64 64 128" data-title="Switched inverter leg"
+     fill="none" stroke="#000" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+  <style>.fill{fill:#000}.bold{stroke-width:3.2}.dash{stroke-dasharray:3 2.5}[data-pin]{fill:#d00;stroke:none}[data-logic]{fill:#c90;stroke:none}</style>
+  <!-- One half-bridge leg: top and bottom switch, each with its anti-parallel diode and its own gate command. -->
+  <path d="M0 -64 V-40 M0 -16 V16 M0 40 V64 M0 0 H32"/>
+  <circle cx="0" cy="-40" r="2"/>
+  <circle cx="0" cy="-16" r="2"/>
+  <circle cx="0" cy="16" r="2"/>
+  <circle cx="0" cy="40" r="2"/>
+  <path d="M0 -16 L-12 -38 M0 40 L-12 18"/>
+  <path d="M0 -56 H8 V56 H0"/>
+  <polygon points="4,-23 12,-23 8,-31" class="fill"/>
+  <path d="M4 -31 H12"/>
+  <polygon points="4,33 12,33 8,25" class="fill"/>
+  <path d="M4 25 H12"/>
+  <circle cx="0" cy="-56" r="1.6" class="fill"/>
+  <circle cx="0" cy="56" r="1.6" class="fill"/>
+  <circle cx="8" cy="0" r="2.4" class="fill"/>
+  <circle cx="0" cy="0" r="2.4" class="fill"/>
+  <path d="M-32 -32 H-8.73" class="dash" data-if-pin="g_hi"/>
+  <path d="M-32 32 H-4.36" class="dash" data-if-pin="g_lo"/>
+  <circle data-pin="dc_p" data-alias="p dcp vdc" data-dir="up" cx="0" cy="-64" r="2"/>
+  <circle data-pin="dc_n" data-alias="n dcn" data-dir="down" cx="0" cy="64" r="2"/>
+  <circle data-pin="a" data-alias="out leg" data-dir="right" cx="32" cy="0" r="2"/>
+  <circle data-logic="g_hi" data-alias="hi" data-flow="in" data-dir="left" cx="-32" cy="-32" r="2"/>
+  <circle data-logic="g_lo" data-alias="lo" data-flow="in" data-dir="left" cx="-32" cy="32" r="2"/>
+</svg>

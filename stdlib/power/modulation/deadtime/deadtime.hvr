@@ -1,0 +1,95 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  Dead-time generator — one switching command in, two gate commands out
+//
+//  A half-bridge leg must never have both switches on: that shorts the bus.
+//  Real switches turn off with a delay, so a controller does not hand the
+//  outgoing switch's off-edge and the incoming switch's on-edge to the gates
+//  at the same instant; it turns the outgoing one off at once and holds the
+//  incoming one off for a dead time t_dead first. During that window both are
+//  off, and the load current freewheels through a diode.
+//
+//      s      ──┐        ┌─────────────┐
+//               └────────┘             └──────
+//      g_hi   ──┐          ┌───────────┐
+//               └──────────┘           └──────        each rising edge
+//      g_lo     ┌──────┐               │  ┌───        delayed by t_dead,
+//             ──┘      └───────────────┘──┘           falling edges not
+//                      |<->|           |<->|
+//                     t_dead          t_dead
+//
+//  Rule, per output: a gate turns OFF the instant s says so, and turns ON
+//  only once s asks for it AND its partner has been off for at least t_dead.
+//  So:
+//    - a pulse of s shorter than t_dead never turns its switch on (both stay
+//      off for the whole pulse), as on a real gate driver;
+//    - if the partner had not actually been on (s flipped back before the
+//      dead time ran out), the gate turns on again at once — there is nothing
+//      to wait for;
+//    - at t = 0 there is no previous on-state, so the commanded gate starts on.
+//
+//  The delay is TIME-based, not a band on the carrier, so it works with any
+//  modulator — carrier PWM, space-vector, hysteresis, a hand-written
+//  sequence — and the dead time is exactly t_dead whatever the modulation
+//  index or carrier slope. Inputs: s > 0.5 means "high side on". Outputs: 1.0
+//  (on) / 0.0 (off), ready for <power/inverter/switched>'s g_hi / g_lo.
+//
+//  ── How the edges land exactly ─────────────────────────────────────────────
+//
+//  A digital module runs once at the start of each solver step and remembers
+//  the time it last turned each gate off. The turn-on instant, t_off + t_dead,
+//  therefore falls in the middle of some later step, and the solver's zero-
+//  crossing detection (.zcd) finds it: .zcd re-runs the logic at points inside
+//  the step and bisects the instant at which a driven source jumps. The
+//  switched bridge exposes its gate commands to .zcd through witness nodes, so
+//  in the switched_h_bridge benchmark every dead time comes out as t_dead to
+//  within 1e-6 of a step. Two requirements follow:
+//
+//    - turn on `.zcd;` in the deck;
+//    - instantiate the modulator BEFORE this module. Digital modules run in
+//      instantiation order; if this one runs first it sees the previous step's
+//      s, and the s edge (and everything timed from it) lands on the next step
+//      boundary instead of where it belongs.
+//
+//    - keep the .tran max step shorter than the shortest command pulse that
+//      matters. .zcd compares the drive at a step's two ends and middle, so a
+//      pulse that begins and ends inside one step leaves no trace (measured: a
+//      200 ns notch in s is missed entirely at a 1 us max step and handled
+//      exactly at 50 ns). Carrier PWM at 20 kHz with a 1 us max step is fine:
+//      its shortest pulse at m = 0.8 is 5 us.
+//
+//  A deck that runs its modulator on a .clock instead should bind this module
+//  to the same clock only if t_dead is a whole number of ticks; otherwise
+//  leave it unclocked, so that it sees every step and .zcd can place the
+//  turn-on between ticks.
+//
+//  Not modelled: propagation delay and its mismatch between the two gates,
+//  minimum pulse width suppression, a driver's own rise/fall times.
+// ─────────────────────────────────────────────────────────────────────────────
+
+digital module DeadTime<double t_dead>
+(input double s, output double g_hi, output double g_lo) []
+{
+    // Time each gate last turned off. -1 s is "long ago" for any dead time
+    // shorter than a second, so at t = 0 the commanded gate starts on.
+    state double t_hi_off = -1.0;
+    state double t_lo_off = -1.0;
+    // The gates as the previous step left them.
+    state double hi_was = 0.0;
+    state double lo_was = 0.0;
+
+    double want_hi = 0.0;
+    if (s > 0.5) { want_hi = 1.0; }
+
+    // Turn-off is immediate: record it the step it happens.
+    if (hi_was > 0.5 && want_hi < 0.5) { t_hi_off = time; }
+    if (lo_was > 0.5 && want_hi > 0.5) { t_lo_off = time; }
+
+    // Turn-on waits for the partner to have been off for t_dead.
+    g_hi = 0.0;
+    g_lo = 0.0;
+    if (want_hi > 0.5 && time - t_lo_off >= t_dead) { g_hi = 1.0; }
+    if (want_hi < 0.5 && time - t_hi_off >= t_dead) { g_lo = 1.0; }
+
+    hi_was = g_hi;
+    lo_was = g_lo;
+}

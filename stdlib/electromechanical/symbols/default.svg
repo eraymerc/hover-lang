@@ -7,11 +7,17 @@
   <circle data-pin="va" data-alias="a u" data-dir="up" cx="-16" cy="-32" r="2"/>
   <circle data-pin="vb" data-alias="b v" data-dir="up" cx="0" cy="-32" r="2"/>
   <circle data-pin="vc" data-alias="c w" data-dir="up" cx="16" cy="-32" r="2"/>
+  <!-- The shaft leaves the right side: a short double-line stub, then the
+       lead to the mechanical pin (V = speed in rad/s, I = torque in N·m). -->
+  <path d="M20 -3 H27 V3 H20" class="bold"/>
+  <path d="M27 0 H32"/>
+  <circle data-pin="shaft" data-alias="rotor mech" data-dir="right" cx="32" cy="0" r="2"/>
   <!-- The measured outputs leave from a short rail under the motor, drawn
        only when at least one of them is connected. -->
-  <path d="M0 20 V24 M-24 24 H24" data-if-pin="omega_m_out i_d_out i_q_out theta_e_out"/>
-  <circle data-logic="omega_m_out" data-alias="omega speed" data-flow="out" data-dir="down" cx="-24" cy="24" r="2"/>
-  <circle data-logic="i_d_out" data-alias="i_d id" data-flow="out" data-dir="down" cx="-8" cy="24" r="2"/>
-  <circle data-logic="i_q_out" data-alias="i_q iq" data-flow="out" data-dir="down" cx="8" cy="24" r="2"/>
-  <circle data-logic="theta_e_out" data-alias="theta_e theta" data-flow="out" data-dir="down" cx="24" cy="24" r="2"/>
+  <path d="M0 20 V24 M-32 24 H32" data-if-pin="omega_m_out i_d_out i_q_out theta_e_out torque_out"/>
+  <circle data-logic="omega_m_out" data-alias="omega speed" data-flow="out" data-dir="down" cx="-32" cy="24" r="2"/>
+  <circle data-logic="i_d_out" data-alias="i_d id" data-flow="out" data-dir="down" cx="-16" cy="24" r="2"/>
+  <circle data-logic="i_q_out" data-alias="i_q iq" data-flow="out" data-dir="down" cx="0" cy="24" r="2"/>
+  <circle data-logic="theta_e_out" data-alias="theta_e theta" data-flow="out" data-dir="down" cx="16" cy="24" r="2"/>
+  <circle data-logic="torque_out" data-alias="torque t_em te" data-flow="out" data-dir="down" cx="32" cy="24" r="2"/>
 </svg>

@@ -1,0 +1,114 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  Ideal switching-function inverter bridges — one leg, H-bridge, three-phase
+//
+//  Each leg is an ideal two-position (single-pole, double-throw) switch between
+//  the DC rails, written as a controlled voltage source:
+//
+//      V(a) - V(dc_n) = s * (V(dc_p) - V(dc_n)),     s in {0, 1}
+//
+//      dc_p ──o
+//               \___ a          s = 1: top switch on,    a tied to dc_p
+//      dc_n ──o                 s = 0: bottom switch on, a tied to dc_n
+//
+//  s is the switching function, a digital gate command: s > 0.5 means "top
+//  on". It is meant to come from a modulator — <power/modulation/pwm> has
+//  carrier-based ones — or from any digital module of your own.
+//
+//  The DC side is power-balanced. With i_a the current the leg pushes out of
+//  `a` into the load, the leg draws
+//
+//      i_dc = s * i_a      from dc_p, returned into dc_n
+//
+//  so that, instant by instant, Vdc * i_dc = V(a, dc_n) * i_a: what leaves the
+//  bus is exactly what the leg delivers, and the current in the DC link is the
+//  real chopped current a converter's bus capacitor sees, not its average. The
+//  rest of i_a returns through dc_n. i_a is the branch current of the leg's
+//  voltage source, read through I() inside the Newton loop, so the coupling is
+//  exact and is in the Jacobian.
+//
+//  ── What this model is for ─────────────────────────────────────────────────
+//
+//  The switching-function ("level B") model sits between an averaged model and
+//  a device-level one. It keeps every PWM edge — the bridge voltage is the true
+//  pulse train, so ripple, the switching spectrum, filter design, DC-link ripple
+//  current and common-mode voltage all come out right — but each edge is an
+//  ideal step, so a 20 kHz bridge over many output cycles runs in seconds
+//  rather than the minutes a MOSFET bridge needs.
+//
+//  ── What it does NOT capture ───────────────────────────────────────────────
+//
+//  The leg node is ALWAYS driven, to one rail or the other. There is no
+//  both-off state, and hence:
+//    - no dead time, and none of the voltage error dead time causes;
+//    - no freewheeling diodes and no diode commutation: the switch carries
+//      current in both directions in either position;
+//    - no discontinuous conduction: an inductor current that would fall to
+//      zero and stay there in a real converter simply reverses here.
+//  Nor: conduction drop or on-resistance, switching transients and losses,
+//  reverse recovery, gate-drive delay. The bridge is lossless — the DC power in
+//  equals the AC power out.
+//
+//  ── Using it ───────────────────────────────────────────────────────────────
+//
+//  Never connect a capacitor directly to a leg node. The leg is an ideal
+//  voltage source that steps by the whole bus at every edge; a capacitor across
+//  it would need an infinite current impulse, which the solver cannot produce.
+//  Put an inductor (the usual case: a filter or a machine winding) or at least a
+//  resistor between the leg and any capacitance.
+//
+//  For the same reason, keep the DC side stiff: drive dc_p/dc_n from a voltage
+//  source, or from a capacitor bank fed through some impedance. The chopped
+//  i_dc into a bare inductor would be an ideal current step into it.
+//
+//  Turn on `.zcd;` in the deck. A modulator's edges are discrete jumps in the
+//  middle of a solver step; .zcd locates each one and ends the step on it, so
+//  the edges land at their exact time instead of on the next step boundary.
+//  Each wrapper below drives its s onto an internal `gate` node (a voltage
+//  source to ground, nothing else on it) for exactly this reason: zero-crossing
+//  detection watches the sources a step drives, and a logic value that only
+//  enters the circuit through an analog module's input is not one of them.
+//  The gate node is also handy in .save as the logged command (`…leg.gate`).
+// ─────────────────────────────────────────────────────────────────────────────
+
+// The switch itself. Prefer IdealLeg, which adds the gate node .zcd needs.
+analog module IdealLegCore<>(input double s) [wire dc_p, wire dc_n, wire a]
+{
+    double on = 0.0;
+    if (s > 0.5) { on = 1.0; }
+
+    // Leg voltage: dc_n plus s times the bus.
+    double v_leg = on * (V(dc_p) - V(dc_n));
+
+    // I(vleg) is positive into `a` (passive convention), so the current the leg
+    // delivers to the load is -I(vleg); the top switch carries `on` times it.
+    double i_dc = 0.0 - on * I(vleg);
+
+    voltage_source vleg<>(v_leg) [a, dc_n];
+    current_source<>(i_dc) [dc_p, dc_n];
+}
+
+// One leg: [dc_p, dc_n, a], s = 1 ties a to dc_p, s = 0 to dc_n.
+module IdealLeg<>(input double s) [wire dc_p, wire dc_n, wire a]
+{
+    wire gate;
+    voltage_source<>(s) [gate, gnd];
+    module sw = IdealLegCore<>(s) [dc_p, dc_n, a];
+}
+
+// Single-phase full bridge: two legs on one bus, output across [a, b].
+// Bipolar PWM drives s_b = 1 - s_a; unipolar drives the two legs independently.
+module IdealHBridge<>(input double s_a, input double s_b)
+    [wire dc_p, wire dc_n, wire a, wire b]
+{
+    module leg_a = IdealLeg<>(s_a) [dc_p, dc_n, a];
+    module leg_b = IdealLeg<>(s_b) [dc_p, dc_n, b];
+}
+
+// Three-phase two-level bridge: three legs on one bus, phases [a, b, c].
+module IdealThreePhaseBridge<>(input double s_a, input double s_b, input double s_c)
+    [wire dc_p, wire dc_n, wire a, wire b, wire c]
+{
+    module leg_a = IdealLeg<>(s_a) [dc_p, dc_n, a];
+    module leg_b = IdealLeg<>(s_b) [dc_p, dc_n, b];
+    module leg_c = IdealLeg<>(s_c) [dc_p, dc_n, c];
+}

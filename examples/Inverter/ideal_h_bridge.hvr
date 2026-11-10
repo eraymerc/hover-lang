@@ -1,0 +1,93 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  HVR Testbench — Ideal-switch H-Bridge Inverter, 50 Hz from 20 kHz SPWM
+//  Validates: the switching-function bridge of <power/inverter/ideal> driven by
+//             the bipolar sine-triangle modulator of <power/modulation/pwm>,
+//             the power-balanced DC-link current, and LC reconstruction of the
+//             50 Hz fundamental
+// ─────────────────────────────────────────────────────────────────────────────
+//
+//  This is the circuit of examples/MOSFET/h_bridge_inverter.hvr with the four
+//  transistors replaced by two ideal legs: 24 V bus, m = 0.8, 50 Hz out of a
+//  20 kHz carrier, 14 mH per leg, 1.4 µF split capacitors with the 68 Ohm
+//  common-mode damping leg, 200 Ohm load. That deck is the device-level view —
+//  dead time, body-diode recirculation, gate charge, on-resistance. This one is
+//  the switching-function view: each leg sits on one rail or the other, every
+//  PWM edge is kept but is an ideal step, and there is no dead time, so the
+//  bridge voltage is exactly the modulator's pulse train times the bus. It runs
+//  in about a second instead of half a minute, and laying the two outputs over
+//  each other shows what the devices add.
+//
+//  ── Expected result ─────────────────────────────────────────────────────────
+//
+//  Bridge voltage v_ab = Vdc * (s_a - s_b), a +/-24 V pulse train whose
+//  fundamental is m * Vdc = 19.2 V peak. Differentially the filter is 28 mH
+//  (2 x 14 mH in series) into 0.7 µF (2 x 1.4 µF in series) across 200 Ohm:
+//
+//      H(jw) = 1 / (1 - w^2 L C + j w L / R),    |H(50 Hz)| = 1.00097
+//
+//  so the load sees 19.22 V peak (13.59 V RMS, 0.923 W). The switching
+//  harmonics of naturally sampled bipolar PWM are, at the bridge,
+//
+//      |V(m f_sw + n f_out)| = 4 Vdc / (m pi) * |J_n(m pi M / 2) sin((m+n) pi/2)|
+//
+//  — the carrier itself (19.6 V) and sidebands at 20 kHz +/- 100 Hz (5.3 V),
+//  then 40 kHz +/- 50 and +/- 150 Hz — and the filter takes them down by ~300x:
+//  63 mV of 20 kHz across the load, an output THD of 0.36 %.
+//
+//  The bus source's current, I(main.vbus), is the real chopped DC-link current
+//  (negative: the source is delivering); it equals s_a*I(la) + s_b*I(lb) at
+//  every sample, and its mean times 24 V equals the load power over any whole
+//  number of output cycles.
+//
+//  Swap pwm.SpwmBipolar for pwm.SpwmUnipolar to see unipolar PWM: same
+//  fundamental, the 20 kHz group vanishes, the first harmonics sit at
+//  40 kHz +/- 50 Hz, and the output THD falls to 0.05 %. The common-mode
+//  voltage then switches too, and the 68 Ohm leg dissipates ~5 mW.
+
+.save(main.bridge_a, main.bridge_b, main.out_p, main.out_n, main.cm_mid,
+      main.v_ref, main.s_a, main.s_b, I(main.vbus), I(main.la), I(main.lb));
+.op;
+.tran(0, 40m, 1u);   // 40 ms = two 50 Hz cycles; 1 us = 50 samples per carrier period
+.solver(ndf2);
+.zcd;                // places every PWM edge at its exact crossing time
+
+import <power/inverter/ideal> as ideal;
+import <power/modulation/pwm> as pwm;
+from <math> import sin;
+
+// The modulation reference, normalised to [-1, 1]. Any digital module can play
+// this part; it is instantiated before the modulator so it runs first.
+digital module SineRef<double m, double f_out, double vdc>
+    (output double ref, output double v_ref) []
+{
+    ref = m * sin(2.0 * 3.14159265358979 * f_out * time);
+    v_ref = ref * vdc;   // the commanded output in volts, for the CSV
+}
+
+module main<>() []
+{
+    wire vdc, bridge_a, bridge_b, out_p, out_n, cm_mid;
+    state double ref = 0, v_ref = 0;
+    state double s_a = 0, s_b = 0;
+
+    // 1. DC bus. Named, so its current can be logged.
+    voltage_source vbus<24>() [vdc, gnd];
+
+    // 2. Reference and modulator: m = 0.8 at 50 Hz, 20 kHz bipolar SPWM.
+    module refgen = SineRef<0.8, 50, 24>(ref, v_ref) [];
+    module mod    = pwm.SpwmBipolar<20k>(ref, s_a, s_b) [];
+
+    // 3. Ideal bridge.
+    module bridge = ideal.IdealHBridge<>(s_a, s_b) [vdc, gnd, bridge_a, bridge_b];
+
+    // 4. LC filter with the split capacitors and the common-mode damping leg
+    // (see h_bridge_inverter.hvr for why 68 Ohm to ground is not optional), and
+    // the 200 Ohm load. The inductors also keep every capacitor off the leg
+    // nodes, which an ideal leg requires.
+    L la<14m>() [bridge_a, out_p];
+    L lb<14m>() [bridge_b, out_n];
+    C<1.4u>()   [out_p, cm_mid];
+    C<1.4u>()   [out_n, cm_mid];
+    R<68>()     [cm_mid, gnd];
+    R<200>()    [out_p, out_n];
+}

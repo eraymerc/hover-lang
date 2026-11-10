@@ -25,26 +25,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
+import { collectExamples } from './examples.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, '..');
 const RUNTIME = path.join(REPO, 'runtime');
 const STDLIB = path.join(REPO, 'stdlib');
-
-// Examples offered in the page's picker. Kept to decks that finish in well
-// under a second natively: the browser runs them a few times slower, and a
-// playground that hangs on its own examples makes a poor first impression.
-const EXAMPLES = [
-  { id: 'rectifier', title: 'Full-bridge rectifier', file: 'examples/Diode/rectifier.hvr' },
-  { id: 'npn_amp', title: 'NPN common-emitter amplifier', file: 'examples/BJT/npn_amp.hvr' },
-  { id: 'pnp_amp', title: 'PNP amplifier', file: 'examples/BJT/pnp_amp.hvr' },
-  { id: 'bjt_opamp', title: 'Discrete BJT op-amp', file: 'examples/BJT/opamp.hvr' },
-  { id: 'nmos_amp', title: 'NMOS common-source amplifier', file: 'examples/MOSFET/nmos_amp.hvr' },
-  { id: 'cmos_inverter', title: 'CMOS inverter', file: 'examples/MOSFET/cmos_inverter.hvr' },
-  { id: 'led_ammeter', title: 'White LED with an ammeter', file: 'examples/Optoelectronics/leds/white_led_ammeter.hvr' },
-  { id: 'optocoupler', title: 'Optocoupler', file: 'examples/Optoelectronics/phototransistor/optocoupler.hvr' },
-  { id: 'pid', title: 'PID controller (10 kHz clock)', file: 'examples/PIDController/pid_controller.hvr' },
-];
 
 // Must match the flags the worker compiles sim.cpp with.
 // The floating-point and overflow rules match cxxOpt in runtimebuild.go (no FMA
@@ -194,9 +180,10 @@ async function main() {
   fs.writeFileSync(path.join(out, 'stdlib.json'), JSON.stringify(stdlib));
   log(`stdlib: ${Object.keys(stdlib).length} files`);
 
-  // Examples.
-  const examples = EXAMPLES.map((e) => ({ ...e, source: fs.readFileSync(path.join(REPO, e.file), 'utf8') }));
+  // Examples: every runnable deck under examples/ (see examples.mjs).
+  const examples = collectExamples(REPO, { log });
   fs.writeFileSync(path.join(out, 'examples.json'), JSON.stringify(examples));
+  log(`examples: ${examples.length} decks (${examples.filter((e) => e.slow).length} flagged slow)`);
 
   // Runtime: the archive, plus the one header sim.cpp includes.
   const archiveCache = path.join(HERE, 'build', 'libhover_runtime.a');

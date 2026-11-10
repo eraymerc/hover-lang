@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-40 -40 80 80" data-title="Averaged H-bridge"
+     fill="none" stroke="#000" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+  <style>.fill{fill:#000}.bold{stroke-width:3.2}.dash{stroke-dasharray:3 2.5}[data-pin]{fill:#d00;stroke:none}[data-logic]{fill:#c90;stroke:none}</style>
+  <rect x="-24" y="-24" width="48" height="48" class="bold"/>
+  <path d="M-24 24 L24 -24"/>
+  <path d="M-18 -15 H-6 M-18 -9 H-6"/>
+  <path d="M4 12 C7 5 10 5 12 12 C14 19 17 19 20 12"/>
+  <path d="M0 -40 V-24 M0 24 V40"/>
+  <path d="M24 -16 H40 M24 16 H40 M-40 -16 H-24 M-40 16 H-24"/>
+  <circle data-pin="dc_p" data-alias="p vdc dcp" data-dir="up" cx="0" cy="-40" r="2"/>
+  <circle data-pin="dc_n" data-alias="n dcn" data-dir="down" cx="0" cy="40" r="2"/>
+  <circle data-pin="a" data-dir="right" cx="40" cy="-16" r="2"/>
+  <circle data-pin="b" data-dir="right" cx="40" cy="16" r="2"/>
+  <circle data-logic="d_a" data-flow="in" data-dir="left" cx="-40" cy="-16" r="2"/>
+  <circle data-logic="d_b" data-flow="in" data-dir="left" cx="-40" cy="16" r="2"/>
+</svg>

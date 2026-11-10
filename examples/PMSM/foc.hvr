@@ -1,0 +1,336 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  HVR Testbench — Field-Oriented Speed Control of an Interior-PM Motor
+//  Validates: cascaded PI speed and dq-current loops, MTPA current sharing,
+//             Park/Clarke transforms in digital logic, min-max (SVPWM)
+//             sine-triangle modulation into an ideal bridge, and the
+//             <electromechanical> IPMSM with a load torque on its shaft port
+// ─────────────────────────────────────────────────────────────────────────────
+//
+//  An 8-pole interior-magnet machine (p = 4, Rs = 3 Ohm, Ld = 15.79 mH,
+//  Lq = 19.41 mH, flux_m = 95.5 mWb, J = 1.4e-3 kg·m², B = 50 µN·m·s/rad) is
+//  run up from standstill to 314 rad/s (3000 rpm) and then loaded. The
+//  controller is the textbook cascade, every block a digital module that runs
+//  once per solver step:
+//
+//      ω_ref ─► Speed PI ─► iq_cmd ─► MTPA ─► id_ref, iq_ref
+//                  ▲                               │
+//                  ω                               ▼
+//                  │         id, iq ◄── Park ◄── dq current PIs ─► vd, vq
+//                  │                                   │
+//                  │                          inverse Park/Clarke
+//                  │                                   ▼
+//               IPMSM ◄── bridge ±310 V ◄── 20 kHz SVPWM ◄── va*, vb*, vc*
+//                  │
+//                shaft ── load torque (current source, N·m)
+//
+//    - Speed PI (Kp = 0.1727 A·s/rad, Ki = 6.108 A/rad) turns the speed error
+//      into a torque-producing current command, clamped to ±10 A. With
+//      Kt ≈ 1.5·p·flux_m = 0.573 N·m/A the loop crosses over near 70 rad/s.
+//    - MTPA: an IPMSM (Lq > Ld) makes reluctance torque 1.5·p·(Ld−Lq)·id·iq
+//      from a negative id. For a given |i| the torque is largest at
+//          id = ψ/(2ΔL) − sqrt((ψ/(2ΔL))² + iq²),   ΔL = Lq − Ld,
+//      which is what MTPA_Controller computes from iq_cmd.
+//    - Current PIs on id and iq (Ki/Kp = Rs/L: the PI zero cancels each
+//      axis's R-L pole, about a 1 kHz closed loop) give vd, vq, rotated back
+//      to three phase references with the rotor angle the motor reports
+//      (an ideal encoder).
+//    - The modulator adds the min-max zero sequence to the references (the
+//      carrier-based equivalent of space-vector PWM) and compares them with
+//      a 20 kHz triangle; the bridge is three ideal ±310 V sources to ground.
+//      The motor's star point floats, so only the line-to-line differences
+//      reach the windings.
+//
+//  ── The run ─────────────────────────────────────────────────────────────────
+//
+//      0 – 100 ms   speed reference ramps 0 → 314 rad/s (≈ 4.4 N·m to
+//                   accelerate J, so iq ≈ 7.5 A and MTPA pulls id ≈ −1.9 A)
+//      100 ms       ramp ends; the speed PI unwinds the acceleration torque
+//                   its integrator was holding, and the speed overshoots
+//      200 ms       a 3 N·m load torque steps onto the shaft; the speed dips
+//                   and the PI integrator restores 314 rad/s with iq ≈ 5 A
+//      300 ms       end
+//
+//  Plot main.omega against main.omega_ref, and main.motor_i_d with
+//  main.motor_i_q: id goes negative exactly when torque is asked for, which
+//  is MTPA at work. main.torque_em is the electromagnetic torque. The phase
+//  currents are locals of the motor model: add main.motor_pmsm.m.i_a (and
+//  .i_b, .i_c) to .save to see them.
+//
+//  ── Expected result ─────────────────────────────────────────────────────────
+//
+//  Accelerating J at 3140 rad/s² takes 4.40 N·m. The speed PI starts from
+//  an empty integrator, so the speed lags the ramp by up to 27.7 rad/s (at
+//  20 ms, iq peaking at 8.6 A) and catches it at 93 ms; Te then sits at
+//  4.46 N·m with iq ≈ 7.3 A and id ≈ −1.8 A (MTPA predicts −1.83 A for that
+//  iq). Over 30–95 ms the means are iq 7.98 A, id −2.15 A, Te 4.95 N·m.
+//
+//  Ramp end: peak 341.5 rad/s at 122 ms (27.5 rad/s, 8.8 % overshoot — a PI
+//  speed loop following a ramp has to discharge its integrator), back within
+//  ±1 rad/s of 314 by 182 ms. iq falls through zero to about −1.5 A
+//  (braking) at 140 ms while the integrator discharges.
+//
+//  Load step: the speed dips to 293.7 rad/s at 221 ms (−20.3 rad/s) and is
+//  back within ±1 rad/s by 280 ms, within ±0.5 rad/s by 284 ms. It settles
+//  with iq ≈ 5.2 A, id ≈ −1.0 A (MTPA: −1.00 A) and Te ≈ 3.0 N·m — the load
+//  plus B·ω = 16 mN·m. The PWM ripple on id and iq is about 0.2 A peak-peak.
+//
+//  The bias-point solve at t = 0 reports OP FAILED: the PWM starts with all
+//  three legs at +310 V, above what the source-stepping DC solve currently
+//  reaches. The transient is unaffected — it starts from rest, which is the
+//  state this run wants.
+//
+//  ── Cost ────────────────────────────────────────────────────────────────────
+//
+//  A 20 kHz PWM resolved at a 1 µs ceiling, with .zcd placing every edge, is
+//  about a million steps per simulated second, and every step is a CSV row:
+//  this run is ~320k steps, ~6 s native and a ~25 MB CSV. The mechanical
+//  time constants are tens of ms, so the deck is deliberately short and its
+//  speed ramp steep (100 ms rather than the 500 ms of the deck it came from):
+//  the same controller, gains and modulator, compressed in time. Each .save
+//  column costs about 4 MB. A 2 µs ceiling halves the steps and the CSV and
+//  moves ω by < 0.1 rad/s and id, iq by < 0.15 A; 5 µs starts to change the
+//  controller's sampling visibly (0.6 rad/s, 0.45 A).
+
+.save(main.omega, main.omega_ref,
+      main.motor_i_d, main.motor_i_q,
+      main.torque_em);
+
+.tran(0, 300m, 1u);
+.solver(ndf2);
+.zcd;          // places every PWM edge and the load step exactly
+
+from <math> import sin, cos;
+from <electromechanical> import IPMSM;
+
+// Unit triangle carrier in [-1, 1] at frequency freq.
+func double triangleWave(double freq) {
+    double T = 1.0 / freq;
+    double t = time % T;
+    double result = 0;
+    if (t < T / 2.0) {
+        result = (4.0 * t / T) - 1.0;
+    } else {
+        result = 3.0 - (4.0 * t / T);
+    }
+    return result;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  REFERENCES AND LOAD (digital)
+// ═══════════════════════════════════════════════════════════════
+
+// Speed reference: a linear ramp from 0 to w_final over t_ramp, then constant.
+digital module reference_generator<double w_final, double t_ramp>
+    (output double reference)[]
+{
+    reference = w_final;
+    if (time < t_ramp) {
+        reference = w_final / t_ramp * time;
+    }
+}
+
+// Load torque on the shaft, N·m: 0 until t_step, then T_step. It drives a
+// current source from shaft to ground (1 A = 1 N·m drawn from the rotor).
+digital module LoadStep<double T_step, double t_step>
+    (output double t_load)[]
+{
+    t_load = 0;
+    if (time >= t_step) {
+        t_load = T_step;
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  SPEED LOOP (digital)
+// ═══════════════════════════════════════════════════════════════
+
+// PI on the speed error; the output is the torque-producing current command,
+// clamped to ±10 A. The integrator itself is not clamped.
+digital module SpeedController<double Kp_s, double Ki_s>
+    (input double omega_ref, input double omega, output double iq_ref)[]
+{
+    double err_omega = omega_ref - omega;
+    state double int_omega = 0;
+    double iq_cmd = Kp_s * err_omega + Ki_s * int_omega;
+    int_omega = int_omega + err_omega * dt;
+    if (iq_cmd > 10.0) { iq_cmd = 10.0; }
+    if (iq_cmd < -10.0) { iq_cmd = -10.0; }
+    iq_ref = iq_cmd;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  MAXIMUM TORQUE PER AMPERE (digital)
+// ═══════════════════════════════════════════════════════════════
+
+digital module MTPA_Controller<double Ld, double Lq, double flux_m>
+    (input double iq_cmd, output double id_ref, output double iq_ref)[]
+{
+    // In an IPMSM Lq > Ld, so the difference ΔL is taken positive.
+    double delta_L = Lq - Ld;
+
+    // MTPA: the d-axis current that goes with the commanded iq.
+    double term1 = flux_m / (2.0 * delta_L);
+    double term2 = ((term1 * term1) + (iq_cmd * iq_cmd)) ** 0.5;
+
+    // id is always zero or negative.
+    id_ref = term1 - term2;
+
+    // iq passes through from the speed controller.
+    iq_ref = iq_cmd;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  CURRENT LOOPS + INVERSE PARK / CLARKE (digital)
+// ═══════════════════════════════════════════════════════════════
+
+digital module FOC_controller<double Kp_d, double Ki_d, double Kp_q, double Ki_q, double p>
+    (input double id, input double iq, input double theta,
+     input double iq_ref, input double id_ref,
+     output double ref_a, output double ref_b, output double ref_c)[]
+{
+    // PI errors and integrators
+    state double err_id = 0;
+    state double err_iq = 0;
+    state double int_id = 0;
+    state double int_iq = 0;
+
+    err_id = id_ref - id;
+    err_iq = iq_ref - iq;
+
+    // PI outputs: the dq voltage commands
+    double Vd = Kp_d * err_id + Ki_d * int_id;
+    double Vq = Kp_q * err_iq + Ki_q * int_iq;
+
+    // Integrators
+    int_id = int_id + err_id * dt;
+    int_iq = int_iq + err_iq * dt;
+
+    // Clamp the q integrator (the bridge is ±310 V)
+    if (int_iq > 310.0) {
+        int_iq = 310.0;
+    }
+    if (int_iq < -310.0) {
+        int_iq = -310.0;
+    }
+
+    // Inverse Park: dq → αβ, at the measured rotor angle
+    double Valpha = Vd * cos(theta) - Vq * sin(theta);
+    double Vbeta  = Vd * sin(theta) + Vq * cos(theta);
+
+    // Inverse Clarke: αβ → abc
+    ref_a = Valpha;
+    ref_b = -0.5 * Valpha + ((3**0.5)/2) * Vbeta;
+    ref_c = -0.5 * Valpha - ((3**0.5)/2) * Vbeta;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  MODULATOR (digital) AND BRIDGE (analog)
+// ═══════════════════════════════════════════════════════════════
+
+digital module PWM_generator_3phase<double carrier, double vdc>
+    (input double ref_a, input double ref_b, input double ref_c,
+     output double va, output double vb, output double vc)[]
+{
+    // ── 1. Min-max (zero-sequence) injection ──
+    double v_max = ref_a;
+    if (ref_b > v_max) { v_max = ref_b; }
+    if (ref_c > v_max) { v_max = ref_c; }
+
+    double v_min = ref_a;
+    if (ref_b < v_min) { v_min = ref_b; }
+    if (ref_c < v_min) { v_min = ref_c; }
+
+    // Common-mode offset; adding it to every phase turns sine PWM into the
+    // SVPWM-equivalent "saddle" references.
+    double v_offset = -0.5 * (v_max + v_min);
+
+    double svpwm_a = ref_a + v_offset;
+    double svpwm_b = ref_b + v_offset;
+    double svpwm_c = ref_c + v_offset;
+
+    // ── 2. Normalise to the carrier's ±1 ──
+    // With the zero sequence, mod_index can go to 2/sqrt(3) = 1.155
+    // without distortion.
+    double mod_index = 1.0;
+    svpwm_a = (mod_index * svpwm_a) / vdc;
+    svpwm_b = (mod_index * svpwm_b) / vdc;
+    svpwm_c = (mod_index * svpwm_c) / vdc;
+
+    // ── 3. Compare with one shared triangle carrier ──
+    double carrierWave = triangleWave(carrier);
+
+    if (svpwm_a > carrierWave) { va = 1; } else { va = -1; }
+    if (svpwm_b > carrierWave) { vb = 1; } else { vb = -1; }
+    if (svpwm_c > carrierWave) { vc = 1; } else { vc = -1; }
+}
+
+// Ideal three-phase bridge: each leg a voltage source of ±310 V to the common
+// ground, following its PWM signal (±1).
+analog module Inverter_3phase<>
+    (input double in_a, input double in_b, input double in_c, input double vdc)
+    [wire va, wire vb, wire vc, wire common_ground]
+{
+    double a = in_a * 310;
+    double b = in_b * 310;
+    double c = in_c * 310;
+
+    voltage_source<>(a)[va, common_ground];
+    voltage_source<>(b)[vb, common_ground];
+    voltage_source<>(c)[vc, common_ground];
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  TOP LEVEL
+// ═══════════════════════════════════════════════════════════════
+
+module main<>()[]
+{
+    wire va, vb, vc;
+    wire shaft;                 // V(shaft) = ωm in rad/s, current = torque in N·m
+
+    state double omega = 0;
+    state double omega_ref = 0;
+    state double iq_ref = 0;
+    state double iq_cmd = 0;
+    state double id_ref = 0;
+    state double theta_e = 0;
+
+    state double signal_va = 0;
+    state double signal_vb = 0;
+    state double signal_vc = 0;
+
+    state double motor_i_d = 0;
+    state double motor_i_q = 0;
+    state double torque_em = 0;
+    state double t_load = 0;
+
+    state double ref_a = 0;
+    state double ref_b = 0;
+    state double ref_c = 0;
+
+    module omegaGen = reference_generator<314, 100m>(omega_ref)[];
+
+    module speed = SpeedController<0.1727, 6.108>(omega_ref, omega, iq_cmd)[];
+
+    module mtpa = MTPA_Controller<15.79m, 19.41m, 95.5m>(iq_cmd, id_ref, iq_ref)[];
+
+    module foc = FOC_controller<99.21, 18849.5, 121.96, 18849.5, 4>
+                     (motor_i_d, motor_i_q, theta_e, iq_ref, id_ref,
+                      ref_a, ref_b, ref_c)[];
+
+    module generator = PWM_generator_3phase<20k, 310>
+                           (ref_a, ref_b, ref_c, signal_va, signal_vb, signal_vc)[];
+
+    module inverter = Inverter_3phase<>(signal_va, signal_vb, signal_vc, 310)[va, vb, vc, gnd];
+
+    //                    Rs   Ld      Lq      flux_m p  J       B    theta0
+    module motor_pmsm = IPMSM<3.0, 15.79m, 19.41m, 95.5m, 4, 0.0014, 50u, 0>
+                            (omega, motor_i_d, motor_i_q, theta_e, torque_em)
+                            [va, vb, vc, shaft];
+
+    // ── Load ── 3 N·m drawn from the shaft from t = 200 ms on. Not part of
+    // the deck this example was ported from, whose motor model had no shaft
+    // and a hard-wired zero load; delete these two lines for a free shaft.
+    module load = LoadStep<3.0, 200m>(t_load)[];
+    current_source<>(t_load)[shaft, gnd];
+}

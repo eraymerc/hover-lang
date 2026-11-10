@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 28" data-title="Carrier PWM modulator"
+     fill="none" stroke="#000" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+  <style>.fill{fill:#000}.bold{stroke-width:3.2}.dash{stroke-dasharray:3 2.5}[data-pin]{fill:#d00;stroke:none}[data-logic]{fill:#c90;stroke:none}</style>
+  <!-- Header icon (no pins: the modulators are digital, logic ports only):
+       a triangle carrier above the pulse train it cuts. -->
+  <rect x="8" y="3" width="32" height="22"/>
+  <path d="M11 13 L16 6 L21 13 L26 6 L31 13 L36 6" class="dash"/>
+  <path d="M11 22 H14 V16 H18 V22 H24 V16 H28 V22 H34 V16 H37"/>
+</svg>

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-32 -32 56 64" data-title="Ron/Roff switch"
+     fill="none" stroke="#000" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+  <style>.fill{fill:#000}.bold{stroke-width:3.2}.dash{stroke-dasharray:3 2.5}[data-pin]{fill:#d00;stroke:none}[data-logic]{fill:#c90;stroke:none}</style>
+  <!-- Gate-controlled resistor: Ron closed, Roff open. -->
+  <path d="M0 -32 V-12 M0 12 V32"/>
+  <circle cx="0" cy="-12" r="2"/>
+  <circle cx="0" cy="12" r="2"/>
+  <path d="M0 12 L-12 -10"/>
+  <path d="M-32 0 H-6.55" class="dash" data-if-pin="g"/>
+  <circle data-pin="p" data-alias="d c drain collector" data-dir="up" cx="0" cy="-32" r="2"/>
+  <circle data-pin="n" data-alias="s e source emitter" data-dir="down" cx="0" cy="32" r="2"/>
+  <circle data-logic="g" data-alias="gate" data-flow="in" data-dir="left" cx="-32" cy="0" r="2"/>
+</svg>

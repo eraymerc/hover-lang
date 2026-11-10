@@ -1,117 +1,209 @@
-// sin/cos in the Park transform below. Required now that functions resolve
-// against the declaring file's own imports rather than the entry file's —
-// this file used to work only because every circuit that instantiated it
-// happened to import math itself.
+// sin/cos for the Park transform. Functions resolve against this file's own
+// imports, not the consumer's, so the import has to be here.
 from <math> import sin, cos;
 
-analog module PMSM<double Rs, double Ld, double Lq, double flux_m, double p, double J, double B>
-    (output double omega_m_out, output double i_d_out, output double i_q_out, output double theta_e_out)
-    [wire va, wire vb, wire vc] // Girişler: Artık va, vb, vc yok. Vd ve Vq var.
+// ─────────────────────────────────────────────────────────────────────────────
+//  PMSM — permanent-magnet synchronous machine, dq model with a shaft port
+//
+//  The general salient-pole machine. Ld != Lq (normally Lq > Ld) is an
+//  interior-magnet machine (IPMSM), with reluctance torque; Ld == Lq is a
+//  surface-magnet machine (SPMSM), with magnet torque only. The two wrappers
+//  IPMSM and SPMSM in this directory are the same model under those names.
+//
+//      va ──┐                              ┌─────────────────────┐
+//      vb ──┤ star, isolated neutral       │ C<J>   B·ω    T_em  │── shaft
+//      vc ──┘ (no zero-sequence path)      └─────────────────────┘
+//
+//  Electrical, in the rotor (dq) frame, d axis on the magnet:
+//
+//      vd = Rs·id + Ld·did/dt − ωe·Lq·iq
+//      vq = Rs·iq + Lq·diq/dt + ωe·(Ld·id + flux_m)
+//      ωe = p·ωm,   θe = θ0 + ∫ωe dt
+//
+//  Each axis is a voltage source in parallel with its inductor, driven with
+//  vd − Rs·id − ed (and likewise for q), the axis current being the
+//  inductor's own branch current — so Rs = 0 is allowed.
+//
+//  Transforms are amplitude-invariant (Clarke 2/3 scaling): a balanced set of
+//  phase currents of peak Î gives |id + j·iq| = Î, and the same for voltages.
+//  Power is therefore P = 1.5·(vd·id + vq·iq), which is where the 1.5 in the
+//  torque comes from:
+//
+//      T_em = 1.5·p·(flux_m·iq + (Ld − Lq)·id·iq)
+//
+//  Terminals. The windings are star-connected with an isolated neutral and no
+//  neutral pin: the three phase currents always sum to zero, and the neutral
+//  voltage is taken as the mean of va, vb, vc. Each terminal is a current
+//  source to ground, so
+//    - no phase may be left completely open (a node with only a current
+//      source on it is singular): a phase that is to carry no current still
+//      needs a path, e.g. a large resistor;
+//    - the machine gives the terminals no reference of its own: whatever
+//      drives them must tie them to ground somewhere (an inverter's DC link,
+//      grounded sources, a grounded star point of a load).
+//
+//  Shaft. The mechanics use the circuit analogy
+//
+//      V(shaft) = ωm, mechanical speed in rad/s     (1 V = 1 rad/s)
+//      current  = torque in N·m                     (1 A = 1 N·m)
+//      C = inertia (kg·m²),  conductance = viscous friction (N·m·s/rad)
+//
+//  so the rotor's own J and B sit inside the model, and the electromagnetic
+//  torque is a current source into the shaft node. On the shaft node:
+//
+//      J·dωm/dt = T_em − B·ωm − T_shaft
+//
+//  where T_shaft is the current that leaves the model through the shaft pin
+//  into whatever is attached — the torque the machine delivers to its load.
+//  Motoring torque is positive (it accelerates ωm in the positive direction).
+//  A current that enters the model through the shaft pin is a torque driving
+//  the rotor (a prime mover). External loads are ordinary elements from shaft
+//  to ground:
+//
+//      C<J_load>()                [shaft, gnd];  // load inertia
+//      R<1/B_load>()              [shaft, gnd];  // viscous friction
+//      current_source<T_L>()      [shaft, gnd];  // constant load torque T_L
+//      current_source<>(t_l)      [shaft, gnd];  // driven load torque
+//      voltage_source vw<>(w_cmd) [shaft, gnd];  // impose the speed
+//
+//  and two machines on one shaft node share it, inertias and torques adding.
+//  The torque a speed source absorbs is I(vw) — positive when the machine
+//  drives it, negative when it drives the machine as a generator. (Start an
+//  imposed speed from 0 and ramp it: a fixed nonzero source across the rotor
+//  inertia at t = 0 has to charge it in one step, which the bias-point solve
+//  reports as not converged, although the transient then runs correctly.
+//  The operating-point solve also cannot yet reach a node above about 250 V,
+//  i.e. a shaft above about 250 rad/s at t = 0 with .op.)
+//
+//  Example — a machine driving extra inertia, viscous friction and a
+//  constant 0.2 N·m load:
+//
+//      wire a, b, c, shaft;
+//      state double w = 0, id = 0, iq = 0, th = 0, te = 0;
+//      module m = PMSM<0.5, 2m, 3m, 0.05, 4, 1e-4, 1e-5, 0>
+//                     (w, id, iq, th, te)[a, b, c, shaft];
+//      C<5e-4>()             [shaft, gnd];   // load inertia, kg·m²
+//      R<2000>()             [shaft, gnd];   // load friction 5e-4 N·m·s/rad
+//      current_source<0.2>() [shaft, gnd];   // load torque, N·m
+//
+//  B = 0 is always fine (friction is a VCCS, not R<1/B>). J = 0 is fine when
+//  something else sets the speed — B > 0 (the speed then follows the torque
+//  algebraically), an attached inertia, or a speed source. With J = 0, B = 0
+//  and nothing on the shaft the rotor is massless and free: the shaft
+//  equation degenerates to T_em = 0 and the rotor snaps to whatever angle
+//  gives zero torque. That solves, but it is rarely the machine you meant.
+//
+//  Rotor angle. θe is the electrical angle of the d axis (the magnet's north
+//  pole) ahead of the phase-a axis; θ0 is its value at t = 0, so θ0 = 0 puts
+//  the magnet on phase a. θe = θ0 + idt(ωe): an integrator state of the
+//  solver, not a circuit node, so the operating point (.op) has θe = θ0
+//  exactly at any speed, and no node ever carries a large angle. It is never
+//  wrapped and grows without bound with the rotation. That is harmless: it
+//  only enters through sin and cos, and a double still resolves 2e-9 rad at
+//  θe = 1e7 rad (hours of rotation at thousands of rad/s).
+//
+//  Solver. Run it under a Newton solver — .solver(bdf2), ndf2 or
+//  trapezoidal. The default, euler_fixed, evaluates the model once per step
+//  from the previous solution, so the angle lags by ωe·dt and every dq
+//  quantity carries a first-order error (2 % of id at 400 rad/s electrical
+//  and dt = 10 µs, in testing); the Newton solvers match the analytic steady
+//  state to 1e-6.
+//
+//  Parameters
+//      Rs      stator resistance per phase, Ohm (0 allowed)
+//      Ld, Lq  d- and q-axis inductance, H (both > 0)
+//      flux_m  permanent-magnet flux linkage, Wb: the peak flux linked by one
+//              phase. Equals Ke/p with Ke the peak phase back-EMF constant in
+//              V·s/rad (mechanical); from a line-to-line RMS constant Ke_LL
+//              (V per rad/s), flux_m = Ke_LL·√2/(√3·p).
+//      p       number of pole PAIRS (an 8-pole machine has p = 4)
+//      J       rotor inertia, kg·m² (0 allowed — see above)
+//      B       rotor viscous friction, N·m·s/rad (0 allowed)
+//      theta0  initial electrical rotor angle θe(0), rad
+//
+//  Outputs (logic)
+//      omega_m_out  mechanical speed ωm, rad/s (= V(shaft))
+//      i_d_out      d-axis current, A
+//      i_q_out      q-axis current, A
+//      theta_e_out  electrical angle θe, rad (unwrapped)
+//      torque_out   electromagnetic torque T_em, N·m (before rotor friction)
+//
+//  Not modelled: magnetic saturation and the cross-coupling of Ld and Lq
+//  with current (both are constants), iron loss, cogging torque and
+//  harmonics in the back-EMF (the EMF is sinusoidal), temperature (Rs and
+//  flux_m are fixed), damper windings, and any zero-sequence path.
+// ─────────────────────────────────────────────────────────────────────────────
+
+analog module PMSM<double Rs, double Ld, double Lq, double flux_m, double p,
+                   double J, double B, double theta0>
+    (output double omega_m_out, output double i_d_out, output double i_q_out,
+     output double theta_e_out, output double torque_out)
+    [wire va, wire vb, wire vc, wire shaft]
 {
+    wire d1, q1;
 
-    wire d_r, d_l, q_r, q_l, omega_node, theta_e_node, vd, vq;
-    // ── Mekanik ve Açısal Dinamikler ───────────────────────────
-    // Eylemsizlik: J*d(omega_m)/dt <-> C*dV/dt
-    C<J>()[omega_node, gnd];
-    
-    // Sürtünme: B*omega_m <-> R = 1/B
-    R<1/B>()[omega_node, gnd];
+    // ── Mechanics, on the shaft node ────────────────────────────────────────
+    // Inertia J·dωm/dt is a capacitor; friction B·ωm a conductance B, written
+    // as a VCCS sensing its own terminals so that B = 0 is simply no current
+    // (R<1/B> would divide by zero).
+    C<J>()                   [shaft, gnd];
+    VCCS<B>()                [shaft, gnd, shaft, gnd];
 
-    double omega_m = V(omega_node);
-    double omega_e = p * omega_m; // Elektriksel hız
+    double omega_m = V(shaft);
+    double omega_e = p * omega_m;
 
-    // Elektriksel Açı (theta_e) İntegrasyonu
-    current_source<>(omega_e)[gnd, theta_e_node];
-    C<1.0>()[theta_e_node, gnd]; 
-    double theta_e = V(theta_e_node); 
-    theta_e_out = theta_e;
+    // ── Electrical angle: θe = θ0 + ∫ p·ωm dt ───────────────────────────────
+    double theta_e = theta0 + idt(omega_e);
+    double c_th = cos(theta_e);
+    double s_th = sin(theta_e);
 
-    double val_va = V(va);
-    double val_vb = V(vb);
-    double val_vc = V(vc); 
+    // ── Terminal voltages → dq (Clarke, amplitude-invariant, then Park) ─────
+    double v_n = (V(va) + V(vb) + V(vc)) / 3.0;   // isolated star point
+    double van = V(va) - v_n;
+    double vbn = V(vb) - v_n;
 
-    // Calculate neutral point voltage
-    double v_n = (val_va + val_vb + val_vc) / 3.0;
+    double v_alpha = van;
+    double v_beta  = (van + 2.0 * vbn) / (3.0**0.5);
 
-    // Phase-to-neutral voltages
-    double van = val_va - v_n;
-    double vbn = val_vb - v_n;
+    double v_d =  v_alpha * c_th + v_beta * s_th;
+    double v_q = -v_alpha * s_th + v_beta * c_th;
 
-    // Clarke Transform
-    double valpha = van;
-    double vbeta = (van + 2.0 * vbn) / (3.0**0.5);
+    // ── dq windings ─────────────────────────────────────────────────────────
+    // The axis currents are the inductors' branch currents.
+    double i_d = I(Ld_coil);
+    double i_q = I(Lq_coil);
 
+    double e_d = -omega_e * Lq * i_q;                  // speed voltage, d
+    double e_q =  omega_e * (Ld * i_d + flux_m);       // speed voltage, q
 
-    double val_vd = valpha * cos(theta_e) + vbeta * sin(theta_e);
-    double val_vq = -valpha * sin(theta_e) + vbeta * cos(theta_e);
-    voltage_source<>(val_vd)[vd, gnd];
-    voltage_source<>(val_vq)[vq, gnd];
+    // Ld·did/dt = vd − Rs·id − ed, and likewise for q.
+    double v_Ld = v_d - Rs * i_d - e_d;
+    double v_Lq = v_q - Rs * i_q - e_q;
+    voltage_source<>(v_Ld) [d1, gnd];
+    L Ld_coil<Ld>()        [d1, gnd];
+    voltage_source<>(v_Lq) [q1, gnd];
+    L Lq_coil<Lq>()        [q1, gnd];
 
-    // ── Akım Ölçümleri ─────────────────────────────────────────
-    // Döngüsel bağımlılığı önlemek için akımları direnç üzerinden ölçüyoruz
-    double i_d = (V(vd) - V(d_r)) / Rs;
-    double i_q = (V(vq) - V(q_r)) / Rs;
+    // ── dq currents → terminals (inverse Park, inverse Clarke) ─────────────
+    double i_alpha = i_d * c_th - i_q * s_th;
+    double i_beta  = i_d * s_th + i_q * c_th;
 
-    // Çıkışlara ata
-    i_d_out = i_d;
-    i_q_out = i_q;
+    double i_a = i_alpha;
+    double i_b = -0.5 * i_alpha + ((3.0**0.5) / 2.0) * i_beta;
+    double i_c = -0.5 * i_alpha - ((3.0**0.5) / 2.0) * i_beta;
 
-    // ── Ters Dönüşüm (DQ'dan ABC'ye Akım Çekme) ────────────────
-    
-    // 1. Ters Park Dönüşümü (DQ -> Alpha/Beta)
-    double ialpha = i_d * cos(theta_e) - i_q * sin(theta_e);
-    double ibeta  = i_d * sin(theta_e) + i_q * cos(theta_e);
+    // Motor convention: positive current flows into the terminal.
+    current_source<>(i_a) [va, gnd];
+    current_source<>(i_b) [vb, gnd];
+    current_source<>(i_c) [vc, gnd];
 
-    // 2. Ters Clarke Dönüşümü (Alpha/Beta -> ABC)
-    double i_a = ialpha;
-    double i_b = -0.5 * ialpha + ((3.0**0.5)/2.0) * ibeta;
-    double i_c = -0.5 * ialpha - ((3.0**0.5)/2.0) * ibeta;
+    // ── Electromagnetic torque, into the shaft ──────────────────────────────
+    double torque = 1.5 * p * (flux_m * i_q + (Ld - Lq) * i_d * i_q);
+    current_source<>(torque) [gnd, shaft];
 
-    // 3. Fiziksel pinlerden akım çek (va, vb, vc'den gnd'ye doğru)
-    current_source<>(i_a)[va, gnd];
-    current_source<>(i_b)[vb, gnd];
-    current_source<>(i_c)[vc, gnd];
-
-    // ── Elektrik (D ve Q Eksenleri Equivalent Devresi) ─────────
-    
-    // 1. Zıt EMK ve Çapraz Bağlaşma (Cross-Coupling) Etkileri
-    // D-Ekseni Zıt EMK'sı (Q ekseninin hızıyla oluşur)
-    double ed = -omega_e * Lq * i_q; 
-    
-    // Q-Ekseni Zıt EMK'sı (D ekseninin hızı ve Mıknatıs akısıyla oluşur)
-    double eq = (omega_e * Ld * i_d) + (omega_e * flux_m);
-
-    // 2. D-Ekseni Bobini Devresi
-    R<Rs>()[vd, d_r];
-    L<Ld>()[d_r, d_l];
-    voltage_source<>(ed)[d_l, gnd]; // Hıza bağlı gerilim düşümü
-
-    // 3. Q-Ekseni Bobini Devresi
-    R<Rs>()[vq, q_r];
-    L<Lq>()[q_r, q_l];
-    voltage_source<>(eq)[q_l, gnd]; // Hıza ve mıknatısa bağlı gerilim düşümü
-
-    // ── Elektromanyetik Tork Üretimi (IPMSM) ───────────────────
-    // 1.5 (Amplitude invariant transform katsayısı) * p * [Mıknatıs Torku + Relüktans Torku]
-    double torque = 1.5 * p * ((flux_m * i_q) + ((Ld - Lq) * i_d * i_q));
-    
-    // Yük Torku
-    double T_load = 0;
-    double k_load = 0.0015;  
-
-    //if(time > 0.8 && time < 1.2){
-    //    T_load = 3;
-    //}
-
-   // if (omega_m >= 0) {
-    //    T_load = k_load * omega_m * omega_m;
-    //} else {
-    //    T_load = -k_load * omega_m * omega_m;
-    //}
-
-    double total_torque = torque - T_load;
-    current_source<>(total_torque)[gnd, omega_node];
-
-    // Dönme hızını dışarı ver
     omega_m_out = omega_m;
+    i_d_out     = i_d;
+    i_q_out     = i_q;
+    theta_e_out = theta_e;
+    torque_out  = torque;
 }

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 32" data-title="Dead-time generator"
+     fill="none" stroke="#000" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+  <style>.fill{fill:#000}.bold{stroke-width:3.2}.dash{stroke-dasharray:3 2.5}[data-pin]{fill:#d00;stroke:none}[data-logic]{fill:#c90;stroke:none}</style>
+  <!-- Header icon (digital, logic ports only): a command s above the two gate commands,
+       each rising edge pushed back by the dead time. -->
+  <rect x="4" y="2" width="40" height="28"/>
+  <path d="M7 10 H14 V5 H30 V10 H41" class="dash"/>
+  <path d="M7 19 H18 V14 H30 V19 H41"/>
+  <path d="M7 23 H14 V28 H34 V23 H41"/>
+</svg>

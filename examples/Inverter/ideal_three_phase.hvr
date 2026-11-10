@@ -1,0 +1,87 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  HVR Testbench — Ideal-switch Three-Phase Inverter into a star RL load
+//  Validates: the three-phase switching-function bridge of
+//             <power/inverter/ideal>, min-max zero-sequence injection
+//             (carrier-based SVPWM) from <power/modulation/pwm> running past
+//             the sine-triangle limit, and the chopped DC-link current
+// ─────────────────────────────────────────────────────────────────────────────
+//
+//  A 48 V bus feeds a two-level three-phase bridge switching at 10 kHz into a
+//  balanced star load of 10 Ohm + 10 mH per phase with its neutral floating —
+//  the shape of a small motor drive with the machine replaced by its winding
+//  impedance. The modulator is Spwm3MinMax at m = 1.1.
+//
+//  ── Why m = 1.1 works ───────────────────────────────────────────────────────
+//
+//  Plain sine-triangle PWM is linear only up to m = 1: past that the reference
+//  leaves the carrier's [-1, 1] and pulses drop. Adding the common-mode signal
+//  v0 = -(max + min)/2 to all three references flattens their peaks by up to
+//  1 - sqrt(3)/2, so the linear range grows to m = 2/sqrt(3) = 1.155 — the
+//  same 15 % that space-vector PWM gains, and for the same reason (min-max
+//  injection IS centred SVPWM, written as a carrier comparison). v0 is common
+//  mode: it moves the floating neutral, V(main.n), and nothing else. The line
+//  voltages and the load currents are those of a 1.1 x sine.
+//
+//  ── Expected result ─────────────────────────────────────────────────────────
+//
+//  Phase voltage (to the load neutral) fundamental m*Vdc/2 = 26.4 V peak, line
+//  voltage sqrt(3)/2 * m * Vdc = 45.7 V peak. With |Z| = |10 + j*2*pi*50*10m|
+//  = 10.48 Ohm, each phase carries 2.519 A peak lagging by 17.4 degrees, and
+//  the load takes 3/2 * 2.519^2 * 10 = 95.2 W — which is also the mean of
+//  48 V * -I(main.vbus): the bus current is the chopped sum
+//  s_a*i_a + s_b*i_b + s_c*i_c, which steps at each of the six leg transitions
+//  per carrier period, and only its average is DC.
+//
+//  The carrier harmonic itself (10 kHz, and 20 kHz) is common mode — it shows
+//  in V(main.n), which steps between 0, 16, 32 and 48 V — and never reaches the
+//  floating-neutral load. What does reach it are the sidebands, 10 kHz +/- 100
+//  and +/- 200 Hz (9.4 V and 6.7 V in the line voltage) and 20 kHz +/- 50 and
+//  +/- 250 Hz: about 11 mA RMS of ripple on the 2.5 A sine, a current THD of
+//  0.64 %.
+
+.save(main.a, main.b, main.c, main.n, main.s_a, I(main.vbus),
+      I(main.la), I(main.lb), I(main.lc));
+.op;
+.tran(0, 40m, 2u);   // two 50 Hz cycles; the RL time constant is 1 ms
+.solver(ndf2);
+.zcd;                // places every PWM edge at its exact crossing time
+
+import <power/inverter/ideal> as ideal;
+import <power/modulation/pwm> as pwm;
+from <math> import sin;
+
+// Balanced three-phase reference, normalised to [-1, 1] per phase before
+// injection. Instantiated before the modulator, so it runs first each step.
+digital module ThreePhaseRef<double m, double f_out>
+    (output double ref_a, output double ref_b, output double ref_c) []
+{
+    double th = 2.0 * 3.14159265358979 * f_out * time;
+    ref_a = m * sin(th);
+    ref_b = m * sin(th - 2.09439510239320);
+    ref_c = m * sin(th + 2.09439510239320);
+}
+
+module main<>() []
+{
+    wire vdc, a, b, c, ra, rb, rc, n;
+    state double ref_a = 0, ref_b = 0, ref_c = 0;
+    state double s_a = 0, s_b = 0, s_c = 0;
+
+    // 1. DC bus.
+    voltage_source vbus<48>() [vdc, gnd];
+
+    // 2. Reference and modulator: m = 1.1 at 50 Hz, 10 kHz min-max PWM.
+    module refgen = ThreePhaseRef<1.1, 50>(ref_a, ref_b, ref_c) [];
+    module mod    = pwm.Spwm3MinMax<10k>(ref_a, ref_b, ref_c, s_a, s_b, s_c) [];
+
+    // 3. Ideal two-level bridge.
+    module bridge = ideal.IdealThreePhaseBridge<>(s_a, s_b, s_c) [vdc, gnd, a, b, c];
+
+    // 4. Star RL load, neutral floating. The inductors face the legs.
+    L la<10m>() [a, ra];
+    L lb<10m>() [b, rb];
+    L lc<10m>() [c, rc];
+    R<10>()     [ra, n];
+    R<10>()     [rb, n];
+    R<10>()     [rc, n];
+}

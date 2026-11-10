@@ -1,0 +1,25 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  SPMSM — surface permanent-magnet synchronous machine
+//
+//  PMSM with a single synchronous inductance Ls = Ld = Lq: magnets on the
+//  rotor surface see the same (air-like) reluctance on both axes, so there is
+//  no reluctance torque and
+//
+//      T_em = 1.5·p·flux_m·iq,
+//
+//  independent of id. Ls is the per-phase synchronous inductance — half the
+//  line-to-line inductance a data sheet usually quotes. Same outputs and
+//  ports as PMSM; see pmsm.hvr for the equations, units, the shaft convention
+//  and what is not modelled.
+// ─────────────────────────────────────────────────────────────────────────────
+
+module SPMSM<double Rs, double Ls, double flux_m, double p,
+             double J, double B, double theta0>
+    (output double omega_m_out, output double i_d_out, output double i_q_out,
+     output double theta_e_out, output double torque_out)
+    [wire va, wire vb, wire vc, wire shaft]
+{
+    module m = PMSM<Rs, Ls, Ls, flux_m, p, J, B, theta0>
+                   (omega_m_out, i_d_out, i_q_out, theta_e_out, torque_out)
+                   [va, vb, vc, shaft];
+}

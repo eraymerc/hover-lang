@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-80 -80 160 160" data-title="Switched three-phase inverter"
+     fill="none" stroke="#000" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+  <style>.fill{fill:#000}.bold{stroke-width:3.2}.dash{stroke-dasharray:3 2.5}[data-pin]{fill:#d00;stroke:none}[data-logic]{fill:#c90;stroke:none}</style>
+  <!-- Two-level bridge drawn as its switches: each leg is a top and a bottom switch between the DC rails, each with an anti-parallel diode and its own gate command (dashed), output taken from the midpoint. -->
+  <path d="M-80 -48 H56 M-80 48 H56"/>
+  <path d="M-48 -48 V-40 M-48 -16 V16 M-48 40 V48"/>
+  <circle cx="-48" cy="-40" r="2"/>
+  <circle cx="-48" cy="-16" r="2"/>
+  <circle cx="-48" cy="16" r="2"/>
+  <circle cx="-48" cy="40" r="2"/>
+  <path d="M-48 -16 L-60 -38 M-48 40 L-60 18"/>
+  <path d="M-40 -48 V48"/>
+  <polygon points="-44,-19 -36,-19 -40,-27" class="fill"/>
+  <path d="M-44 -27 H-36"/>
+  <polygon points="-44,29 -36,29 -40,21" class="fill"/>
+  <path d="M-44 21 H-36"/>
+  <circle cx="-40" cy="0" r="2.4" class="fill"/>
+  <path d="M-56 -80 V-30.67" class="dash"/>
+  <path d="M-72 -80 V29 H-54" class="dash"/>
+  <circle cx="-40" cy="-48" r="2.4" class="fill"/>
+  <circle cx="-40" cy="48" r="2.4" class="fill"/>
+  <circle cx="-48" cy="-48" r="2.4" class="fill"/>
+  <circle cx="-48" cy="48" r="2.4" class="fill"/>
+  <path d="M-48 0 H-32 V44 A4 4 0 0 1 -32 52 V80"/>
+  <circle cx="-48" cy="0" r="2.4" class="fill"/>
+  <path d="M0 -48 V-40 M0 -16 V16 M0 40 V48"/>
+  <circle cx="0" cy="-40" r="2"/>
+  <circle cx="0" cy="-16" r="2"/>
+  <circle cx="0" cy="16" r="2"/>
+  <circle cx="0" cy="40" r="2"/>
+  <path d="M0 -16 L-12 -38 M0 40 L-12 18"/>
+  <path d="M8 -48 V48"/>
+  <polygon points="4,-19 12,-19 8,-27" class="fill"/>
+  <path d="M4 -27 H12"/>
+  <polygon points="4,29 12,29 8,21" class="fill"/>
+  <path d="M4 21 H12"/>
+  <circle cx="8" cy="0" r="2.4" class="fill"/>
+  <path d="M-8 -80 V-30.67" class="dash"/>
+  <path d="M-24 -80 V29 H-6" class="dash"/>
+  <circle cx="8" cy="-48" r="2.4" class="fill"/>
+  <circle cx="8" cy="48" r="2.4" class="fill"/>
+  <circle cx="0" cy="-48" r="2.4" class="fill"/>
+  <circle cx="0" cy="48" r="2.4" class="fill"/>
+  <path d="M0 0 H16 V44 A4 4 0 0 1 16 52 V80"/>
+  <circle cx="0" cy="0" r="2.4" class="fill"/>
+  <path d="M48 -48 V-40 M48 -16 V16 M48 40 V48"/>
+  <circle cx="48" cy="-40" r="2"/>
+  <circle cx="48" cy="-16" r="2"/>
+  <circle cx="48" cy="16" r="2"/>
+  <circle cx="48" cy="40" r="2"/>
+  <path d="M48 -16 L36 -38 M48 40 L36 18"/>
+  <path d="M56 -48 V48"/>
+  <polygon points="52,-19 60,-19 56,-27" class="fill"/>
+  <path d="M52 -27 H60"/>
+  <polygon points="52,29 60,29 56,21" class="fill"/>
+  <path d="M52 21 H60"/>
+  <circle cx="56" cy="0" r="2.4" class="fill"/>
+  <path d="M40 -80 V-30.67" class="dash"/>
+  <path d="M24 -80 V29 H42" class="dash"/>
+  <circle cx="48" cy="-48" r="2.4" class="fill"/>
+  <circle cx="48" cy="48" r="2.4" class="fill"/>
+  <path d="M48 0 H64 V80"/>
+  <circle cx="48" cy="0" r="2.4" class="fill"/>
+  <circle data-pin="dc_p" data-alias="p dcp vdc" data-dir="left" cx="-80" cy="-48" r="2"/>
+  <circle data-pin="dc_n" data-alias="n dcn" data-dir="left" cx="-80" cy="48" r="2"/>
+  <circle data-pin="a" data-alias="u" data-dir="down" cx="-32" cy="80" r="2"/>
+  <circle data-pin="b" data-alias="v" data-dir="down" cx="16" cy="80" r="2"/>
+  <circle data-pin="c" data-alias="w" data-dir="down" cx="64" cy="80" r="2"/>
+  <circle data-logic="g_a_lo" data-flow="in" data-dir="up" cx="-72" cy="-80" r="2"/>
+  <circle data-logic="g_a_hi" data-flow="in" data-dir="up" cx="-56" cy="-80" r="2"/>
+  <circle data-logic="g_b_lo" data-flow="in" data-dir="up" cx="-24" cy="-80" r="2"/>
+  <circle data-logic="g_b_hi" data-flow="in" data-dir="up" cx="-8" cy="-80" r="2"/>
+  <circle data-logic="g_c_lo" data-flow="in" data-dir="up" cx="24" cy="-80" r="2"/>
+  <circle data-logic="g_c_hi" data-flow="in" data-dir="up" cx="40" cy="-80" r="2"/>
+</svg>

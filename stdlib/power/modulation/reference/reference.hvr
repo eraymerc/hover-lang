@@ -1,0 +1,101 @@
+from <math> import sin;
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Sine duty references for voltage-source inverters
+//
+//  Open-loop generators that turn a frequency, a modulation index and a phase
+//  into per-leg duty cycles in [0, 1]. The outputs are duties, not voltages,
+//  so they drive the averaged bridges of <power/inverter/averaged> directly;
+//  a PWM stage that compares a duty against a carrier takes them just as well.
+//
+//  Parameters, common to both:
+//    f      output frequency, Hz
+//    m      modulation index: the fundamental of each pole voltage has
+//           amplitude m·Vdc/2 (single-phase bridge output: m·Vdc)
+//    phase  phase of the reference at t = 0, in DEGREES
+//
+//  Timing. The reference is evaluated at time + dt — the end of the step
+//  being solved, the time point an implicit integrator solves for, which is
+//  where SPICE evaluates a SIN source too. A digital module runs at the start
+//  of the step, so evaluating at plain `time` would hand the bridge a duty
+//  one step stale (a delay of one .tran step, a phase lag of 360°·f·dt).
+//  For that reason these modules are meant to run unclocked: bound to a
+//  .clock, dt is the clock period and the output would lead by one tick.
+//  For a sampled (firmware) reference, write the few lines yourself with a
+//  plain `time`.
+//
+//  Overmodulation. Duties are clamped to [0, 1], so an index past the linear
+//  range (m > 1, or m > 2/√3 with third-harmonic injection) clips the
+//  reference at the rails — the same thing a carrier comparator does.
+//
+//  Not modelled: anything closed-loop (no current or voltage feedback, no
+//  dead-time compensation), and the carrier itself — a duty is a local
+//  average, see the averaged bridge's header for what that leaves out.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ═══════════════════════════════════════════════════════════════
+//  Single phase, bipolar
+// ═══════════════════════════════════════════════════════════════
+//
+//      d_a = 0.5 + 0.5·m·sin(θ)        θ = 2π·f·t + phase
+//      d_b = 0.5 − 0.5·m·sin(θ)
+//
+//  Into an H-bridge, V(a) − V(b) = (d_a − d_b)·Vdc = m·Vdc·sin(θ), on a
+//  constant common mode of Vdc/2. Linear for m ≤ 1.
+
+digital module SineDuty1Ph<double f, double m, double phase>
+    (output double d_a, output double d_b) []
+{
+    double th = 2.0 * 3.14159265358979 * f * (time + dt)
+              + phase * 3.14159265358979 / 180.0;
+    double s = 0.5 * m * sin(th);
+
+    double da = 0.5 + s;
+    double db = 0.5 - s;
+    if (da < 0.0) { da = 0.0; }
+    if (da > 1.0) { da = 1.0; }
+    if (db < 0.0) { db = 0.0; }
+    if (db > 1.0) { db = 1.0; }
+    d_a = da;
+    d_b = db;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  Three phase, with optional third-harmonic injection
+// ═══════════════════════════════════════════════════════════════
+//
+//      d_x = 0.5 + 0.5·m·( sin(θ_x) + k3·sin(3θ) )
+//      θ_a = θ,  θ_b = θ − 120°,  θ_c = θ + 120°   (positive sequence a-b-c)
+//
+//  k3 is the injected third harmonic relative to the fundamental:
+//    k3 = 0      plain sine-triangle; linear up to m = 1.
+//    k3 = 1/6    the classic choice. The peak of sin θ + (1/6)·sin 3θ is
+//                √3/2 instead of 1, so m reaches 2/√3 ≈ 1.155 before a
+//                duty touches 0 or 1 — 15.5 % more output voltage from the
+//                same DC link, the same headroom space-vector PWM gives.
+//    k3 = 1/4    minimum output-current ripple instead (linear to m ≈ 1.12).
+//  sin 3θ is the same in all three phases (zero sequence), so it moves the
+//  three poles together and vanishes from every line-to-line voltage and
+//  from the currents of a load with an isolated neutral. Line-to-line
+//  amplitude: √3·m·Vdc/2 for either k3.
+
+digital module SineDuty3Ph<double f, double m, double phase, double k3>
+    (output double d_a, output double d_b, output double d_c) []
+{
+    double th = 2.0 * 3.14159265358979 * f * (time + dt)
+              + phase * 3.14159265358979 / 180.0;
+    double third = k3 * sin(3.0 * th);
+
+    double da = 0.5 + 0.5 * m * (sin(th) + third);
+    double db = 0.5 + 0.5 * m * (sin(th - 2.09439510239320) + third);
+    double dc = 0.5 + 0.5 * m * (sin(th + 2.09439510239320) + third);
+    if (da < 0.0) { da = 0.0; }
+    if (da > 1.0) { da = 1.0; }
+    if (db < 0.0) { db = 0.0; }
+    if (db > 1.0) { db = 1.0; }
+    if (dc < 0.0) { dc = 0.0; }
+    if (dc > 1.0) { dc = 1.0; }
+    d_a = da;
+    d_b = db;
+    d_c = dc;
+}
