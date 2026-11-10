@@ -50,8 +50,9 @@ void api_update_solution(API *api, const Eigen::VectorXd &solution);
 
 // Make a trial point visible to V()/I() reads WITHOUT advancing the
 // Newton-iteration history. Sets last_solution but leaves prev_solution
-// untouched. Used by internal PROBES — the numerical Jacobian's per-node
-// perturbation (vm_compute_jacobian) and the trust region's residual
+// untouched. Used by internal PROBES — the Jacobian (its AD evaluation, or the
+// finite-difference per-node perturbation; vm_compute_jacobian) and the trust
+// region's residual
 // scoring (residual_at) — which must evaluate device currents at a trial
 // point without that point being mistaken for "the previous Newton
 // iterate" by nr_prev(). Only api_update_solution advances prev_solution,

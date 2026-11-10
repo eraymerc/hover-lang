@@ -106,6 +106,10 @@ struct VM {
     // `state double x = V(node);` and the like — at t = 0 (vm_boot). Null when
     // the deck has none.
     void (*state_init)(VM *vm) = nullptr;
+    // The compiler-differentiated copy of phase_analog (hvr::Dual): fills
+    // jacobian_scratch directly. Null when the deck's analog code could not be
+    // differentiated (codegen/autodiff.go) — the Jacobian is then numerical.
+    void (*phase_jacobian)(VM *vm) = nullptr;
 
     // save_state_vars / restore_state_vars copy every Hover `state`
     // variable's current C++ global value into/from vm->state_vals, by the
@@ -155,6 +159,7 @@ struct VM {
 
     // Pre-allocated Jacobian scratch — used by implicit solvers
     Eigen::MatrixXd jacobian_scratch;
+    long jacobian_ad_fallbacks = 0;   // AD Jacobians that fell back to the numerical one
     Eigen::VectorXd base_b_scratch;
 
 };
@@ -234,7 +239,8 @@ void vm_reset_clocks(VM *vm);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // JACOBIAN
-// Numerical Jacobian via 1µV perturbation — for implicit solvers.
+// The Jacobian -dB/dx for the implicit solvers: from the compiler's automatic
+// differentiation (phase_jacobian) when there is one, else finite differences.
 // Mirrors Go: func (vm *VM) ComputeJacobian(xGuess []float64) []float64
 // ─────────────────────────────────────────────────────────────────────────────
 

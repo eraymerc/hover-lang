@@ -242,7 +242,8 @@ void BDF2::run(VM *vm) {
             //
             // Measured: it made examples/BJT/npn_amp.hvr, which runs in 3197
             // steps, fail to finish at all within 200 s. Each extra re-form is
-            // a full O(nodes) perturbation sweep, and stagnation turns out to
+            // a full O(nodes) perturbation sweep (the Jacobian was all finite
+            // differences then — before 0.9's AD), and stagnation turns out to
             // be common enough on a healthy BJT step that the cost compounds.
             // Reverted; the tolerant accept test in trust_region_step is kept,
             // since a no-op step being read as failure is wrong regardless.
@@ -343,7 +344,8 @@ void BDF2::run(VM *vm) {
         // successive halvings from 1e-4 down to 1.5e-12, every one of them
         // hitting the iteration ceiling.
         //
-        // Re-forming per step costs one O(nodes) perturbation sweep and pays
+        // Re-forming per step costs one Jacobian — an O(nodes) perturbation
+        // sweep when this was measured, one AD evaluation now — and pays
         // for itself several times over. Measured, Newton iterations for a
         // whole run: npn_amp 16561 -> 6344, pnp_amp 18642 -> 5443, and the
         // rectifier goes from failing at t = 1.182e-2 to completing all 100 ms

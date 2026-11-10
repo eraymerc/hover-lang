@@ -126,6 +126,12 @@ type generator struct {
 	// once at startup (handles.go); handleIdx dedupes them.
 	handles   []handleDef
 	handleIdx map[string]int
+
+	// ad is non-nil while the analog code is being emitted a second time for
+	// the AD Jacobian (autodiff.go): calls are recorded into it.
+	// hasJacobianPhase says that phase_jacobian was emitted.
+	ad               *adState
+	hasJacobianPhase bool
 }
 
 // emit drives the full sim.cpp generation pipeline, section by section.
@@ -156,6 +162,7 @@ func (g *generator) emit() error {
 	g.emitClockPhases()
 	g.emitPhaseAnalog()
 	g.emitPhaseB()
+	g.emitJacobianPhase()
 	g.emitStateVarSnapshot()
 	g.emitStateInits()
 	g.emitBuildNetlist()

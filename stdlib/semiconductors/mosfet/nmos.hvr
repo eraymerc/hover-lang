@@ -80,10 +80,12 @@ from <math> import fabs, sqrt, pnjlim, jexp, vcrit_of, q_dep;
 //  in the runtime" and the nonlinear loop was therefore damped fixed-point
 //  rather than Newton.
 //
-//  That is not true of this runtime. vm_compute_jacobian (runtime/vm/vm.cpp)
-//  perturbs every unknown in turn, re-runs the analog block, and differences
-//  B_static to build a full numerical Jacobian; solver_factorize
-//  (runtime/mna/engine.cpp) adds it straight into G_eff. A current_source's
+//  That is not true of this runtime. The analog blocks get a full Jacobian —
+//  exact, from the compiler's automatic differentiation (compiler/codegen/
+//  autodiff.go), or by finite differences in vm_compute_jacobian
+//  (runtime/vm/vm.cpp) for a deck the compiler cannot differentiate — and
+//  solver_factorize (runtime/mna/engine.cpp) adds it straight into G_eff.
+//  A current_source's
 //  bias dependence therefore does reach G, and the iteration is a real Newton
 //  step. Rpar was solving a problem the solver no longer has, it has no SPICE
 //  counterpart, and it forced every part card to invent an Rds(on) — so it is

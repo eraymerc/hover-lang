@@ -2,10 +2,12 @@
 #include "zcd.hpp"
 #include "../solvers/newton_trust_region.hpp"
 #include "../solvers/step_limits.hpp"
+#include "../hover_sim.hpp"   // hvr::dual_overflow (the AD Jacobian)
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <cstdio>
+#include <cstring>
 
 // ─────────────────────────────────────────────────────────────────────────────
 // LIFECYCLE
@@ -131,9 +133,10 @@ void vm_run_phase_b(VM *vm) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// JACOBIAN
-// Numerical dI/dV estimate via 1µV node perturbation.
-// Used by implicit solvers (BDF2, TR-BDF2, etc.)
+// JACOBIAN — -dB/dx of the analog blocks, for the implicit solvers
+// Exact when the compiler emitted phase_jacobian (automatic differentiation,
+// compiler/codegen/autodiff.go); otherwise, and for any formation the AD copy
+// cannot express, by finite differences: one per-unknown perturbation each.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const Eigen::MatrixXd& vm_compute_jacobian(VM *vm, Eigen::VectorXd &x_guess) {
@@ -185,6 +188,29 @@ const Eigen::MatrixXd& vm_compute_jacobian(VM *vm, Eigen::VectorXd &x_guess) {
     vm_run_analog(vm);
     vm_run_phase_b(vm);
     vm->base_b_scratch = vm->solver->sys->B_static;
+
+    // ── The exact Jacobian, when the compiler could differentiate the deck ──
+    // One evaluation of phase_jacobian (the analog blocks in hvr::Dual — see
+    // hover_sim.hpp) at the same read-view writes -dB/dx straight into
+    // jacobian_scratch. It touches no simulation state, so the baseline just
+    // computed stays the state the caller sees, exactly as after the
+    // numerical loop below. A gradient that outgrew hvr::Dual::K, or a
+    // derivative that is not finite (sqrt at 0, a pow at a singular base),
+    // falls back to the numerical Jacobian for this formation.
+    // HOVER_JACOBIAN=fd forces the numerical one (for comparison).
+    static const bool force_fd = [] {
+        const char *e = getenv("HOVER_JACOBIAN");
+        return e != nullptr && strcmp(e, "fd") == 0;
+    }();
+    if (vm->phase_jacobian && !force_fd) {
+        hvr::dual_overflow() = false;
+        vm->phase_jacobian(vm);
+        if (!hvr::dual_overflow() && vm->jacobian_scratch.allFinite()) {
+            return vm->jacobian_scratch;
+        }
+        vm->jacobian_ad_fallbacks++;
+        vm->jacobian_scratch.setZero();
+    }
 
     for (int i = 0; i < n; i++) {
         double orig = x_guess(i);
@@ -242,8 +268,8 @@ static int op_converged(const Eigen::VectorXd &x_new,
 }
 
 // vm_solve_dc — the DC operating point, used by BOTH boot paths (with and
-// without the .op directive). Newton with a fresh numerical Jacobian per
-// iteration, damped by the same diagonally-scaled trust region BDF2 uses,
+// without the .op directive). Newton with a fresh Jacobian per iteration
+// (vm_compute_jacobian: automatic differentiation, or finite differences), damped by the same diagonally-scaled trust region BDF2 uses,
 // walking a source-stepping ladder in alpha.
 //
 // THE JACOBIAN IS REQUIRED HERE, not an optimization. In Hover a junction
@@ -740,5 +766,9 @@ void vm_run(VM *vm) {
     } else {
         printf("[VM] Simulation Complete.\n");
     }
+    if (vm->jacobian_ad_fallbacks > 0)
+        printf("[VM] Note: %ld Jacobian(s) fell back from automatic differentiation to finite "
+               "differences (a gradient wider than hvr::Dual::K, or a non-finite derivative).\n",
+               vm->jacobian_ad_fallbacks);
     logger_export_csv(&vm->logger, "simulation_output.csv");
 }

@@ -28,8 +28,9 @@ void api_update_solution(API *api, const Eigen::VectorXd &solution) {
 }
 
 // Set the read-view (last_solution) WITHOUT shifting prev_solution. This is
-// the probe path: the Jacobian's finite-difference perturbation and the
-// trust region's residual_at both need V()/I() to reflect a trial point so
+// the probe path: the finite-difference Jacobian's perturbation (a deck with no
+// AD phase — vm_compute_jacobian), the AD phase's own evaluation and the
+// trust region's residual_at all need V()/I() to reflect a trial point so
 // the analog phase computes device currents there — but a trial point is
 // NOT a Newton iterate, so it must never become nr_prev()'s answer. Callers
 // that perturb the read-view are responsible for restoring it (to the real

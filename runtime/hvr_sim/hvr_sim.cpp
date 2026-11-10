@@ -16,7 +16,7 @@
 namespace hvr {
 
 namespace {
-enum PhaseSlot { kStructural, kDigital, kAnalog, kDriveSources, kLog, kSaveState, kRestoreState, kStateInit, kSlots };
+enum PhaseSlot { kStructural, kDigital, kAnalog, kDriveSources, kLog, kSaveState, kRestoreState, kStateInit, kJacobian, kSlots };
 enum class Field;
 }
 
@@ -265,6 +265,50 @@ double Sim::I_prev(int branch) const {
     const Eigen::VectorXd &p = impl_->api.prev_solution;
     return (branch < 0 || branch >= p.size()) ? 0.0 : p(branch);
 }
+Dual Sim::V_ad(int node) const {
+    return node < 0 ? Dual(0.0) : Dual::var(impl_->api.last_solution(node), node);
+}
+Dual Sim::I_ad(int branch) const {
+    return branch < 0 ? Dual(0.0) : Dual::var(impl_->api.last_solution(branch), branch);
+}
+// The same formulas as slots_ddt / slots_idt (vm/state_slots.cpp), as values
+// and derivatives, without writing s_now/d_now.
+Dual Sim::ddt_ad(int k, const Dual &q) const {
+    const StateSlots &st = impl_->vm.slots;
+    Dual r(st.alpha * (q.v - st.blend[k]) - st.beta * st.d_prev[k]);
+    for (int j = 0; j < q.n; j++) { r.i[j] = q.i[j]; r.d[j] = st.alpha * q.d[j]; }
+    r.n = q.n;
+    return r;
+}
+Dual Sim::idt_ad(int k, const Dual &x) const {
+    const StateSlots &st = impl_->vm.slots;
+    Dual r(st.blend[k] + (x.v + st.beta * st.d_prev[k]) * st.inv_alpha);
+    for (int j = 0; j < x.n; j++) { r.i[j] = x.i[j]; r.d[j] = st.inv_alpha * x.d[j]; }
+    r.n = x.n;
+    return r;
+}
+// The Jacobian is -dB/dx (vm_compute_jacobian's convention). A current source
+// stamps B(n1) -= I, B(n2) += I; a driven voltage source B(branch) = v*alpha.
+void Sim::ad_current_source(int handle, const Dual &c) {
+    if (handle < 0 || c.n == 0) return;
+    const CurrentSourceRecord *rec = impl_->isrc[handle];
+    Eigen::MatrixXd &J = impl_->vm.jacobian_scratch;
+    for (int j = 0; j < c.n; j++) {
+        if (rec->n1 >= 0) J(rec->n1, c.i[j]) += c.d[j];
+        if (rec->n2 >= 0) J(rec->n2, c.i[j]) -= c.d[j];
+    }
+}
+void Sim::ad_voltage_source(int handle, const Dual &v) {
+    if (handle < 0 || v.n == 0) return;
+    Eigen::MatrixXd &J = impl_->vm.jacobian_scratch;
+    const double a = impl_->sys.source_alpha;
+    for (int j = 0; j < v.n; j++) J(handle, v.i[j]) -= a * v.d[j];
+}
+void Sim::set_jacobian_phase(Phase jacobian) {
+    impl_->phases[kJacobian] = jacobian;
+    impl_->vm.phase_jacobian = &run_phase<kJacobian>;
+}
+
 void Sim::set_voltage_source(int handle, double v) {
     if (handle >= 0) impl_->sys.B_static(handle) = v * impl_->sys.source_alpha;
 }

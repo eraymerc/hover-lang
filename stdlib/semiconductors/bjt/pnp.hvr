@@ -24,7 +24,7 @@ from <math> import sqrt, pnjlim, jexp, vcrit_of, q_dep, rb_of;
 //  whole point of doing it this way: a 2N3906 card transcribes directly.
 //
 //  Everything else — what Gummel-Poon buys over Ebers-Moll, why math's
-//  pnjlim() is fed from nr_prev(), why the solver's numerical Jacobian means
+//  pnjlim() is fed from nr_prev(), why a Jacobian taken from this source means
 //  this model must keep its derivatives alive and carry no voltage clamps,
 //  how the charges reach the matrix through ddt(), and why Rb is synthesized
 //  from a voltage source instead of being an R<> primitive — is identical to

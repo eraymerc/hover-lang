@@ -68,15 +68,18 @@ from <math> import sqrt, pnjlim, jexp, vcrit_of, q_dep, rb_of;
 //  no device Jacobian and hence no true Newton. That conclusion is wrong, and
 //  getting it wrong costs a great deal.
 //
-//  vm_compute_jacobian (runtime/vm/vm.cpp) builds a FULL numerical Jacobian:
-//  it perturbs every node voltage by sqrt(eps)*max(|v|,1), re-runs the analog
-//  blocks, and measures the resulting change in B_static. Every dI/dV this
-//  model produces is therefore captured, whether or not anything was stamped
-//  into G. The solvers (bdf2, ndf2, trapezoidal) consume it with Jacobian
-//  reuse and Newton damping modelled on MATLAB's ode15s.
+//  The runtime builds a FULL Jacobian of the analog blocks: exactly, from the
+//  compiler's automatic differentiation of this source (compiler/codegen/
+//  autodiff.go), or — for a deck the compiler cannot differentiate, and for
+//  every deck before 0.9 — by finite differences in vm_compute_jacobian
+//  (runtime/vm/vm.cpp), perturbing each unknown and measuring how B_static
+//  moves. Every dI/dV this model produces is therefore captured, whether or
+//  not anything was stamped into G. The solvers (bdf2, ndf2, trapezoidal)
+//  consume it with Jacobian reuse and Newton damping modelled on MATLAB's
+//  ode15s.
 //
 //  The practical consequence governs how this model is written: the Jacobian
-//  is measured from THIS SOURCE, so anything here with zero slope becomes a
+//  is taken from THIS SOURCE, so anything here with zero slope becomes a
 //  zero column in the Jacobian, and a zero column is a singular direction
 //  Newton cannot step along. A hard clamp is precisely that. An earlier
 //  version of this file carried a derived backstop clamp on vbe/vbc; it did

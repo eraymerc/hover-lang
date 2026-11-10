@@ -446,6 +446,13 @@ func (g *generator) emitUserFunctionCall(fnName string, argExprs []ast.Expressio
 	}
 
 	fnDecl := info.Decl
+	if g.ad != nil { // emitting the AD copy: record what it calls (autodiff.go)
+		if fnDecl.IsExtern {
+			g.ad.externs[info.CName] = true
+		} else {
+			g.ad.funcs[info.CName] = info
+		}
+	}
 	args := []string{}
 	if !fnDecl.IsExtern {
 		args = append(args, "sim") // extern C funcs take no Sim

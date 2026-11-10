@@ -30,9 +30,10 @@
 //
 // ddt(q) returns that derivative of q. idt(x) solves the same relation for s
 // with the derivative equal to x. Both are still implicit: they are evaluated
-// at the new time point inside the Newton loop, and because analog Jacobians
-// are taken by perturbation, alpha*dq/dV reaches the Jacobian on its own —
-// SPICE's geq, without stamping it by hand. Nothing is added to the matrix.
+// at the new time point inside the Newton loop, and alpha*dq/dV reaches the
+// Jacobian on its own — SPICE's geq, without stamping it by hand: the AD phase
+// carries it as the slot's derivative (hvr::Sim::ddt_ad / idt_ad), and a
+// finite-difference Jacobian measures it. Nothing is added to the matrix.
 //
 // What is committed to history is the evaluation AT THE ACCEPTED SOLUTION:
 // Newton solvers re-run the analog pass there first (vm_commit_slots_at). The

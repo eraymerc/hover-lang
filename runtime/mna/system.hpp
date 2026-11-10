@@ -224,7 +224,8 @@ struct System {
     // ── Batched restamping during a drive pass ───────────────────────────────
     // phase_b writes every driven source, and a MOSFET's internal node carries
     // 6-8 of them: restamping both rows on each write summed the same row many
-    // times over, and phase_b runs n+2 times per numerical Jacobian. While
+    // times over, and phase_b runs n+2 times per finite-difference Jacobian
+    // (and in every Newton iteration, probe and ZCD bisection). While
     // cs_defer is set (vm_run_phase_b) a write only marks its rows; the pass
     // ends with flush_current_rows(), which sums each marked row once. The
     // sum is the same expression in the same order as an immediate restamp,

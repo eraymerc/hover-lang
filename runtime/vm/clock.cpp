@@ -85,9 +85,18 @@ double vm_limit_step(const VM *vm, double dt) {
     for (const VMClock &c : vm->clocks) {
         const double next = (double)(tick_at(vm, c) + 1) * c.period;
         const double remaining = next - vm->time;
-        // Cross the tick, or stop just short of it: end exactly on it.
-        if (remaining > 0.0 && dt > remaining - tick_tol(vm, c)) {
-            dt = remaining;
+        if (!(remaining > 0.0)) continue;
+        if (dt >= remaining) {
+            dt = remaining;                     // would cross the tick: end on it
+        } else if (dt > remaining - tick_tol(vm, c)) {
+            // Would stop just short, leaving a sliver: take half the way now
+            // and the rest next step (ngspice dctran.c, "equalise the last two
+            // time steps before the breakpoint"). This used to STRETCH the step
+            // to the tick instead, which can undo a truncation-error rejection:
+            // a reject shrinking dt by a factor above 0.8 got stretched back to
+            // the same step, rejected again, forever — examples/DCMotor/
+            // h_bridge.hvr at t = 198.9998 ms, 900k rejections of one step.
+            dt = 0.5 * remaining;
         }
     }
     return dt;

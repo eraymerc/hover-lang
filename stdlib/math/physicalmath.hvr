@@ -84,8 +84,8 @@ func double limexp(double x) {
 // the Jacobian — $limit moves the operating point and dI/dV is taken with
 // respect to the unlimited voltage — whereas this function sits in the analog
 // block's ordinary data flow, so its slope is part of the derivative the
-// solver gets. (That is true of automatic differentiation too; it is not an
-// artefact of finite differences.)
+// solver gets. (True of the automatic differentiation the Jacobian comes from
+// since 0.9 just as of the finite differences before it.)
 //
 // Shifting the log by one — log(arg - 1) — removes the discontinuity in both
 // value and slope: at arg = 2 it returns exactly v_old + 2*nvt with slope 1,
@@ -149,9 +149,9 @@ func double pnjlim(double v_new, double v_old, double nvt, double v_crit) {
 // The ceiling is 60, not the historical 40, and the reason is knee voltage,
 // not overflow: the guard must sit ABOVE the operating knee of every device
 // in the library, because a hard clamp's zero-slope region is a zero column
-// in the measured Jacobian (vm_compute_jacobian perturbs node voltages and
-// re-runs this exact source), and a zero column is a direction Newton cannot
-// step along. At 40, the guard engaged at 40*nvt = 1.98 V for the red LED
+// in the Jacobian (taken from this exact source — by automatic
+// differentiation, or by vm_compute_jacobian's finite differences), and a
+// zero column is a direction Newton cannot step along. At 40, the guard engaged at 40*nvt = 1.98 V for the red LED
 // (nvt ~ 49.5 mV) — 130 mV past its 1.85 V operating knee — so the Jacobian
 // went flat exactly where a driven source crossing the knee needs it most,
 // and the OP ladder cycled on that knee forever (measured on redled.hvr:

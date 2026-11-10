@@ -36,20 +36,21 @@ from <math> import exp, sqrt, pnjlim, jexp, vcrit_of, q_dep;
 //
 //  Convergence: the solver is real Newton, so keep derivatives alive
 //  ────────────────────────────────────────────────────────────────
-//  vm_compute_jacobian (runtime/vm/vm.cpp) builds a FULL numerical Jacobian by
-//  perturbing every node voltage by sqrt(eps)*max(|v|,1), re-running the analog
-//  blocks and measuring how B_static moved. The solvers consume it with
-//  Jacobian reuse and Newton damping. It is true Newton-Raphson — a
-//  finite-difference Jacobian instead of an analytic one, but structurally what
-//  SPICE does.
+//  The Jacobian is exact: the compiler differentiates this block (automatic
+//  differentiation — compiler/codegen/autodiff.go emits it a second time in
+//  hvr::Dual numbers) and every dI/dV lands in the Newton matrix. A deck the
+//  compiler cannot differentiate falls back to vm_compute_jacobian's finite
+//  differences (runtime/vm/vm.cpp), which is how every Jacobian was built
+//  before 0.9. Either way it is true Newton-Raphson, structurally what SPICE
+//  does, with Jacobian reuse and Newton damping on top.
 //
 //  The consequence is the single most important thing about this file: the
 //  derivative the solver uses comes FROM THIS SOURCE. Whatever slope the code
-//  has is the slope Newton gets — and note that this is a property of the
-//  derivative being taken from the model at all, not of it being taken by
-//  finite differences. Automatic differentiation would report the same slopes.
-//  Everything below about keeping derivatives alive would survive unchanged if
-//  the Jacobian became analytic tomorrow. So the previous model's
+//  has is the slope Newton gets — and that is a property of the derivative
+//  being taken from the model at all, not of how it is taken: automatic
+//  differentiation reports the slopes the finite differences measured, and
+//  everything below about keeping derivatives alive held then and holds now.
+//  So the previous model's
 //
 //      if (vd > 0.85)   { vd = 0.85; }
 //      if (vd < -100.0) { vd = -100.0; }
@@ -251,10 +252,11 @@ analog module Diode<double Is,  double N,
     // SPICE's pnjlim before it) moves the operating point only, and dq/dv is
     // taken with respect to the unlimited junction voltage. Hover has no such
     // hook — pnjlim() is an ordinary function in this block's data flow, so its
-    // own slope is part of the derivative. Note this is NOT about the Jacobian
-    // being finite-difference rather than analytic: pnjlim's limiting branch
-    // has derivative 1/(arg - 2) with respect to v_new, and automatic
-    // differentiation would report exactly the same value. Any faithful
+    // own slope is part of the derivative. Note this is NOT about how the
+    // Jacobian is taken: pnjlim's limiting branch has derivative 1/(arg - 2)
+    // with respect to v_new, and the automatic differentiation the Jacobian
+    // now comes from reports exactly that value, as finite differences did.
+    // Any faithful
     // differentiation of the code as written divides the capacitance by
     // whatever the limiter is doing to the step. Where the limiter is
     // compressing hardest — a first iterate several volts up the curve, which

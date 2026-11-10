@@ -274,6 +274,9 @@ func (g *generator) emitSimSetup(cfg simConfig, onSolverError string) {
 	if len(g.runtimeStateInits) > 0 {
 		g.line("sim.set_state_init(init_states);")
 	}
+	if g.hasJacobianPhase {
+		g.line("sim.set_jacobian_phase(phase_jacobian);  // exact analog Jacobian (automatic differentiation)")
+	}
 	for _, c := range cfg.clocks {
 		g.line("sim.add_clock(%s, %s, %s);", cStr(c.name), formatDoubleLiteral(c.period), c.phaseFunc())
 	}
