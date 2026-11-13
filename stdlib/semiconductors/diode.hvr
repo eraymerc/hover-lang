@@ -68,7 +68,9 @@ from <math> import exp, sqrt, pnjlim, jexp, vcrit_of, q_dep;
 //  What keeps the iteration in bounds instead:
 //    · pnjlim() limits the STEP, not the value — the Berkeley junction
 //      limiter, fed the previous NR iterate via nr_prev(). It never flattens
-//      the curve; it only refuses to leap across it in one bound.
+//      the curve; it only refuses to leap across it in one bound. It is
+//      transparent to the Jacobian (nodiff, SPICE's companion form): the
+//      junction is linearised at the limited voltage with its true slope.
 //    · jexp() guards overflow on the exponential's argument, out at |x| = 40
 //      where nothing physical is left. See <math>'s jexp() for why that one hard
 //      clamp is tolerable and why smoothing it made things worse.
@@ -151,90 +153,115 @@ analog module Diode<double Is,  double N,
     double nvt   = N  * Vt;
     double nvt_r = Nr * Vt;
 
-    // Per-iteration junction limiting. nr_prev() reaches back to the previous
-    // NEWTON iterate (not the previous timestep), which is what a junction
-    // limiter needs: it bounds how far one iteration may travel up the
-    // exponential, then lets the next iteration continue from there.
-    double vd = pnjlim(V(ai) - V(cathode), nr_prev(V(ai) - V(cathode)),
+    // ── Junction limiting, SPICE's way ──────────────────────────────────────
+    // pnjlim bounds how far one Newton iteration may travel up the exponential
+    // (nr_prev() is the previous NEWTON iterate, not the previous timestep).
+    // The limited voltage vd is where the junction is LINEARISED; every term
+    // below is the tangent line at vd evaluated at the TRUE voltage v,
+    //
+    //     i = f(vd) + f'(vd) * (v - vd),       vd = nodiff(limited v),
+    //
+    // SPICE's companion model: the limiter moves the operating point and
+    // nothing else, so the Jacobian sees the junction's real conductance
+    // f'(vd). At a solution the limiter is idle, vd = v, and every term is the
+    // device equation exactly.
+    //
+    // Until 2026-11-13 vd went straight into f(), and the Jacobian
+    // differentiated THROUGH pnjlim, whose slope past its seam is nVt/v: a
+    // limiting junction looked almost like an open circuit to Newton, exactly
+    // while it was being driven hard. On the switched H-bridge with this diode
+    // in place of the smoothed PWL one (Cjo = 0, Coss = 0) every run stopped at
+    // the first dead time; the same defect in the LED model gave a silently
+    // wrong answer (docs/hoveR_sorunlar.txt items 41, 42).
+    //
+    // jexp() holds its exponent at 60 against overflow, so the limited voltage
+    // is held there too (60 nVt, about 1.5 V per unit N): beyond it the
+    // exponential has no slope left to linearise at, and the tangent from
+    // 60 nVt continues the curve instead. pnjlim reads the previous NODE
+    // iterate, which during a hard commutation can sit kilovolts away; without
+    // this bound vd stayed up there, on the flat part of jexp, and the tangent
+    // was meaningless.
+    double v  = V(ai) - V(cathode);
+    double vl = pnjlim(V(ai) - V(cathode), nr_prev(V(ai) - V(cathode)),
                        nvt, vcrit_of(Is, nvt));
+    if (vl > 60.0 * nvt) { vl = 60.0 * nvt; }
+    double vd = nodiff(vl);
 
     // ── Ideal diffusion current ─────────────────────────────────────────────
-    double i_fwd = Is * (jexp(vd, nvt) - 1.0);
+    double e_f   = jexp(vd, nvt);
+    double i_fwd = Is * (e_f - 1.0);
+    double g_fwd = Is * e_f / nvt;
 
     // ── High-injection knee ─────────────────────────────────────────────────
     // Beyond Ikf the injected minority density approaches the doping and the
     // effective slope halves. sqrt(Ikf/(Ikf+i)) is 1 well below the knee and
-    // falls as 1/sqrt(i) above it, which is exactly that halving.
+    // falls as 1/sqrt(i) above it, which is exactly that halving. Its slope:
+    // d(i*kinj)/di = kinj * (1 - i / (2 (Ikf + i))).
     //
     // No guard on the denominator: i_fwd is bounded below by -Is, so
     // Ikf + i_fwd >= Ikf - Is, and any physical card has Ikf many orders above
     // Is. A guard here would be a zero-derivative branch bought for a case
     // that cannot occur.
-    double kinj = 1.0;
+    double i_inj = i_fwd;
+    double g_inj = g_fwd;
     if (Ikf > 0.0) {
-        kinj = sqrt(Ikf / (Ikf + i_fwd));
+        double kinj = sqrt(Ikf / (Ikf + i_fwd));
+        i_inj = i_fwd * kinj;
+        g_inj = g_fwd * kinj * (1.0 - i_fwd / (2.0 * (Ikf + i_fwd)));
     }
 
     // ── Depletion-region recombination ──────────────────────────────────────
     // The low-current tail, with its own emission coefficient (~2).
-    double i_rec = Isr * (jexp(vd, nvt_r) - 1.0);
+    double e_r   = jexp(vd, nvt_r);
+    double i_rec = Isr * (e_r - 1.0);
+    double g_rec = Isr * e_r / nvt_r;
 
     // ── Reverse breakdown ───────────────────────────────────────────────────
-    // Turns on exponentially below -Bv and passes exactly -Ibv at vd = -Bv,
-    // which is how a card specifies the pair. Above -Bv the argument is deeply
-    // negative and jexp floors it, leaving a term of order 1e-18*Ibv — nothing
-    // next to Is, so the off-state is unaffected.
+    // Turns on exponentially below -Bv and passes exactly -Ibv at v = -Bv,
+    // which is how a card specifies the pair.
     //
     // It gets its OWN pnjlim, on its own argument, and it has to. Breakdown is
     // a second exponential with a second turn-on point, so a step that is
     // modest for the forward junction can be enormous for this one: a first
     // iterate at -8 V on a 5.1 V part lands 2.9 V up an e^(v/Vt) curve, which
-    // is e^111 before any limiting. Reusing the forward limiter does not help,
-    // because it is watching a different voltage. Treating -(Bv + vd) as the
-    // forward voltage of a diode whose saturation current is Ibv makes the
-    // same limiter apply verbatim.
+    // is e^111 before any limiting. Treating u = -(Bv + v) as the forward
+    // voltage of a diode whose saturation current is Ibv makes the same
+    // limiter apply verbatim. The overflow guard (u/Vt <= 40) is part of the
+    // limiting: past it the term continues along its tangent.
     //
-    // The V()-differences are respelled rather than reusing vd: nr_prev()
+    // The V()-differences are respelled rather than reusing v: nr_prev()
     // rewrites the V() leaves inside its argument, so it has to be handed the
-    // node expression, not a local that was already limited.
+    // node expression, not a local.
     double ibv_eff = Ibv;
     if (ibv_eff <= 0.0) { ibv_eff = 1.0e-12; }   // keeps vcrit_of finite
 
-    double vbd = pnjlim(-(Bv + (V(ai) - V(cathode))),
-                        nr_prev(-(Bv + (V(ai) - V(cathode)))),
-                        Vt, vcrit_of(ibv_eff, Vt));
-
     double i_bv = 0.0;
     if (Bv > 0.0) {
+        double u  = 0.0 - (Bv + v);
+        double ul = pnjlim(-(Bv + (V(ai) - V(cathode))),
+                           nr_prev(-(Bv + (V(ai) - V(cathode)))),
+                           Vt, vcrit_of(ibv_eff, Vt));
+        if (ul > 40.0 * Vt) { ul = 40.0 * Vt; }
+        double ub = nodiff(ul);
         // NOT jexp() here, and the difference is not cosmetic. jexp guards its
         // argument at BOTH ends, and the lower guard floors the exponential at
         // e^-40 ~ 4.2e-18. For the forward current that floor is harmless — it
         // just yields the correct -Is. For this term it manufactures a constant
         // -Ibv * 4.2e-18 that is present at every bias, in every diode, forever:
         // about -4e-23 A on a 10 uA Ibv. The true breakdown current a thousand
-        // volts short of Bv is around 1e-190, i.e. zero.
-        //
-        // That spurious constant is not negligible in practice. Substituting a
-        // literal -4.25e-23 A for this whole term reproduces the failure of a
-        // full-bridge rectifier exactly, while removing the term lets the same
-        // circuit solve in 3418 steps — so this floor, and not breakdown
-        // physics, is what a blocking diode was contributing.
-        //
-        // Only the upper guard is needed. IEEE exp() underflows to zero
-        // gracefully on the way down, with no exception and no denormal
-        // trouble, so the off-state term is exactly 0 and contributes exactly
-        // nothing — which is both the physically right answer and the
-        // numerically quiet one.
-        double x_bd = vbd / Vt;
-        if (x_bd > 40.0) { x_bd = 40.0; }
-        i_bv = -Ibv * exp(x_bd);
+        // volts short of Bv is around 1e-190, i.e. zero. Substituting a literal
+        // -4.25e-23 A for this whole term reproduced the failure of a
+        // full-bridge rectifier exactly. IEEE exp() underflows to exactly 0 on
+        // the way down, which is both right and quiet.
+        double e_b = exp(ub / Vt);
+        i_bv = -Ibv * e_b - Ibv * e_b / Vt * (u - ub);
     }
 
     // ── Total branch current ────────────────────────────────────────────────
     // GMIN closes the loop on the Jacobian: see the header. It is SPICE's
     // default 1e-12 S and is deliberately not a parameter, because tuning it
     // per part would be tuning the solver, not the device.
-    double i_d = i_fwd * kinj + i_rec + i_bv + 1.0e-12 * vd;
+    double i_d = i_inj + i_rec + (g_inj + g_rec) * (v - vd) + i_bv + 1.0e-12 * v;
 
     current_source<>(i_d) [ai, cathode];
 
@@ -244,34 +271,15 @@ analog module Diode<double Is,  double N,
     // current source, so the derivative comes out of the MNA solve itself
     // rather than from a difference taken here — which is what makes the
     // capacitance correctly bias-dependent instead of frozen at its DC value.
-    // The depletion term is built from the RAW terminal voltage, not from the
-    // limited vd, and that difference is load-bearing rather than cosmetic.
     //
-    // SPICE evaluates its capacitance at the limited voltage and gets away with
-    // it because limiting there is TRANSPARENT TO THE JACOBIAN: $limit (and
-    // SPICE's pnjlim before it) moves the operating point only, and dq/dv is
-    // taken with respect to the unlimited junction voltage. Hover has no such
-    // hook — pnjlim() is an ordinary function in this block's data flow, so its
-    // own slope is part of the derivative. Note this is NOT about how the
-    // Jacobian is taken: pnjlim's limiting branch has derivative 1/(arg - 2)
-    // with respect to v_new, and the automatic differentiation the Jacobian
-    // now comes from reports exactly that value, as finite differences did.
-    // Any faithful
-    // differentiation of the code as written divides the capacitance by
-    // whatever the limiter is doing to the step. Where the limiter is
-    // compressing hardest — a first iterate several volts up the curve, which
-    // is exactly a transient started at full bias — its local slope is a few
-    // parts per thousand, and the junction presents essentially NO capacitance
-    // at the one moment the solver most needs some. That was reproducibly
-    // fatal: an operating point at 5 V through 1 kOhm failed to converge with
-    // the limited voltage here and converges with the raw one.
-    //
-    // Nothing is lost by using the raw voltage. The depletion law is a mild
-    // power law with no overflow to guard against, and limiting exists only to
-    // tame the exponential. The diffusion term below keeps the limited current,
-    // because that IS the exponential — and at convergence dv is small, pnjlim
-    // passes through untouched, and the two agree exactly.
-    double q_d = Tt * i_fwd * kinj
+    // The diffusion term is the exponential, so it follows the same tangent
+    // as the current: its capacitance Tt * g is taken at vd, as SPICE does.
+    // The depletion term is a mild power law with nothing to overflow, and is
+    // built from the raw voltage. (Before nodiff it HAD to be: differentiated
+    // through pnjlim, a limited voltage divided the capacitance by the
+    // limiter's own slope, and an operating point at 5 V through 1 kOhm failed
+    // to converge for it.)
+    double q_d = Tt * (i_inj + g_inj * (v - vd))
                + q_dep(V(ai) - V(cathode), Cjo, Vj, M, Fc);
     double i_c = ddt(q_d);
 

@@ -46,7 +46,9 @@ void vm_run_digital(VM *vm) {
 }
 
 void vm_run_analog(VM *vm) {
+    vm->in_analog = true;
     if (vm->phase_analog) vm->phase_analog(vm);
+    vm->in_analog = false;
 }
 
 void vm_eval_slots_at(VM *vm, const Eigen::VectorXd &x) {
@@ -80,6 +82,13 @@ double vm_noncon_ratio(VM *vm, const Eigen::VectorXd &x, const Eigen::VectorXd &
     std::vector<double> cs_saved;
     cs_saved.reserve(sys->current_sources.size());
     for (const auto &kv : sys->current_sources) cs_saved.push_back(kv.second.last_value);
+    // The current each AD-linearised source carried in the solve that produced
+    // x (the caller evaluated the devices at x_iter just before solving).
+    std::vector<double> i_used;
+    if (vm->ad_lin_valid) {
+        i_used.reserve(vm->ad_lin.size());
+        for (const auto &l : vm->ad_lin) i_used.push_back(l.rec->last_value);
+    }
 
     // The devices at x as the NEXT Newton iteration would see them: limited
     // against the iterate x was solved from...
@@ -94,7 +103,28 @@ double vm_noncon_ratio(VM *vm, const Eigen::VectorXd &x, const Eigen::VectorXd &
     vm_run_phase_b(vm);
     const Eigen::VectorXd &b_true = sys->B_static;
 
-    double worst = 0.0;
+    // SPICE's per-device test (DIOconvTest and kin): each source's true
+    // current at x against the solve's own linear model of it, the current at
+    // x_iter plus dI/dx * (x - x_iter). Scaled by the source's own current,
+    // not a node row's, so it does not trip on balanced rows the way a KCL
+    // residual check did (vm.hpp). The step test alone accepted two junctions
+    // 1.24 V forward with 2.3e7 A of KCL error on a 310 V H-bridge: a 0.026 V
+    // move — one nVt, a factor e in current — passes the 0.31 V tolerance of
+    // a 311 V node, and a junction is the difference of two such nodes.
+    double dev_worst = 0.0;
+    if (vm->ad_lin_valid) {
+        for (size_t k = 0; k < vm->ad_lin.size(); k++) {
+            const auto &l = vm->ad_lin[k];
+            double pred = i_used[k];
+            for (int j = 0; j < l.n; j++) pred += l.d[j] * (x(l.i[j]) - x_iter(l.i[j]));
+            const double now   = l.rec->last_value;
+            const double ratio = std::abs(now - pred)
+                               / (rtol * std::max(std::abs(now), std::abs(pred)) + atol);
+            if (!(ratio <= dev_worst)) dev_worst = ratio;
+        }
+    }
+
+    double worst = dev_worst;
     int    wrow  = -1;
     for (int i = 0; i < x.size(); i++) {
         const double d     = std::abs(b_true(i) - b_lim(i));
@@ -109,6 +139,35 @@ double vm_noncon_ratio(VM *vm, const Eigen::VectorXd &x, const Eigen::VectorXd &
             for (const auto &kv : sys->branch_map) if (kv.second == wrow) { name = "I(" + kv.first + ")"; break; }
         fprintf(stderr, "[noncon] t=%.12e ratio=%.3e row=%d %s limited=%.6e true=%.6e\n",
                 vm->time, worst, wrow, name.c_str(), b_lim(wrow), b_true(wrow));
+    }
+
+    // ...and the evaluation the solve that produced x actually used: the
+    // devices at x_iter, limited against the iterate BEFORE it, against
+    // released. A limiter active there means x balances limited currents, and
+    // SPICE refuses convergence on exactly that (CKTnoncon). The check above
+    // cannot see it once x == x_iter: a 1.5 mA step into an LED stopped at
+    // 2.45 V because its solve had limited against an iterate at 0.93 MV, and
+    // both evaluations above ran unlimited — 3.5 kA of KCL error, accepted
+    // (docs/hoveR_sorunlar.txt item 41). The library limiters (pnjlim, fetlim,
+    // limvds) never act on a branch that moved less than 2 nVt, so when no node
+    // moved 10 mV in that iteration there is nothing to find and the two extra
+    // passes are skipped.
+    const int nn = sys->num_nodes;
+    if (nn > 0 && (x_iter.head(nn) - prev_saved.head(nn)).cwiseAbs().maxCoeff() > 1e-2) {
+        api->last_solution = x_iter;
+        api->prev_solution = prev_saved;
+        vm_run_analog(vm);
+        vm_run_phase_b(vm);
+        const Eigen::VectorXd b_used = sys->B_static;
+        api->prev_solution = x_iter;
+        vm_run_analog(vm);
+        vm_run_phase_b(vm);
+        for (int i = 0; i < x.size(); i++) {
+            const double d     = std::abs(sys->B_static(i) - b_used(i));
+            const double scale = std::max(std::abs(sys->B_static(i)), std::abs(b_used(i)));
+            const double ratio = d / (rtol * scale + atol);
+            if (!(ratio <= worst)) { worst = ratio; wrow = i; }
+        }
     }
 
     api->last_solution = last_saved;
@@ -204,10 +263,15 @@ const Eigen::MatrixXd& vm_compute_jacobian(VM *vm, Eigen::VectorXd &x_guess) {
     }();
     if (vm->phase_jacobian && !force_fd) {
         hvr::dual_overflow() = false;
+        vm->ad_lin.clear();
+        vm->in_analog = true;
         vm->phase_jacobian(vm);
+        vm->in_analog = false;
         if (!hvr::dual_overflow() && vm->jacobian_scratch.allFinite()) {
+            vm->ad_lin_valid = true;
             return vm->jacobian_scratch;
         }
+        vm->ad_lin_valid = false;
         vm->jacobian_ad_fallbacks++;
         vm->jacobian_scratch.setZero();
     }
@@ -341,7 +405,8 @@ static int op_converged(const Eigen::VectorXd &x_new,
 // continuation below (history = the previous rung's answer).
 static bool op_newton(VM *vm, Eigen::VectorXd &x_guess,
                       const Eigen::VectorXd &history, double alpha_c,
-                      int *iters, double *worst, int *worst_row) {
+                      int *iters, double *worst, int *worst_row,
+                      bool capped = true) {
     const int n = vm->solver->sys->size;
     Eigen::MatrixXd jacobian;
     Eigen::VectorXd correction(n);
@@ -377,6 +442,12 @@ static bool op_newton(VM *vm, Eigen::VectorXd &x_guess,
             if (!(d2 <= *worst)) { *worst = d2; *worst_row = i; }
         }
 
+        if (!capped) {                       // op_solve's retry: plain Newton
+            x_guess = x_new;
+            if (!x_guess.allFinite()) return false;
+            continue;
+        }
+
         // The ±0.05 per-component alias cap, accepted BLINDLY as before.
         //
         // Residual-scored variants (strict decrease, then a 5% uphill
@@ -398,6 +469,34 @@ static bool op_newton(VM *vm, Eigen::VectorXd &x_guess,
             if (delta < -0.05) delta = -0.05;
             x_guess(i) += delta;
         }
+    }
+    return false;
+}
+
+// op_solve — op_newton, and when the capped solve fails, ONE retry without
+// the cap: plain Newton from where the capped one stopped, as the transient
+// solvers retry a step the trust region could not converge
+// (solvers/newton_trust_region.hpp, PLAIN-NEWTON RETRY).
+//
+// The cap moves every unknown at most 0.05 per iteration, so 500 iterations
+// reach 25 V: a 1 kV divider started its transient at 300 V instead of 500 V,
+// a 48 V bus behind 0.1 Ohm onto 1 mF at 0.3 V, an ideal source across a
+// capacitor never converged at all — all linear circuits that plain Newton
+// solves in one iteration. The cap itself stays: the notes above record why
+// every smarter damper failed on the decks that need it. A rung the cap DOES
+// converge never reaches the retry, so those decks are unchanged; a retry that
+// fails too leaves the capped answer, as before.
+static bool op_solve(VM *vm, Eigen::VectorXd &x_guess,
+                     const Eigen::VectorXd &history, double alpha_c,
+                     int *iters, double *worst, int *worst_row) {
+    if (op_newton(vm, x_guess, history, alpha_c, iters, worst, worst_row)) return true;
+    Eigen::VectorXd x_plain = x_guess;
+    int plain_iters = 0, plain_row = -1;
+    double plain_worst = 0.0;
+    if (op_newton(vm, x_plain, history, alpha_c, &plain_iters, &plain_worst, &plain_row, false)) {
+        x_guess = x_plain;
+        *iters += plain_iters;
+        return true;
     }
     return false;
 }
@@ -439,7 +538,7 @@ static bool op_relax_to_dc(VM *vm, Eigen::VectorXd &x_guess) {
         // converged rung, held in h0 by slots_anchor and untouched by a rung
         // that fails.
         slots_begin_be(vm->slots, 1.0 / dt_try);
-        if (op_newton(vm, x_try, history, 1.0 / dt_try, &iters, &worst, &worst_row)) {
+        if (op_solve(vm, x_try, history, 1.0 / dt_try, &iters, &worst, &worst_row)) {
             slots_anchor(vm->slots);
             x_guess = x_try;
             dt      = dt_try;
@@ -490,7 +589,7 @@ static bool vm_solve_dc_once(VM *vm, bool relax) {
         double alpha = alphas[k];
         system_set_source_alpha(vm->solver->sys, alpha);
 
-        bool rung_converged = op_newton(vm, x_guess, zero_history,
+        bool rung_converged = op_solve(vm, x_guess, zero_history,
                                         1.0 / vm->time_step,
                                         &op_iters, &op_worst, &op_worst_row);
         // Report the truth. This used to print "complete" unconditionally,

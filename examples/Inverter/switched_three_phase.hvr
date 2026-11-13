@@ -96,9 +96,8 @@ module main<>() []
     module dt_b = dt.DeadTime<500n>(s_b, g_b_hi, g_b_lo) [];
     module dt_c = dt.DeadTime<500n>(s_c, g_c_hi, g_c_lo) [];
 
-    // 50 mOhm switches, 1.0 V + 20 mOhm diodes, and Coss = 0 instead of the
-    // 100 pF default: the R-L load gives every node a resistive path, so the
-    // ideal commutation is safe here, and it runs ~3.5x faster.
+    // 50 mOhm switches, 1.0 V + 20 mOhm diodes, and Coss = 0: an ideal
+    // commutation, ~3.5x faster than with a realistic 100 pF.
     module bridge = sw.SwitchedThreePhaseBridge<Ron = 50m, Vf = 1.0, Rd = 20m, Coss = 0>
                     (g_a_hi, g_a_lo, g_b_hi, g_b_lo, g_c_hi, g_c_lo)
                     [vdc, gnd, a, b, c];

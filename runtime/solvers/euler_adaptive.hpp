@@ -61,6 +61,9 @@ private:
     // What the last convergence test measured — see newton_core.hpp.
     ConvergenceReport conv;
 
+    // The current attempt is the plain-Newton retry (newton_trust_region.hpp).
+    bool plain_newton = false;
+
     // The iterate the last attempt gave up on, and the history vector it was
     // solved against. Kept so run() can dump them after a FATAL;
     // take_implicit_step owns both while it runs.

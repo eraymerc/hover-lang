@@ -132,6 +132,8 @@ type generator struct {
 	// hasJacobianPhase says that phase_jacobian was emitted.
 	ad               *adState
 	hasJacobianPhase bool
+	// zcdWatch is the number of values phase_zcd_watch publishes (zcdwatch.go).
+	zcdWatch int
 }
 
 // emit drives the full sim.cpp generation pipeline, section by section.
@@ -163,6 +165,7 @@ func (g *generator) emit() error {
 	g.emitPhaseAnalog()
 	g.emitPhaseB()
 	g.emitJacobianPhase()
+	g.emitZcdWatch()
 	g.emitStateVarSnapshot()
 	g.emitStateInits()
 	g.emitBuildNetlist()

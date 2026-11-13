@@ -175,8 +175,18 @@ Dual fmax(const Dual &a, const Dual &b);
 Dual fmin(const Dual &a, const Dual &b);
 Dual fma(const Dual &a, const Dual &b, const Dual &c);
 
+// nodiff(x): x's value with NO derivative — the Jacobian sees a constant. The
+// SPICE-style junction limiter needs it: limiting (pnjlim) may move the point
+// a device is linearised at, but must not enter the slope (Verilog-A's $limit
+// is transparent to the Jacobian for the same reason). A language builtin,
+// like nr_prev (compiler/codegen/expressions.go).
+Dual nodiff(const Dual &a);
 
 }  // namespace hvr
+
+// The double version, for the ordinary (non-AD) evaluation and for the
+// numerical Jacobian, which sees through it.
+inline double nodiff(double x) { return x; }
 
 struct VM;
 
@@ -310,6 +320,13 @@ public:
     void   ad_voltage_source(int handle, const Dual &voltage);
     // Registers the AD phase; without one the Jacobian is numerical.
     void   set_jacobian_phase(Phase jacobian);
+
+    // .zcd watch list: the logic values analog code reads (an analog module's
+    // `input double` fed by a digital module). The phase publishes each with
+    // zcd_watch_value(i, v); .zcd treats them like the drive vector, so an edge
+    // that reaches the circuit only through analog code is located too.
+    void   set_zcd_watch(Phase watch, int n);
+    void   zcd_watch_value(int i, double v);
 
     // ddt(q) / idt(x) at call site `slot`, integrated by the active solver's
     // own formula (runtime/vm/state_slots.hpp). Analog phases only.

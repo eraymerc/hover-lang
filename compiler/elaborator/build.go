@@ -90,6 +90,9 @@ func (e *Elaborator) Elaborate() (*ElaboratedProgram, error) {
 	e.checkElementNameCollisions()
 	e.checkSourceControls()
 
+	// 4. Within each phase, writers before readers (order.go).
+	e.output.Logic = orderLogicByDataflow(e.output.Logic)
+
 	if len(e.errors) > 0 {
 		return nil, fmt.Errorf("elaboration failed:\n%s", strings.Join(e.errors, "\n"))
 	}

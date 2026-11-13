@@ -63,14 +63,12 @@
 //  Turn on `.zcd;` in the deck. A modulator's edges are discrete jumps in the
 //  middle of a solver step; .zcd locates each one and ends the step on it, so
 //  the edges land at their exact time instead of on the next step boundary.
-//  Each wrapper below drives its s onto an internal `gate` node (a voltage
-//  source to ground, nothing else on it) for exactly this reason: zero-crossing
-//  detection watches the sources a step drives, and a logic value that only
-//  enters the circuit through an analog module's input is not one of them.
-//  The gate node is also handy in .save as the logged command (`…leg.gate`).
+//  (Until 2026-11-13 .zcd could not see a command that reaches the circuit
+//  only through an analog module's input, and IdealLeg copied s onto a private
+//  `gate` node for it; the compiler now hands such values to .zcd itself.)
 // ─────────────────────────────────────────────────────────────────────────────
 
-// The switch itself. Prefer IdealLeg, which adds the gate node .zcd needs.
+// The switch itself.
 analog module IdealLegCore<>(input double s) [wire dc_p, wire dc_n, wire a]
 {
     double on = 0.0;
@@ -90,8 +88,6 @@ analog module IdealLegCore<>(input double s) [wire dc_p, wire dc_n, wire a]
 // One leg: [dc_p, dc_n, a], s = 1 ties a to dc_p, s = 0 to dc_n.
 module IdealLeg<>(input double s) [wire dc_p, wire dc_n, wire a]
 {
-    wire gate;
-    voltage_source<>(s) [gate, gnd];
     module sw = IdealLegCore<>(s) [dc_p, dc_n, a];
 }
 

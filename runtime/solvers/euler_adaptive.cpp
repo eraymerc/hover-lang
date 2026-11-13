@@ -31,6 +31,7 @@ EulerAdaptive::StepResult EulerAdaptive::take_implicit_step(VM *vm, double dt) {
     bool converged = false;
     int  iters     = 0;
     double alpha   = 1.0 / dt;
+    vm->analog_dt  = dt;   // analog code sees t_n + dt (vm.hpp)
     slots_begin_be(vm->slots, alpha);
 
     JacRefresh jac;   // within-step re-form policy — see newton_core.hpp
@@ -55,13 +56,20 @@ EulerAdaptive::StepResult EulerAdaptive::take_implicit_step(VM *vm, double dt) {
 
         // Within-step Jacobian refresh — policy and measurements in
         // newton_core.hpp.
-        if (jac.due(iter, conv.worst_ratio)) {
+        if (!plain_newton && jac.due(iter, conv.worst_ratio)) {
             jacobian = vm_compute_jacobian(vm, x_guess);
             vm->solver->g_dirty = 1;
         }
 
         // Re-run Phase A/B to calculate device currents for the current iteration
         api_update_solution(vm->api, x_guess);
+        // Plain Newton forms J AFTER the update, so the Jacobian and the residual
+        // see the same nr_prev and the limiters linearise both at one point
+        // (newton_trust_region.hpp, PLAIN-NEWTON RETRY).
+        if (plain_newton) {
+            jacobian = vm_compute_jacobian(vm, x_guess);
+            vm->solver->g_dirty = 1;
+        }
         vm_run_analog(vm);
         vm_run_phase_b(vm);
 
@@ -88,6 +96,7 @@ EulerAdaptive::StepResult EulerAdaptive::take_implicit_step(VM *vm, double dt) {
         // large constant to both endpoints of the accept/reject comparison
         // (J is huge at stiff junctions), blinding the trust region.
         // Backward Euler here has no physical correction term.
+        if (plain_newton) { x_guess = x_new; continue; }   // retry mode: undamped (newton_trust_region.hpp)
         TrustRegionResult tr = trust_region_step(
             vm, trust, x_guess, x_new, alpha, x_anchor, nullptr);
         if (tr.collapsed) {
@@ -102,6 +111,7 @@ EulerAdaptive::StepResult EulerAdaptive::take_implicit_step(VM *vm, double dt) {
         vm_commit_slots_at(vm, x_guess);
         solver_advance_time(vm->solver, x_guess);
         vm->time += dt;
+        vm->analog_dt = 0.0;
     } else {
         // Kept for the failure dump in run(), which needs the abandoned iterate
         // and the history it was solved against to rebuild the residual.
@@ -119,6 +129,7 @@ void EulerAdaptive::run(VM *vm) {
     if (max_dt == 0.0) max_dt = vm->time_step;
     n_nodes = vm->solver->sys->num_nodes;
     RejectRun reject_run;   // bounds the back-off spiral — see step_limits.hpp
+    LteFloorRun lte_floor;   // ends a run stuck at the step floor — see lte.hpp
 
     vm->solver->sys->dt = vm->time_step;
 
@@ -130,7 +141,7 @@ void EulerAdaptive::run(VM *vm) {
     bool restart_after_event = false;   // the step just accepted ended on a .zcd event
     bool after_event = false;           // the last ACCEPTED step ended on one
     EventStepCap event_cap;             // first step after an event — see step_limits.hpp
-    const std::vector<char> state_rows = lte_state_rows(*vm->solver->sys);
+    const LteRows state_rows = lte_state_rows(*vm->solver->sys);
 
     while (vm->time < vm->end_time) {
         attempt++;
@@ -147,6 +158,7 @@ void EulerAdaptive::run(VM *vm) {
         }
 
         StepResult step = take_implicit_step(vm, dt);
+        if (step.converged) plain_newton = false;
 
         // .zcd (vm/zcd.hpp): the step is already committed, so a logic jump
         // inside it rolls it back and re-solves it to end just after the jump.
@@ -178,7 +190,7 @@ void EulerAdaptive::run(VM *vm) {
             lte_r = lte_ratio(ls, lm);
             if (lte_r > 1.0 && dt > lte_min_step(max_dt)) {
                 vm_restore_state(vm, checkpoint);
-                vm->time_step = dt * lte_factor(lte_r, lm);
+                vm->time_step = lte_next_step(dt, lte_r, lm, max_dt);
                 step_trace("euler_adaptive", attempt, vm->time, dt, step.iters, "lte-reject");
                 continue;
             }
@@ -193,8 +205,15 @@ void EulerAdaptive::run(VM *vm) {
             logger_log_signals(&vm->logger, vm->values);
 
             if (lte_r >= 0.0) {
-                // The error estimate picks the next step; the .tran step is a ceiling.
-                vm->time_step = std::min(max_dt, dt * lte_factor(lte_r, lm));
+                if (lte_floor.exhausted(dt, lte_r, max_dt)) {
+                    fprintf(stderr, "[Adaptive] FATAL: timestep too small at t=%.3e: the truncation error "
+                                    "stayed over tolerance at the minimum step (%.1e s)\n", vm->time, lte_min_step(max_dt));
+                    vm_fail(vm);
+                    break;
+                }
+                // The error estimate picks the next step; the .tran step is a ceiling,
+                // lte_min_step the floor.
+                vm->time_step = lte_next_step(dt, lte_r, lm, max_dt);
                 if (step.iters > max_iter / 2) vm->time_step = std::min(vm->time_step, 0.8 * dt);
                 step_trace("euler_adaptive", attempt, vm->time, dt, step.iters, "lte");
             } else if (step.iters < 5) {
@@ -209,6 +228,13 @@ void EulerAdaptive::run(VM *vm) {
             }
         } else {
             vm_restore_state(vm, checkpoint);
+            if (!plain_newton) {
+                // One retry at this dt as plain Newton (newton_trust_region.hpp).
+                plain_newton = true;
+                step_trace("euler_adaptive", attempt, vm->time, dt, step.iters, "plain-newton");
+                continue;
+            }
+            plain_newton = false;
             reject_run.note(dt);
             // Back off from the step that FAILED, not from vm->time_step: the
             // restore above put back the checkpoint's preferred step, which is

@@ -14,15 +14,13 @@ from <math> import sin;
 //           amplitude m·Vdc/2 (single-phase bridge output: m·Vdc)
 //    phase  phase of the reference at t = 0, in DEGREES
 //
-//  Timing. The reference is evaluated at time + dt — the end of the step
-//  being solved, the time point an implicit integrator solves for, which is
-//  where SPICE evaluates a SIN source too. A digital module runs at the start
-//  of the step, so evaluating at plain `time` would hand the bridge a duty
-//  one step stale (a delay of one .tran step, a phase lag of 360°·f·dt).
-//  For that reason these modules are meant to run unclocked: bound to a
-//  .clock, dt is the clock period and the output would lead by one tick.
-//  For a sampled (firmware) reference, write the few lines yourself with a
-//  plain `time`.
+//  Timing. These are analog modules: they are evaluated inside each solve, at
+//  the time point the implicit integrator solves for (t_n + dt), which is
+//  where SPICE evaluates a SIN source too. Until 2026-11-13 they were digital
+//  modules reading `time + dt`, because digital logic runs at the START of a
+//  step and analog code then still read t_n as well (docs/hoveR_sorunlar.txt
+//  item 36). For a sampled (firmware) reference, write the few lines yourself
+//  in a clocked digital module with a plain `time`.
 //
 //  Overmodulation. Duties are clamped to [0, 1], so an index past the linear
 //  range (m > 1, or m > 2/√3 with third-harmonic injection) clips the
@@ -43,10 +41,10 @@ from <math> import sin;
 //  Into an H-bridge, V(a) − V(b) = (d_a − d_b)·Vdc = m·Vdc·sin(θ), on a
 //  constant common mode of Vdc/2. Linear for m ≤ 1.
 
-digital module SineDuty1Ph<double f, double m, double phase>
+analog module SineDuty1Ph<double f, double m, double phase>
     (output double d_a, output double d_b) []
 {
-    double th = 2.0 * 3.14159265358979 * f * (time + dt)
+    double th = 2.0 * 3.14159265358979 * f * time
               + phase * 3.14159265358979 / 180.0;
     double s = 0.5 * m * sin(th);
 
@@ -79,10 +77,10 @@ digital module SineDuty1Ph<double f, double m, double phase>
 //  from the currents of a load with an isolated neutral. Line-to-line
 //  amplitude: √3·m·Vdc/2 for either k3.
 
-digital module SineDuty3Ph<double f, double m, double phase, double k3>
+analog module SineDuty3Ph<double f, double m, double phase, double k3>
     (output double d_a, output double d_b, output double d_c) []
 {
-    double th = 2.0 * 3.14159265358979 * f * (time + dt)
+    double th = 2.0 * 3.14159265358979 * f * time
               + phase * 3.14159265358979 / 180.0;
     double third = k3 * sin(3.0 * th);
 

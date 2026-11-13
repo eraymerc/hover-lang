@@ -92,18 +92,16 @@ module main<>() []
     // source delivers power: passive sign convention).
     voltage_source vbus<24>() [vdc, gnd];
 
-    // 2. Modulator FIRST, dead-time generators after it: digital modules run
-    // in instantiation order, and the generators must see this step's command.
+    // 2. Modulator and dead-time generators (in any order: a module that writes
+    // a signal always runs before the modules that read it).
     module mod  = Spwm<24, 50, 20k, 0.8>(s_a, s_b, v_ref) [];
     module dt_a = dt.DeadTime<300n>(s_a, g_a_hi, g_a_lo) [];
     module dt_b = dt.DeadTime<300n>(s_b, g_b_hi, g_b_lo) [];
 
-    // 3. Power stage: 100 mOhm switches, 0.8 V + 50 mOhm diodes. Coss = 0
-    // instead of the 100 pF default: an ideal commutation, and half the steps.
-    // That is safe here because the split capacitors and the 68 Ohm leg give
-    // every filter node its own path to ground; on a filter that reaches the
-    // rails only through the bridge, keep the default (switched.hvr explains).
-    // With the default 100 pF: 18.85 V, 0.61 % THD, ~2x the run time.
+    // 3. Power stage: 100 mOhm switches, 0.8 V + 50 mOhm diodes, Coss = 0: an
+    // ideal commutation, and the fewest steps. With Coss = 100p, a small
+    // MOSFET's: 18.85 V, 0.61 % THD (partial zero-voltage
+    // switching near the current's zero crossings — switched.hvr explains).
     module bridge = sw.SwitchedHBridge<Ron = 100m, Vf = 0.8, Rd = 50m, Coss = 0>
                     (g_a_hi, g_a_lo, g_b_hi, g_b_lo) [vdc, gnd, a, b];
 

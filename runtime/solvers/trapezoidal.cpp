@@ -25,6 +25,7 @@ void Trapezoidal::run(VM *vm) {
     if (max_dt == 0.0) max_dt = vm->time_step;
     n_nodes = vm->solver->sys->num_nodes;
     RejectRun reject_run;   // bounds the back-off spiral — see step_limits.hpp
+    LteFloorRun lte_floor;   // ends a run stuck at the step floor — see lte.hpp
     JacRefresh jac;         // within-step re-form policy — see newton_core.hpp
 
     int n = (int)vm->solver->last_solution.size();
@@ -42,6 +43,7 @@ void Trapezoidal::run(VM *vm) {
     bool jacobian_valid = false;
     double jac_alpha = -1.0;      // alpha the held Jacobian was formed under (see the slots note)
     bool force_euler = true; // ALWAYS start the simulation with a Backward Euler step
+    bool plain_newton = false;          // this attempt is the plain-Newton retry
     bool restart_after_event = false;   // the last step ended on a .zcd event
     EventStepCap event_cap;             // first step after an event — see step_limits.hpp
 
@@ -49,7 +51,7 @@ void Trapezoidal::run(VM *vm) {
     // keeps no multistep history of its own; this one only feeds the estimate.
     BdfHistory lhist;
     lhist.reset(vm->solver->last_solution);
-    const std::vector<char> state_rows = lte_state_rows(*vm->solver->sys);
+    const LteRows state_rows = lte_state_rows(*vm->solver->sys);
 
     long attempt = 0;   // counts ATTEMPTS, not accepted steps — see step_trace.hpp
 
@@ -131,13 +133,21 @@ void Trapezoidal::run(VM *vm) {
             // newton_core.hpp. A Jacobian formed at x_anchor is the wrong
             // linearization for a junction that changes state inside the step,
             // and shrinking dt does not address it.
-            if (jac.due(iter, conv.worst_ratio)) {
+            if (!plain_newton && jac.due(iter, conv.worst_ratio)) {
                 cached_jacobian = vm_compute_jacobian(vm, x_guess);
                 vm->solver->g_dirty = 1;
                 jacobian_current_this_step = true;
             }
 
             api_update_solution(vm->api, x_guess);
+            // Plain Newton forms J AFTER the update, so the Jacobian and the residual
+            // see the same nr_prev and the limiters linearise both at one point
+            // (newton_trust_region.hpp, PLAIN-NEWTON RETRY).
+            if (plain_newton) {
+                cached_jacobian = vm_compute_jacobian(vm, x_guess);
+                vm->solver->g_dirty = 1;
+                jacobian_current_this_step = true;
+            }
             vm_run_analog(vm);
             vm_run_phase_b(vm);
 
@@ -186,6 +196,7 @@ void Trapezoidal::run(VM *vm) {
             // Verilog-AMS-style language. The residual is scored against the
             // TRUE physical equation (phys_correction only), so accept/reject
             // is meaningful even on stiff diode/BJT junctions.
+            if (plain_newton) { x_guess = x_new; continue; }   // retry mode: undamped (newton_trust_region.hpp)
             TrustRegionResult tr = trust_region_step(
                 vm, trust, x_guess, x_new, alpha, x_anchor, phys_correction);
             if (tr.collapsed) break;
@@ -197,6 +208,7 @@ void Trapezoidal::run(VM *vm) {
         // 5. Adaptive Timestep Control & Recovery
         // .zcd: a logic output that jumps inside this step (vm/zcd.hpp): re-solve
         // the step to end just after it; the step that does is accepted.
+        if (converged) plain_newton = false;
         bool event_here = false;
         if (converged && vm->zcd_enabled) {
             const double s_ev = vm_locate_event(vm, checkpoint, x_guess, dt);
@@ -221,7 +233,7 @@ void Trapezoidal::run(VM *vm) {
             if (lte_r < 0.0 && lm.p > 1) { lm = lte_be(); lte_r = lte_ratio(ls, lm); }
             if (lte_r > 1.0 && dt > lte_min_step(max_dt)) {
                 vm_restore_state(vm, checkpoint);
-                vm->time_step = dt * lte_factor(lte_r, lm);
+                vm->time_step = lte_next_step(dt, lte_r, lm, max_dt);
                 step_trace("trap", attempt, vm->time, dt, iters, "lte-reject");
                 continue;
             }
@@ -251,8 +263,15 @@ void Trapezoidal::run(VM *vm) {
 
             // Time Step Adjustment Heuristics
             if (lte_r >= 0.0) {
-                // The error estimate picks the next step; the .tran step is a ceiling.
-                vm->time_step = std::min(max_dt, dt * lte_factor(lte_r, lm));
+                if (lte_floor.exhausted(dt, lte_r, max_dt)) {
+                    fprintf(stderr, "[Trap] FATAL: timestep too small at t=%.3e: the truncation error "
+                                    "stayed over tolerance at the minimum step (%.1e s)\n", vm->time, lte_min_step(max_dt));
+                    vm_fail(vm);
+                    break;
+                }
+                // The error estimate picks the next step; the .tran step is a ceiling,
+                // lte_min_step the floor.
+                vm->time_step = lte_next_step(dt, lte_r, lm, max_dt);
                 if (iters > max_iter / 2) vm->time_step = std::min(vm->time_step, 0.5 * dt);
                 step_trace("trap", attempt, vm->time, dt, iters, "lte");
             } else if (iters <= 4) {
@@ -284,6 +303,13 @@ void Trapezoidal::run(VM *vm) {
                 step_trace("trap", attempt, vm->time, dt, iters, "jac-refresh");
                 continue;
             }
+            if (!plain_newton) {
+                // One retry at this dt as plain Newton (newton_trust_region.hpp).
+                plain_newton = true;
+                step_trace("trap", attempt, vm->time, dt, iters, "plain-newton");
+                continue;
+            }
+            plain_newton = false;
 
             // A fresh Jacobian still failed — now it is genuinely about dt.
             reject_run.note(dt);

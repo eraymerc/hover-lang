@@ -47,6 +47,36 @@
 //    get closer to satisfying the real circuit equations."
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ─────────────────────────────────────────────────────────────────────────────
+// PLAIN-NEWTON RETRY — what the adaptive solvers do when the trust region fails
+//
+// The trust region accepts a step only if the true residual goes DOWN. A
+// commutation onto a diode that was in deep cut-off needs a Newton path that
+// goes UP first: linearised at -310 V the diode is 1 pS, so the first Newton
+// step puts the bridge node at -135 kV; there the diode is a 50 mOhm line and
+// the second step lands on the answer (-0.84 V). The trust region rejects the
+// first step (residual 290 -> 16 000), shrinks, and crawls for max_iter
+// iterations; halving dt does not change the picture, and the run died at the
+// first dead time of a 310 V switched H-bridge (Coss = 0). ngspice takes that
+// step undamped — limiting lives inside the device models (pnjlim) — and
+// solves the same circuit at 2.1 iterations per point.
+//
+// So a step the trust region could not converge is retried ONCE at the same
+// dt as plain Newton: the full step every iteration and the Jacobian re-formed
+// every iteration, as SPICE does. Only if that fails too is dt cut. Steps the
+// trust region converges are untouched, so a deck that never failed a step
+// gives byte-identical output.
+//
+// In this mode the Jacobian is formed AFTER api_update_solution, not before it
+// as the trust-region path does. A Jacobian probe sets the read-view to x, so
+// forming it first made the update shift x itself into nr_prev — every
+// limiter idle in the residual — while the Jacobian had been evaluated against
+// the OLDER iterate: two different linearisation points. An LED at 1.5 MV was
+// then stamped with the conductance of 0.85 V (6e-10 S) and the current of
+// 2.5 V (2.9e11 A), and Newton flew to -1.8e20 V. After the update both see the
+// previous iterate, as one SPICE device evaluation does.
+// ─────────────────────────────────────────────────────────────────────────────
+
 // compute_scale_vector returns D, where D[i] = max(|x[i]|, floor).
 inline Eigen::VectorXd compute_scale_vector(const Eigen::VectorXd &x, double floor_val = 1e-6) {
     Eigen::VectorXd d(x.size());

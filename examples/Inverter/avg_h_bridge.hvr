@@ -59,7 +59,7 @@ import <power/modulation/reference> as ref;
 // The commanded bridge voltage, (d_a − d_b)·Vdc, logged next to the achieved
 // output so the two can be overlaid; the filter's +0.1 % / −2.5° is the only
 // difference between them.
-digital module Command<double vdc>(input double d_a, input double d_b,
+analog module Command<double vdc>(input double d_a, input double d_b,
                                    output double v_cmd) []
 {
     v_cmd = (d_a - d_b) * vdc;

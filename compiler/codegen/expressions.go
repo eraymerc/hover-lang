@@ -288,6 +288,20 @@ func (g *generator) emitExpr(expr ast.Expression, logic elaborator.LogicObject) 
 				return code, ctype
 			}
 			return "0.0", CDouble
+		case "nodiff":
+			// nodiff(expr) is expr's value with NO derivative: the Newton
+			// Jacobian treats it as a constant. A junction limiter needs it to
+			// move the point a device is linearised at without entering the
+			// slope (SPICE's companion form; Verilog-A's $limit is transparent
+			// to the Jacobian the same way). runtime/hover_sim.hpp defines it
+			// for double (identity) and for hvr::Dual (value only), so the
+			// plain and the AD emission both resolve it.
+			if len(n.Arguments) != 1 {
+				g.errors = append(g.errors, "nodiff() takes exactly one argument")
+				return "0.0", CDouble
+			}
+			code, ctype := g.emitExpr(n.Arguments[0], logic)
+			return fmt.Sprintf("nodiff(%s)", emitCast(code, ctype, CDouble)), CDouble
 		default:
 			return g.emitUserFunctionCall(fnName, n.Arguments, logic)
 		}

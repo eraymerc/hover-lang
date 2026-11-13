@@ -14,14 +14,9 @@ from <math> import floor;
 //  The reference is an INPUT, normalised to [-1, 1] (ref = +1 asks for the
 //  leg at dc_p, -1 for dc_n, 0 for the midpoint on average), so the same
 //  modulator serves an open-loop sine, a closed-loop current controller or a
-//  recorded profile: produce `ref` in a digital module of your own and wire it
-//  in. Instantiate that reference module BEFORE the modulator in the deck.
-//  Digital modules run in instantiation order, so the other way round the
-//  modulator compares the previous step's reference — and under .zcd that is
-//  not a small error but a stall: the edge located inside a step is not there
-//  when the next step re-runs the logic with the stale reference, the solver
-//  chases it with ever smaller steps, and the run stops "failed to converge" at
-//  the first PWM edge (measured with ideal_h_bridge.hvr: t = 12.5 us).
+//  recorded profile: produce `ref` in a module of your own and wire it in, in
+//  any order — the compiler runs a module that writes a signal before the
+//  modules that read it (compiler/elaborator/order.go).
 //
 //  ── The carrier ────────────────────────────────────────────────────────────
 //

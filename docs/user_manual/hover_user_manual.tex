@@ -835,6 +835,12 @@ if (ref > carrier) {
 }
 \end{lstlisting}
 
+\textbf{Note:} circuit elements (\code{R}, \code{C}, sources, \ldots) and module
+instances may not appear inside an \code{if} or a \code{while}: the circuit's
+structure is fixed when the deck is compiled, and the compiler rejects them.
+To choose at run time, keep the element outside and switch what drives it ---
+a source's value, or a conductance written as a \code{VCCS}.
+
 \subsection{While Loop}
 
 \begin{lstlisting}
@@ -1650,6 +1656,31 @@ function internally read \code{V()} it would not be redirected --- though in
 practice functions cannot take \code{wire} arguments, so this case does not
 arise for node reads.
 
+\subsection{nodiff()}
+\code{nodiff(expr)} is the value of \code{expr}, but the Newton Jacobian treats
+it as a constant: its derivative is zero. It is a builtin like \code{nr\_prev()},
+needs no import, and is meant for the second half of junction limiting.
+
+A limiter such as \code{pnjlim} returns a voltage near the previous iterate. If
+that voltage goes straight into the device equation, the Jacobian differentiates
+\emph{through} the limiter, whose slope far from the previous iterate is tiny ---
+the device then looks like an open circuit to Newton exactly while it is being
+limited. SPICE avoids this by linearising the device at the limited voltage and
+applying that tangent line to the \emph{true} voltage (the companion model);
+\code{nodiff()} expresses the same thing in the language:
+
+\begin{lstlisting}
+double v  = V(a) - V(k);
+double vd = nodiff(pnjlim(V(a) - V(k), nr_prev(V(a) - V(k)), nvt, vcrit));
+double e  = jexp(vd, nvt);
+double id = Is * (e - 1.0) + Is * e / nvt * (v - vd);   // f(vd) + f'(vd) (v - vd)
+\end{lstlisting}
+
+At a solution the limiter is idle, \code{vd} equals \code{v}, and \code{id} is the
+diode equation exactly. \code{<optoelectronics/leds>}' \code{LED} is written this
+way. Under the numerical (finite-difference) Jacobian, used when a deck cannot be
+differentiated automatically, \code{nodiff()} is a plain identity.
+
 %% ── 12. Special Keywords ────────────────────────────────────────────────────
 \section{Special Keywords}
 
@@ -1658,10 +1689,10 @@ arise for node reads.
   \toprule
   \textbf{Keyword} & \textbf{Description} \\
   \midrule
-  \code{time}            & Current simulation time in seconds. Read-only, available everywhere. \\
+  \code{time}            & Simulation time in seconds. Read-only, available everywhere. In analog code it is the time point the step solves for ($t_n + dt$, where SPICE evaluates its sources); in digital and structural logic it is the step's start $t_n$ --- logic runs once there and holds for the step. \\
   \code{gnd}             & Ground node (0 V reference). Available everywhere as a wire. \\
   \code{state}           & Variable modifier — retains value across timesteps. \\
-  \code{dt}              & Timestep in seconds. Read-only, available everywhere.  \\
+  \code{dt}              & Timestep in seconds. Read-only, available everywhere. In analog code, the step being solved; in a clocked digital module, the clock period.  \\
   \code{input}/\code{output} & Logic port direction in module declarations. \\
   \bottomrule
 \end{tabular}

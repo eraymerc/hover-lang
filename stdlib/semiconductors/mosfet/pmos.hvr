@@ -80,7 +80,7 @@ analog module PMOS4<double VTO,  double KP,   double GAMMA, double PHI, double L
     double dvd     = vds_true - vds_old;
     if (dvd >  dvd_max) { dvd =  dvd_max; }
     if (dvd < -dvd_max) { dvd = -dvd_max; }
-    double vds = vds_old + dvd;
+    double vds = nodiff(vds_old + dvd);   // linearisation point (see the channel current)
 
     double flip = 1.0;
     if (vds < 0.0) { flip = -1.0; }
@@ -106,14 +106,15 @@ analog module PMOS4<double VTO,  double KP,   double GAMMA, double PHI, double L
     double dvg     = vgs_true - vgs_old;
     if (dvg >  dvg_max) { dvg =  dvg_max; }
     if (dvg < -dvg_max) { dvg = -dvg_max; }
-    double vgs = vgs_old + dvg;
+    double vgs = nodiff(vgs_old + dvg);
 
     // ── Channel current ─────────────────────────────────────────────────────
     double vch  = vds * flip;
     double vgst = vgs - von;
     if (flip < 0.0) { vgst = vgs - vds - von; }
 
-    if (vgst > 20.0) { vgst = 20.0; }
+    double vgst_capped = 0.0;
+    if (vgst > 20.0) { vgst = 20.0; vgst_capped = 1.0; }
 
     double vdsat = vgst;
     if (vdsat < 0.0) { vdsat = 0.0; }
@@ -129,6 +130,36 @@ analog module PMOS4<double VTO,  double KP,   double GAMMA, double PHI, double L
     }
     cdrain = cdrain * flip;
 
+    // SPICE's companion form: the limiters above (limvds on vds, fetlim on
+    // vgs) move the point the channel is LINEARISED at, never the slope.
+    // vds/vgs are nodiff()'d, and the current is the tangent plane there
+    // evaluated at the true voltages:
+    //     I = I(vgs, vds) + dI/dvgs (vgs_true - vgs) + dI/dvds (vds_true - vds).
+    // With I = flip * F(vgst, vch), vgst = vgs - von (- vds when flipped) and
+    // vch = flip * vds: dI/dvgs = flip * dF/dvgst, and dI/dvds = dF/dvch, or
+    // dF/dvgst + dF/dvch when flipped. von keeps its true dependence on the
+    // body voltage, which is not limited. At a solution the limiters are idle
+    // and this is the Level-1 equation exactly (docs/hoveR_sorunlar.txt
+    // item 42); before, the Jacobian differentiated through the clamps, whose
+    // slope is exactly zero while they clamp.
+    double f_g = 0.0;   // dF/dvgst
+    double f_c = 0.0;   // dF/dvch
+    if (vgst > 0.0) {
+        double betap_d = Beta * (1.0 + LAMBDA * vch);
+        if (vch < vdsat) {
+            f_g = betap_d * vch;
+            f_c = betap_d * (vgst - vch) + Beta * LAMBDA * vch * (vgst - 0.5 * vch);
+        } else {
+            f_g = betap_d * vgst;
+            f_c = 0.5 * Beta * LAMBDA * vgst * vgst;
+        }
+    }
+    if (vgst_capped > 0.5) { f_g = 0.0; }
+    double di_dvgs = flip * f_g;
+    double di_dvds = f_c;
+    if (flip < 0.0) { di_dvds = f_g + f_c; }
+    cdrain = cdrain + di_dvgs * (vgs_true - vgs) + di_dvds * (vds_true - vds);
+
     // Reversed terminal order relative to the NMOS: a positive cdrain is
     // current flowing source -> drain through the channel, the PMOS on-state.
     current_source<>(cdrain) [si, di];
@@ -139,11 +170,19 @@ analog module PMOS4<double VTO,  double KP,   double GAMMA, double PHI, double L
     double vbs_l = pnjlim(V(si) - V(bulk), nr_prev(V(si) - V(bulk)), nvt, vcrit);
     double vbd_l = pnjlim(V(di) - V(bulk), nr_prev(V(di) - V(bulk)), nvt, vcrit);
 
-    double ibs = is_j * (jexp(vbs_l, nvt) - 1.0);
-    double ibd = is_j * (jexp(vbd_l, nvt) - 1.0);
+    // Companion form, as in the diode: linearised at the limited voltage
+    // (held below 60 nvt, where jexp() stops growing), evaluated at the true one.
+    if (vbs_l > 60.0 * nvt) { vbs_l = 60.0 * nvt; }
+    if (vbd_l > 60.0 * nvt) { vbd_l = 60.0 * nvt; }
+    double vbs_d = nodiff(vbs_l);
+    double vbd_d = nodiff(vbd_l);
+    double e_bs  = jexp(vbs_d, nvt);
+    double e_bd  = jexp(vbd_d, nvt);
+    double ibs = is_j * (e_bs - 1.0) + is_j * e_bs / nvt * ((V(si) - V(bulk)) - vbs_d);
+    double ibd = is_j * (e_bd - 1.0) + is_j * e_bd / nvt * ((V(di) - V(bulk)) - vbd_d);
 
-    double ibs_g = ibs + 1.0e-12 * vbs_l;
-    double ibd_g = ibd + 1.0e-12 * vbd_l;
+    double ibs_g = ibs + 1.0e-12 * (V(si) - V(bulk));
+    double ibd_g = ibd + 1.0e-12 * (V(di) - V(bulk));
     current_source<>(ibs_g) [si, bulk];
     current_source<>(ibd_g) [di, bulk];
 

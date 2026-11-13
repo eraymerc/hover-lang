@@ -39,6 +39,7 @@ func NewAnalyzer() *Analyzer {
 	globalScope.Define(&Symbol{Name: "idt", Type: ast.TFunc})
 	globalScope.Define(&Symbol{Name: "ddt", Type: ast.TFunc})
 	globalScope.Define(&Symbol{Name: "nr_prev", Type: ast.TFunc})
+	globalScope.Define(&Symbol{Name: "nodiff", Type: ast.TFunc})
 	return &Analyzer{
 		currentScope:  globalScope,
 		Errors:        []string{},

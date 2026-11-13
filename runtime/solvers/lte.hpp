@@ -37,7 +37,8 @@
 // diode commutations.
 //
 // Each state component is held to LTE_TRTOL * (rtol * |value| + atol), atol
-// being the solver's vntol for nodes and abstol for branch currents; a slot,
+// being the solver's vntol for nodes and abstol for branch currents — except a
+// node with a floating capacitor, which is held on its charge (lte_ratio); a slot,
 // whose expression is a charge in every library model, is held relative to its
 // own recent magnitude plus SPICE's CHGTOL (1e-14 C). LTE_TRTOL = 7 is SPICE's default: the estimate is known to
 // be pessimistic, and without the factor steps come out several times smaller
@@ -84,12 +85,30 @@ inline LteMethod lte_trap() { return {2, 1.0 / 12.0}; }
 
 // Rows whose unknown is integrated: any nonzero entry in that row or column of
 // C. Computed once per run — C does not change during a transient.
-inline std::vector<char> lte_state_rows(const System &sys) {
-    std::vector<char> m(sys.size, 0);
+//
+// A node row with capacitance to ANOTHER node (a floating capacitor) also keeps
+// that coupling, for the charge-form test in lte_ratio: peers holds C(i,k) for
+// the other node rows k, ground the row sum, i.e. the capacitance to ground.
+struct LteRows {
+    std::vector<char>                               state;
+    std::vector<std::vector<std::pair<int, double>>> peers;
+    std::vector<double>                              ground;
+};
+
+inline LteRows lte_state_rows(const System &sys) {
+    LteRows r;
+    r.state.assign(sys.size, 0);
+    r.peers.assign(sys.size, {});
+    r.ground.assign(sys.size, 0.0);
     for (int i = 0; i < sys.size; i++)
-        for (int j = 0; j < sys.size; j++)
-            if (sys.C(i, j) != 0.0) { m[i] = 1; m[j] = 1; }
-    return m;
+        for (int j = 0; j < sys.size; j++) {
+            const double c = sys.C(i, j);
+            if (c == 0.0) continue;
+            r.state[i] = 1; r.state[j] = 1;
+            r.ground[i] += c;
+            if (j != i && i < sys.num_nodes && j < sys.num_nodes) r.peers[i].push_back({j, c});
+        }
+    return r;
 }
 
 // The (m)-th divided difference of the m+1 points (t[k], y[k]).
@@ -109,7 +128,7 @@ inline double lte_divided_difference(const double *t, const double *y, int m) {
 struct LteStep {
     const BdfHistory          *hist;
     const Eigen::VectorXd     *x_new;
-    const std::vector<char>   *state_rows;
+    const LteRows             *state_rows;
     int                        n_nodes;
     double                     dt;
     double                     rtol, vntol, abstol;
@@ -131,15 +150,44 @@ inline double lte_ratio(const LteStep &st, LteMethod m) {
     double worst = 0.0;
     double y[4];
     const Eigen::VectorXd &xn = *st.x_new;
+    const LteRows &R = *st.state_rows;
+    std::vector<double> e(xn.size(), 0.0);
     for (int i = 0; i < (int)xn.size(); i++) {
-        if (!(*st.state_rows)[i]) continue;
+        if (!R.state[i]) continue;
         y[0] = xn(i);
         for (int k = 1; k < npts; k++) y[k] = H.y[k - 1](i);
-        const double e   = coef * lte_divided_difference(t, y, m.p + 1);
+        e[i] = coef * lte_divided_difference(t, y, m.p + 1);
+        if (!R.peers[i].empty()) continue;                // charge form, below
         const double tol = st.rtol * std::max(std::abs(y[0]), std::abs(y[1]))
                          + (i < st.n_nodes ? st.vntol : st.abstol);
-        const double r   = std::abs(e) / (LTE_TRTOL * tol);
+        const double r   = std::abs(e[i]) / (LTE_TRTOL * tol);
         if (!(r <= worst)) worst = r;                     // NaN counts as worst
+    }
+
+    // A node with a floating capacitor is judged on its CHARGE, as SPICE's
+    // CKTterr judges every capacitor: the error of sum_k C(i,k) x_k against
+    // rtol times the charge actually held, |C| * |v_i - v_k| per capacitor.
+    // Judged on its own voltage, a node sitting near 0 V between two capacitors
+    // holding 241 V and 70 V got a 1 uV tolerance; at dt ~ 1e-13 s the solve's
+    // own noise on it (1e-4 V) failed that at every step, and the step collapsed
+    // (310 V switched H-bridge, cm_mid). For a capacitor to ground or an inductor
+    // the charge form IS the voltage/current form, so those rows keep it as is.
+    const Eigen::VectorXd &xp = H.y[0];                    // last accepted point
+    for (int i = 0; i < st.n_nodes && i < (int)xn.size(); i++) {
+        if (R.peers[i].empty()) continue;
+        const double g = R.ground[i];
+        double eq  = g * e[i];
+        double qn  = std::abs(g * xn(i)), qp = std::abs(g * xp(i));
+        double cap = std::abs(g);
+        for (const auto &[k, c] : R.peers[i]) {
+            eq  += c * (e[k] - e[i]);
+            qn  += std::abs(c * (xn(i) - xn(k)));
+            qp  += std::abs(c * (xp(i) - xp(k)));
+            cap += std::abs(c);
+        }
+        const double tol = st.rtol * std::max(qn, qp) + st.vntol * cap;
+        const double r   = std::abs(eq) / (LTE_TRTOL * tol);
+        if (!(r <= worst)) worst = r;
     }
     if (st.s_new) {
         const std::vector<double> &sn = *st.s_new;
@@ -170,3 +218,29 @@ inline double lte_factor(double r, LteMethod m) {
 // forever would stall the run. 1e-9 of the ceiling is far below any step the
 // controller would otherwise ask for.
 inline double lte_min_step(double max_dt) { return 1e-9 * max_dt; }
+
+// The floor holds for the NEXT step too. Before this, a step at the floor was
+// accepted but the step after it was still dt * lte_factor — up to 4x smaller.
+// An estimate that stays above 1 whatever dt is (solver noise on a node near
+// 0 V does that) then drove dt to 1e-108 s on a 310 V switched H-bridge:
+// millions of accepted steps with the clock frozen, a run that never ended.
+// Used for the next step after an accept and after a truncation reject alike.
+inline double lte_next_step(double dt, double r, LteMethod m, double max_dt) {
+    return std::max(lte_min_step(max_dt), std::min(max_dt, dt * lte_factor(r, m)));
+}
+
+// ngspice stops with "timestep too small" when a step at its delmin still fails
+// the error test. A genuine discontinuity leaves the estimate's window (p + 2 <= 4
+// points) within a few steps, so the run is ended only after LTE_FLOOR_RUN_MAX
+// accepted steps in a row at the floor and over tolerance.
+inline constexpr int LTE_FLOOR_RUN_MAX = 10;
+
+struct LteFloorRun {
+    int n = 0;
+    // Call once per accepted step; true means the run cannot go on.
+    bool exhausted(double dt, double r, double max_dt) {
+        if (r > 1.0 && !(dt > lte_min_step(max_dt))) return ++n >= LTE_FLOOR_RUN_MAX;
+        n = 0;
+        return false;
+    }
+};

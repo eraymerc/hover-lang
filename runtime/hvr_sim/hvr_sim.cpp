@@ -16,7 +16,7 @@
 namespace hvr {
 
 namespace {
-enum PhaseSlot { kStructural, kDigital, kAnalog, kDriveSources, kLog, kSaveState, kRestoreState, kStateInit, kJacobian, kSlots };
+enum PhaseSlot { kStructural, kDigital, kAnalog, kDriveSources, kLog, kSaveState, kRestoreState, kStateInit, kJacobian, kZcdWatch, kSlots };
 enum class Field;
 }
 
@@ -211,8 +211,15 @@ bool Sim::run_ac() { return vm_run_ac(&impl_->vm); }
 
 // ── Inside phases ────────────────────────────────────────────────────────────
 
-double Sim::time() const { return impl_->vm.time; }
-double Sim::dt() const { return impl_->tick_dt > 0.0 ? impl_->tick_dt : impl_->vm.time_step; }
+double Sim::time() const {
+    const VM &vm = impl_->vm;
+    return vm.in_analog ? vm.time + vm.analog_dt : vm.time;   // vm.hpp, analog_dt
+}
+double Sim::dt() const {
+    const VM &vm = impl_->vm;
+    if (vm.in_analog && vm.analog_dt > 0.0) return vm.analog_dt;
+    return impl_->tick_dt > 0.0 ? impl_->tick_dt : vm.time_step;
+}
 double Sim::V(const char *net) const { return api_V(&impl_->api, net); }
 double Sim::V_prev(const char *net) const { return api_V_prev(&impl_->api, net); }
 double Sim::I(const char *element) const { return api_I(&impl_->api, element); }
@@ -293,10 +300,14 @@ void Sim::ad_current_source(int handle, const Dual &c) {
     if (handle < 0 || c.n == 0) return;
     const CurrentSourceRecord *rec = impl_->isrc[handle];
     Eigen::MatrixXd &J = impl_->vm.jacobian_scratch;
+    VM::AdLin lin{rec, c.n, {}, {}};
     for (int j = 0; j < c.n; j++) {
         if (rec->n1 >= 0) J(rec->n1, c.i[j]) += c.d[j];
         if (rec->n2 >= 0) J(rec->n2, c.i[j]) -= c.d[j];
+        lin.i[j] = c.i[j];
+        lin.d[j] = c.d[j];
     }
+    impl_->vm.ad_lin.push_back(lin);   // for the per-device convergence test (vm.hpp)
 }
 void Sim::ad_voltage_source(int handle, const Dual &v) {
     if (handle < 0 || v.n == 0) return;
@@ -308,6 +319,13 @@ void Sim::set_jacobian_phase(Phase jacobian) {
     impl_->phases[kJacobian] = jacobian;
     impl_->vm.phase_jacobian = &run_phase<kJacobian>;
 }
+
+void Sim::set_zcd_watch(Phase watch, int n) {
+    impl_->phases[kZcdWatch] = watch;
+    impl_->vm.phase_zcd_watch = &run_phase<kZcdWatch>;
+    impl_->vm.zcd_watch.assign(n, 0.0);
+}
+void Sim::zcd_watch_value(int i, double v) { impl_->vm.zcd_watch[i] = v; }
 
 void Sim::set_voltage_source(int handle, double v) {
     if (handle >= 0) impl_->sys.B_static(handle) = v * impl_->sys.source_alpha;

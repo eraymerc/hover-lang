@@ -23,39 +23,37 @@ analog module LED<double Is, double n, double Vt, double Vf_clamp, double eta>()
 {
     double nVt = n * Vt;
 
-    // Per-iteration junction limiting, via math's pnjlim() — the same limiter
-    // the diode and both BJT polarities use.
+    // Junction limiting, SPICE's way: the limiter moves the point the diode
+    // is linearised at, never the slope.
     //
-    // This REPLACED a hard clamp of the form
-    //     dv = vNew - vOld; if (dv > nVt) dv = nVt; ... vLim = vOld + dv;
-    // which has a defect no hard clamp can avoid: while it is clamping, vLim is
-    // vOld +- nVt and does not depend on vNew at all, so d(vLim)/dV is exactly
-    // ZERO. Hover measures the Jacobian numerically THROUGH the analog block, so
-    // a clamping LED contributes no conductance to the matrix — Newton goes
-    // blind to the diode during precisely the violent iterate the clamp exists
-    // to survive, which is self-reinforcing: a blind Newton takes a big step,
-    // the big step keeps the clamp engaged.
+    // pnjlim() (and the Vf_clamp ceiling, a last resort for a cold start with
+    // no Newton history) give vd, a voltage near the previous iterate. The
+    // current is then the diode's tangent line at vd, evaluated at the TRUE
+    // voltage v:
     //
-    // Berkeley's pnjlim() compresses logarithmically instead, so its slope past
-    // the seam is small but never zero. That is why every other junction in this
-    // library already uses it.
+    //     id = f(vd) + f'(vd) * (v - vd)          (SPICE's companion model)
     //
-    // This became load-bearing when vm_solve_op started supplying a Jacobian: a
-    // Jacobian-free .op did not care what the limiter's slope was, so the clamp
-    // survived unnoticed. With the Jacobian in play, redled.hvr and
-    // multiple_leds.hvr stopped converging at .op alpha = 0.40 until this
-    // changed.
-    double vLim = pnjlim(V(anode) - V(cathode),
-                         nr_prev(V(anode) - V(cathode)),
-                         nVt, vcrit_of(Is, nVt));
+    // with vd = nodiff(...) so the Jacobian sees the conductance f'(vd) and
+    // nothing of the limiter. At a solution the limiter is idle, vd = v and id
+    // is the diode equation exactly.
+    //
+    // Until 2026-11-13 the limited voltage went straight into f(): the
+    // Jacobian then differentiated THROUGH pnjlim, whose slope past its seam is
+    // nVt / v — 3e-8 at a megavolt — so a limiting LED looked like an open
+    // circuit to Newton, and above Vf_clamp the current was flat (dI/dV = 0).
+    // A 1.5 mA step into an LED || 1 GOhm then "converged" with the anode at
+    // 1.5 MV and 30 pA in the LED (docs/hoveR_sorunlar.txt item 41). Before
+    // that, a hard clamp on vLim had made the slope exactly zero.
+    double v  = V(anode) - V(cathode);
+    double vl = pnjlim(V(anode) - V(cathode),
+                       nr_prev(V(anode) - V(cathode)),
+                       nVt, vcrit_of(Is, nVt));
+    if (vl > Vf_clamp) { vl = Vf_clamp; }
+    double vd = nodiff(vl);
 
-    // Vf_clamp is kept as a last-resort ceiling for a cold start with no NR
-    // history; pnjlim handles every subsequent iterate. jexp() below guards the
-    // EXPONENT rather than the voltage, so deep reverse bias cannot overflow
-    // without flattening the derivative the way a clamp on vLim would.
-    if (vLim > Vf_clamp) { vLim = Vf_clamp; }
-
-    double id = Is * (jexp(vLim, nVt) - 1.0);
+    // jexp() guards the EXPONENT, so deep reverse bias cannot overflow.
+    double e  = jexp(vd, nVt);
+    double id = Is * (e - 1.0) + Is * e / nVt * (v - vd);
     current_source<>(id) [anode, cathode];
 
     // Optical output. The diode equation's own exponential already gives

@@ -39,16 +39,11 @@
 //  the time it last turned each gate off. The turn-on instant, t_off + t_dead,
 //  therefore falls in the middle of some later step, and the solver's zero-
 //  crossing detection (.zcd) finds it: .zcd re-runs the logic at points inside
-//  the step and bisects the instant at which a driven source jumps. The
-//  switched bridge exposes its gate commands to .zcd through witness nodes, so
-//  in the switched_h_bridge benchmark every dead time comes out as t_dead to
+//  the step and bisects the instant at which a logic value the circuit uses
+//  jumps, so in the switched_h_bridge benchmark every dead time comes out as t_dead to
 //  within 1e-6 of a step. Two requirements follow:
 //
 //    - turn on `.zcd;` in the deck;
-//    - instantiate the modulator BEFORE this module. Digital modules run in
-//      instantiation order; if this one runs first it sees the previous step's
-//      s, and the s edge (and everything timed from it) lands on the next step
-//      boundary instead of where it belongs.
 //
 //    - keep the .tran max step shorter than the shortest command pulse that
 //      matters. .zcd compares the drive at a step's two ends and middle, so a

@@ -29,7 +29,20 @@ func (e *Elaborator) flattenModule(mod *ast.ModuleDeclStatement, prefix string, 
 		declFile = p
 	}
 
-	for _, stmt := range mod.Body.Body {
+	e.flattenStatements(mod.Body.Body, scope, declFile, prefix, params, ports, domain, clock)
+}
+
+// flattenStatements flattens one statement list of a module body (the body
+// itself, or the branch a structural `if` selected — structif.go).
+func (e *Elaborator) flattenStatements(stmts []ast.Statement, scope *fileScope, declFile string,
+	prefix string, params map[string]float64, ports map[string]string, domain token.Type, clock string) {
+	for _, stmt := range stmts {
+		// Circuit elements and module instances may not sit inside an `if` or
+		// a `while` (structif.go).
+		if containsStructure(stmt) && !isStructure(stmt) {
+			e.errors = append(e.errors, structureInControlFlowMsg(stmt))
+			continue
+		}
 		switch s := stmt.(type) {
 		case *ast.ModuleInstStatement:
 			target, ok := scope.resolveModule(s.ModuleName)

@@ -277,6 +277,9 @@ func (g *generator) emitSimSetup(cfg simConfig, onSolverError string) {
 	if g.hasJacobianPhase {
 		g.line("sim.set_jacobian_phase(phase_jacobian);  // exact analog Jacobian (automatic differentiation)")
 	}
+	if g.zcdWatch > 0 {
+		g.line("sim.set_zcd_watch(phase_zcd_watch, %d);  // logic read by analog code, for .zcd", g.zcdWatch)
+	}
 	for _, c := range cfg.clocks {
 		g.line("sim.add_clock(%s, %s, %s);", cStr(c.name), formatDoubleLiteral(c.period), c.phaseFunc())
 	}

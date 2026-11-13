@@ -58,47 +58,81 @@ analog module PNP<double Is,  double Nf,  double Nr,
     double nvt_f = Nf * Vt;
     double nvt_r = Nr * Vt;
 
-    // Per-iteration junction limiting. Note the subtraction order — emitter
-    // and collector above base — which is the whole of the polarity change on
-    // the voltage side. Everything downstream then treats veb/vcb exactly as
-    // the NPN treats vbe/vbc.
-    double veb = pnjlim(V(ei) - V(bi), nr_prev(V(ei) - V(bi)),
-                      nvt_f, vcrit_of(Is, nvt_f));
-    double vcb = pnjlim(V(ci) - V(bi), nr_prev(V(ci) - V(bi)),
-                      nvt_r, vcrit_of(Is, nvt_r));
-
+    // Junction limiting, SPICE's way — see the NPN for the companion form.
+    // Note the subtraction order — emitter and collector above base — which is
+    // the whole of the polarity change on the voltage side. Everything
+    // downstream then treats veb/vcb exactly as the NPN treats vbe/vbc.
+    double v1 = V(ei) - V(bi);
+    double v2 = V(ci) - V(bi);
+    double l1 = pnjlim(V(ei) - V(bi), nr_prev(V(ei) - V(bi)),
+                       nvt_f, vcrit_of(Is, nvt_f));
+    double l2 = pnjlim(V(ci) - V(bi), nr_prev(V(ci) - V(bi)),
+                       nvt_r, vcrit_of(Is, nvt_r));
+    if (l1 > 60.0 * nvt_f) { l1 = 60.0 * nvt_f; }
+    if (l2 > 60.0 * nvt_r) { l2 = 60.0 * nvt_r; }
+    double veb = nodiff(l1);
+    double vcb = nodiff(l2);
+    double dv1 = v1 - veb;
+    double dv2 = v2 - vcb;
 
     // ── Ideal transport currents ────────────────────────────────────────────
-    double i_f = Is * (jexp(veb, nvt_f) - 1.0);
-    double i_r = Is * (jexp(vcb, nvt_r) - 1.0);
+    double e_f = jexp(veb, nvt_f);
+    double e_r = jexp(vcb, nvt_r);
+    double i_f = Is * (e_f - 1.0);
+    double i_r = Is * (e_r - 1.0);
+    double g_f = Is * e_f / nvt_f;
+    double g_r = Is * e_r / nvt_r;
 
     // ── Base charge factor qb ───────────────────────────────────────────────
+    // q1 is the Early (base-width modulation) term, q2 the high-injection one.
+    // Vaf/Var/Ikf/Ikr = 0 means "infinite" in SPICE convention, i.e. effect
+    // disabled, which is how the Ebers-Moll degenerate case is selected.
     double inv_vaf = 0.0;
     double inv_var = 0.0;
     if (Vaf > 0.0) { inv_vaf = 1.0 / Vaf; }
     if (Var > 0.0) { inv_var = 1.0 / Var; }
 
     // Forward Early effect is modulation by the collector junction, so vcb
-    // pairs with Vaf and veb with Var.
+    // pairs with Vaf and veb with Var — not the other way round.
     double denom = 1.0 - vcb * inv_vaf - veb * inv_var;
-    if (denom < 0.1) { denom = 0.1; }
+    double dq1_1 = 0.0;
+    double dq1_2 = 0.0;
+    if (denom < 0.1) { denom = 0.1; }   // caps q1 at 10; deep reverse only
     double q1 = 1.0 / denom;
+    if (denom > 0.1) {
+        dq1_1 = q1 * q1 * inv_var;
+        dq1_2 = q1 * q1 * inv_vaf;
+    }
 
     double q2 = 0.0;
-    if (Ikf > 0.0) { q2 = q2 + i_f / Ikf; }
-    if (Ikr > 0.0) { q2 = q2 + i_r / Ikr; }
-    if (q2 < 0.0)  { q2 = 0.0; }
+    double dq2_1 = 0.0;
+    double dq2_2 = 0.0;
+    if (Ikf > 0.0) { q2 = q2 + i_f / Ikf; dq2_1 = g_f / Ikf; }
+    if (Ikr > 0.0) { q2 = q2 + i_r / Ikr; dq2_2 = g_r / Ikr; }
+    if (q2 < 0.0)  { q2 = 0.0; dq2_1 = 0.0; dq2_2 = 0.0; }   // i_f, i_r reach -Is in reverse
 
-    double qb = 0.5 * q1 * (1.0 + sqrt(1.0 + 4.0 * q2));
+    double sq = sqrt(1.0 + 4.0 * q2);
+    double qb = 0.5 * q1 * (1.0 + sq);
+    double dqb_1 = 0.5 * dq1_1 * (1.0 + sq) + q1 * dq2_1 / sq;
+    double dqb_2 = 0.5 * dq1_2 * (1.0 + sq) + q1 * dq2_2 / sq;
 
     // ── Terminal currents ───────────────────────────────────────────────────
-    double i_ec = (i_f - i_r) / qb;
+    // Transport current, thinned by the base charge: this single division is
+    // where both the Early effect and high-injection roll-off enter Ic.
+    double i_t   = (i_f - i_r) / qb;
+    double dit_1 = g_f / qb - (i_f - i_r) * dqb_1 / (qb * qb);
+    double dit_2 = 0.0 - g_r / qb - (i_f - i_r) * dqb_2 / (qb * qb);
+    double i_ec = i_t + dit_1 * dv1 + dit_2 * dv2;
 
-    double i_eb = i_f / Bf + Ise * (jexp(veb, Ne * Vt) - 1.0);
-    double i_cb = i_r / Br + Isc * (jexp(vcb, Nc * Vt) - 1.0);
+    // Base current: ideal component (transport/beta, unaffected by qb) plus
+    // the non-ideal recombination component that dominates at low bias.
+    double e_e = jexp(veb, Ne * Vt);
+    double e_c = jexp(vcb, Nc * Vt);
+    double i_eb = i_f / Bf + Ise * (e_e - 1.0)
+                + (g_f / Bf + Ise * e_e / (Ne * Vt)) * dv1;
+    double i_cb = i_r / Br + Isc * (e_c - 1.0)
+                + (g_r / Br + Isc * e_c / (Nc * Vt)) * dv2;
 
-    // Reversed relative to the NPN: current leaves the emitter and collector
-    // into the base, and the transport current runs emitter to collector.
     current_source<>(i_eb) [ei, bi];
     current_source<>(i_cb) [ci, bi];
     current_source<>(i_ec) [ei, ci];
@@ -107,7 +141,7 @@ analog module PNP<double Is,  double Nf,  double Nr,
     // V = R*I is polarity-agnostic — the branch current simply comes out
     // negative for a PNP — so this construction is unchanged from the NPN.
     double ib_tot = i_eb + i_cb;
-    double rb_eff = rb_of(Rb, Rbm, Irb, ib_tot, qb);
+    double rb_eff = rb_of(Rb, Rbm, Irb, ib_tot, qb + dqb_1 * dv1 + dqb_2 * dv2);
     double v_rb   = rb_eff * I(rbx);
     voltage_source rbx<>(v_rb) [base, bi];
 
@@ -115,8 +149,8 @@ analog module PNP<double Is,  double Nf,  double Nr,
     // Charges are built from the PNP-signed junction voltages, so q_dep sees a
     // positive forward bias exactly as it does for the NPN. The current
     // sources carrying ddt(Q) point the same way as the conduction currents.
-    double q_eb  = Tf * i_f + q_dep(veb, Cje, Vje, Mje, Fc);
-    double q_cb  = Tr * i_r + q_dep(vcb, Cjc, Vjc, Mjc, Fc);
+    double q_eb  = Tf * (i_f + g_f * dv1) + q_dep(v1, Cje, Vje, Mje, Fc);
+    double q_cb  = Tr * (i_r + g_r * dv2) + q_dep(v2, Cjc, Vjc, Mjc, Fc);
     double i_ceb = ddt(q_eb);
     double i_ccb = ddt(q_cb);
 

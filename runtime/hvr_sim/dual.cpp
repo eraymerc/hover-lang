@@ -95,6 +95,7 @@ Dual expm1(const Dual &a) { return detail::unary(a, std::expm1(a.v), std::exp(a.
 Dual log(const Dual &a) { return detail::unary(a, std::log(a.v), 1.0 / a.v); }
 Dual log10(const Dual &a) { return detail::unary(a, std::log10(a.v), 1.0 / (a.v * 2.3025850929940457)); }
 Dual log2(const Dual &a) { return detail::unary(a, std::log2(a.v), 1.0 / (a.v * 0.69314718055994531)); }
+Dual nodiff(const Dual &a) { return Dual(a.v); }
 Dual log1p(const Dual &a) { return detail::unary(a, std::log1p(a.v), 1.0 / (1.0 + a.v)); }
 Dual sqrt(const Dual &a) { const double s = std::sqrt(a.v); return detail::unary(a, s, 0.5 / s); }
 Dual cbrt(const Dual &a) { const double c = std::cbrt(a.v); return detail::unary(a, c, 1.0 / (3.0 * c * c)); }

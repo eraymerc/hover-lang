@@ -11,8 +11,8 @@ from <math> import exp, log1p;
 //                 │
 //          ┌──────┼──────┬──────┐
 //          │      │      │      │
-//        Ron/   diode   Coss   (gate witness:
-//        Roff    ▲ │     ═      see "Using it")
+//        Ron/   diode   Coss
+//        Roff    ▲ │     ═
 //          │      │      │
 //          └──────┼──────┴
 //                 │
@@ -64,7 +64,11 @@ from <math> import exp, log1p;
 //
 //  The stdlib SPICE diode (<semiconductors> Diode, Is/N chosen for the same
 //  Vf, plus Rs) was measured against it on the switched_h_bridge benchmark
-//  (24 V, 20 kHz, 300 ns dead time, 40 ms, Ron = 0.1 Ohm):
+//  (24 V, 20 kHz, 300 ns dead time, 40 ms, Ron = 0.1 Ohm) — before the
+//  2026-11-13 fixes. Since then (companion-form diode, per-device convergence
+//  test; sorunlar items 38, 39, 42) the SPICE diode runs at Coss = 0, Cjo = 0
+//  too and matches ngspice with the same D model: 18.8131 V, 0.802 % THD at
+//  24 V and 243.264 V, 0.762 % at 310 V. The table as first measured:
 //
 //                                  smoothed PWL      SPICE diode
 //      Coss = 0,    Cjo = 0         1.5 s,  67k      FAILS at the first
@@ -74,50 +78,42 @@ from <math> import exp, log1p;
 //      Coss = 100p, Cjo = 100p       —                7.4 s, 129k
 //                                  (run time, accepted steps)
 //
-//  The SPICE diode fails because its Rs puts an internal node in series with
+//  The SPICE diode failed because its Rs puts an internal node in series with
 //  the junction, and that node carries no capacitance unless Cjo > 0: when the
 //  dead time starts and the inductor current has to move onto the diode, the
 //  junction must swing from reverse bias to full conduction in one solve, and
 //  the trust-region Newton stalls on the capacitance-free node (the failure in
-//  docs/hoveR_sorunlar.txt item 28). Giving it Cjo makes it run, at 2-7x the
-//  cost. The smoothed PWL diode has no internal node, a slope bounded by 1/Rd,
+//  docs/hoveR_sorunlar.txt item 28). Giving it Cjo made it run, at 2-7x the
+//  cost. (No longer: see above.) The smoothed PWL diode has no internal node, a slope bounded by 1/Rd,
 //  and is convex, so Newton converges on it from either side without any
 //  limiting. Its sharpness does not matter to the solver: Vs = 26 mV, 5 mV and
 //  1 mV gave the same step count to within 3 % and output within 0.01 %.
 //  Against ngspice with the same equation as a B-source, the PWL version
 //  matches the fundamental to 5 digits and the bridge loss to 0.1 %.
 //
-//  ── Coss: why the default is 100 pF and not 0 ──────────────────────────────
+//  ── Coss: the default is 0 ─────────────────────────────────────────────────
 //
 //  Coss = 0 gives the ideal, PLECS-like commutation (the node jumps straight
 //  to the diode clamp) and is the fastest: on the H-bridge benchmark 67k steps
 //  against ~120k with any Coss from 3 pF to 1 nF, which the node slews cost.
-//  It runs there, and in the three-phase example. But it is not safe in
-//  general, for the reason in item 28: Coss is the only capacitance a bridge
-//  adds, and with it at 0 any part of the circuit that reaches the rails only
-//  through the switches has none. Measured on a twin of examples/MOSFET/
-//  h_bridge_inverter.hvr (one capacitor straight across the output, nothing
-//  from the filter to ground, Ron = 6 / 1.8 Ohm): in each dead time the whole
-//  filter's common mode has to jump ~0.8 V onto the diodes in one solve, and
-//  with Coss = 0 the Newton stalls at t = 11.2 ms. ngspice runs the identical
-//  netlist without trouble, so this is the solver, not the circuit. With
-//  Coss = 1p, 10p, 30p, 100p or 1n the same twin runs.
 //
-//  Very small values are not safe either: Coss = 1 pF on the benchmark (Ron *
-//  2 Coss = 0.2 ps) collapses the step-size control to 1e-32 s at 9.3 ms,
-//  while 3 pF and up all run. 100 pF is clear of both failures in every case
-//  tried (Ron 10 mOhm to 6 Ohm, three topologies), is the right size for a small power MOSFET
-//  or IGBT, and is physically harmless at amps (the node slews in nanoseconds).
-//  At light load it is not harmless, and should not be: 100 mA slews the
-//  200 pF on a bridge node across 24 V in 48 ns, but near the current's zero
-//  crossings the swing no longer completes within the dead time. On the
-//  H-bridge benchmark that takes the dead-time error from 0.39 V to 0.35 V
-//  and the THD from 0.81 % to 0.61 % (ngspice agrees: 0.61 %) — partial
-//  zero-voltage switching, which real hardware does too.
+//  Until 2026-11-13 the default was 100 pF, as a guard for the solver rather
+//  than for the physics: on a twin of examples/MOSFET/h_bridge_inverter.hvr
+//  (one capacitor straight across the output, nothing from the filter to
+//  ground) Coss = 0 stalled the Newton, and Coss = 1 pF collapsed the step to
+//  1e-32 s. ngspice ran both; they were solver defects, since fixed
+//  (docs/hoveR_sorunlar.txt items 38 and 39). Coss = 0 now runs that twin at
+//  24 V and 310 V, 1 pF runs the benchmark at both, and a 310 V benchmark
+//  matches ngspice to 5 digits at Coss = 0 and at 100 pF.
 //
-//  Set Coss = 0 deliberately, for speed, when every node of the load has its
-//  own capacitance or a resistive path to the bus or ground: a split-capacitor
-//  filter with a damping leg, an R-L motor load. Both examples do.
+//  Give it a value for what it models. A small power MOSFET or IGBT has
+//  ~100 pF, physically harmless at amps (the node slews in nanoseconds) but
+//  not at light load: 100 mA slews the 200 pF on a bridge node across 24 V in
+//  48 ns, and near the current's zero crossings the swing no longer completes
+//  within the dead time. On the H-bridge benchmark that takes the dead-time
+//  error from 0.39 V to 0.35 V and the THD from 0.81 % to 0.61 % (ngspice
+//  agrees: 0.61 %) — partial zero-voltage switching, which real hardware does
+//  too.
 //
 //  ── Using it ───────────────────────────────────────────────────────────────
 //
@@ -128,25 +124,17 @@ from <math> import exp, log1p;
 //  bus it is exactly the short circuit it would be on the bench.
 //
 //  Turn on `.zcd;`. A gate edge is a discrete jump in the middle of a solver
-//  step; .zcd locates it and ends the step on it. Zero-crossing detection
-//  watches the sources the step drives, and a logic value that only enters the
-//  circuit through an analog module's input is invisible to it, so
-//  RonRoffSwitch also drives its command into a 1 Ohm resistor on a private
-//  node (`gate`, a "witness": linear, decoupled from everything, and handy to
-//  .save). Without it the edges still happen, but on the next step boundary.
-//
-//  Digital modules run in the order they are instantiated, so instantiate the
-//  modulator BEFORE the dead-time generator: if the generator runs first, it
-//  sees the previous step's command, .zcd cannot locate the edge, and every
-//  edge lands on the next step boundary instead (measured: the first PWM edge
-//  1.35 us late, and a 300 ns dead time stretched to 500 ns).
+//  step; .zcd locates it and ends the step on it. (Until 2026-11-13 .zcd could
+//  not see a command that reaches the circuit only through an analog module's
+//  input, and RonRoffSwitch copied it onto a private 1 Ohm "witness" node; the
+//  compiler now hands such values to .zcd itself.)
 //
 //  Parameters (all have defaults; pass by name, e.g. <Ron = 50m, Coss = 1n>):
 //    Ron    on-state resistance                         10 mOhm
 //    Roff   off-state resistance (leakage), > 0          1 MOhm
 //    Vf     diode threshold voltage                      0.8 V
 //    Rd     diode slope resistance, > 0                  10 mOhm
-//    Coss   capacitance across each switch, may be 0     100 pF
+//    Coss   capacitance across each switch, may be 0     0
 //
 //  The three wrappers draw dc_p and dc_n as bus terminals and do not assume
 //  either is ground; a floating bus (split capacitors, an isolated source) is
@@ -164,22 +152,16 @@ from <math> import exp, log1p;
 // The gate must NOT be read back from a circuit node (V(gate) > 0.5): Newton
 // would then move the gate node itself, and every trial point that crosses
 // 0.5 flips the switch — a discontinuity in the unknowns that stalled the
-// solver at t = 0 when tried. Logic in, witness out.
+// solver at t = 0 when tried.
 analog module RonRoffSwitch<double Ron = 10m, double Roff = 1e6>(input double g)
     [wire p, wire n]
 {
-    wire gate;
-
     R<Roff>() [p, n];
 
     double on = 0.0;
     if (g > 0.5) { on = 1.0; }
     double i_sw = on * (1.0 / Ron - 1.0 / Roff) * (V(p) - V(n));
     current_source<>(i_sw) [p, n];
-
-    // Zero-crossing witness — see the header. V(gate) == g.
-    current_source<>(g) [gnd, gate];
-    R<1>() [gate, gnd];
 }
 
 // Smoothed piecewise-linear diode: Vf threshold, Rd slope, corner width Vs.
@@ -214,7 +196,7 @@ analog module PwlDiode<double Vf = 0.8, double Rd = 10m, double Vs = 10m>()
 // Useful on its own: two of them make a buck or boost converter's switch and
 // rectifier, one with g tied to 0 is a plain freewheeling diode with Roff.
 module SwitchCell<double Ron = 10m, double Roff = 1e6,
-                  double Vf = 0.8, double Rd = 10m, double Coss = 100p>
+                  double Vf = 0.8, double Rd = 10m, double Coss = 0>
 (input double g) [wire p, wire n]
 {
     module sw = RonRoffSwitch<Ron, Roff>(g) [p, n];
@@ -225,7 +207,7 @@ module SwitchCell<double Ron = 10m, double Roff = 1e6,
 // One half-bridge leg. g_hi drives the switch from dc_p to a, g_lo the one
 // from a to dc_n. Both off is the dead-time state; both on is shoot-through.
 module SwitchedLeg<double Ron = 10m, double Roff = 1e6,
-                   double Vf = 0.8, double Rd = 10m, double Coss = 100p>
+                   double Vf = 0.8, double Rd = 10m, double Coss = 0>
 (input double g_hi, input double g_lo) [wire dc_p, wire dc_n, wire a]
 {
     module hi = SwitchCell<Ron, Roff, Vf, Rd, Coss>(g_hi) [dc_p, a];
@@ -234,7 +216,7 @@ module SwitchedLeg<double Ron = 10m, double Roff = 1e6,
 
 // Single-phase full bridge: two legs on one bus, output between a and b.
 module SwitchedHBridge<double Ron = 10m, double Roff = 1e6,
-                       double Vf = 0.8, double Rd = 10m, double Coss = 100p>
+                       double Vf = 0.8, double Rd = 10m, double Coss = 0>
 (input double g_a_hi, input double g_a_lo,
  input double g_b_hi, input double g_b_lo) [wire dc_p, wire dc_n, wire a, wire b]
 {
@@ -244,7 +226,7 @@ module SwitchedHBridge<double Ron = 10m, double Roff = 1e6,
 
 // Three-phase two-level bridge (six switches, six diodes).
 module SwitchedThreePhaseBridge<double Ron = 10m, double Roff = 1e6,
-                                double Vf = 0.8, double Rd = 10m, double Coss = 100p>
+                                double Vf = 0.8, double Rd = 10m, double Coss = 0>
 (input double g_a_hi, input double g_a_lo,
  input double g_b_hi, input double g_b_lo,
  input double g_c_hi, input double g_c_lo) [wire dc_p, wire dc_n, wire a, wire b, wire c]

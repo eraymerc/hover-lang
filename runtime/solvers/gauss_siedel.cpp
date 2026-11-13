@@ -51,6 +51,7 @@ void GaussSiedel::run(VM *vm) {
     while (vm->time < vm->end_time - 0.5 * vm->time_step) {
         double dt = vm_check_zero_crossing(vm, vm->time_step);
         double alpha = 1.0 / dt;
+        vm->analog_dt = dt;   // analog code sees t_n + dt (vm.hpp)
         slots_begin_be(vm->slots, alpha);
 
         api_update_solution(vm->api, vm->solver->last_solution);
@@ -91,6 +92,7 @@ void GaussSiedel::run(VM *vm) {
         slots_commit(vm->slots);
         solver_advance_time(vm->solver, x_guess);
         vm->time += dt;
+        vm->analog_dt = 0.0;
         logger_log_step(&vm->logger, vm->time, vm->solver->sys, vm->solver->last_solution);
         if (vm->phase_log) vm->phase_log(vm);
         logger_log_signals(&vm->logger, vm->values);

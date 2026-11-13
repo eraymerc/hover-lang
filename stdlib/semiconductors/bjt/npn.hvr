@@ -93,6 +93,11 @@ from <math> import sqrt, pnjlim, jexp, vcrit_of, q_dep, rb_of;
 //  iteration guess reaching inf. It is deliberately set far outside any
 //  physical bias, and everything below it is smooth.
 //
+//  (Since the companion form below, the limited voltages are only the point
+//  the transistor is linearised at — nodiff() keeps them out of the Jacobian —
+//  so holding that point below jexp's bound is not a clamp in this sense: the
+//  slope there is the true one and the current continues along it.)
+//
 //  Rb/Re/Rc remain worth having for physical reasons — Re is series feedback,
 //  Rb sets the input impedance a base drive sees — and they do condition the
 //  internal nodes. But they are not load-bearing for convergence the way an
@@ -164,23 +169,44 @@ analog module NPN<double Is,  double Nf,  double Nr,
     double nvt_f = Nf * Vt;
     double nvt_r = Nr * Vt;
 
-    // Per-iteration junction limiting (manual 13.1). nr_prev() supplies the
-    // previous NR iterate; on the first iteration of a timestep it returns
-    // that step's starting guess, so no limiting is applied and the cold start
-    // behaves as an unlimited evaluation — intended.
+    // ── Junction limiting, SPICE's way ──────────────────────────────────────
+    // pnjlim bounds how far one Newton iteration may travel up each junction's
+    // exponential (nr_prev() is the previous NEWTON iterate). Each junction is
+    // limited once, on its ideal Is/nvt; the limited pair (d1, d2) is where the
+    // transistor is LINEARISED, and every current below is the tangent plane at
+    // (d1, d2) evaluated at the TRUE junction voltages (v1, v2):
     //
-    // Each junction is limited ONCE, on its ideal Is/nvt, and the resulting
-    // voltage feeds both the ideal and the leakage (Ise/Isc) term. The leakage
-    // diode is the softer of the two, so the stiffer one sets the bound.
-    double vbe = pnjlim(V(bi) - V(ei), nr_prev(V(bi) - V(ei)),
-                      nvt_f, vcrit_of(Is, nvt_f));
-    double vbc = pnjlim(V(bi) - V(ci), nr_prev(V(bi) - V(ci)),
-                      nvt_r, vcrit_of(Is, nvt_r));
-
+    //     I = I(d1, d2) + dI/dv1 * (v1 - d1) + dI/dv2 * (v2 - d2),
+    //
+    // SPICE's companion model, with d1/d2 = nodiff(...) so the Jacobian sees
+    // the true partial derivatives and nothing of the limiter. At a solution
+    // the limiters are idle, d = v, and every current is the Gummel-Poon
+    // equation exactly. The partials are written out below next to each
+    // quantity. Until 2026-11-13 the limited voltages went straight into the
+    // equations and the Jacobian differentiated THROUGH pnjlim — a limiting
+    // junction looked nearly open to Newton (docs/hoveR_sorunlar.txt item 42).
+    // Each limited voltage is also held below 60 nvt, where jexp() stops
+    // growing: past it there is no slope left to linearise at.
+    double v1 = V(bi) - V(ei);
+    double v2 = V(bi) - V(ci);
+    double l1 = pnjlim(V(bi) - V(ei), nr_prev(V(bi) - V(ei)),
+                       nvt_f, vcrit_of(Is, nvt_f));
+    double l2 = pnjlim(V(bi) - V(ci), nr_prev(V(bi) - V(ci)),
+                       nvt_r, vcrit_of(Is, nvt_r));
+    if (l1 > 60.0 * nvt_f) { l1 = 60.0 * nvt_f; }
+    if (l2 > 60.0 * nvt_r) { l2 = 60.0 * nvt_r; }
+    double vbe = nodiff(l1);
+    double vbc = nodiff(l2);
+    double dv1 = v1 - vbe;
+    double dv2 = v2 - vbc;
 
     // ── Ideal transport currents ────────────────────────────────────────────
-    double i_f = Is * (jexp(vbe, nvt_f) - 1.0);
-    double i_r = Is * (jexp(vbc, nvt_r) - 1.0);
+    double e_f = jexp(vbe, nvt_f);
+    double e_r = jexp(vbc, nvt_r);
+    double i_f = Is * (e_f - 1.0);
+    double i_r = Is * (e_r - 1.0);
+    double g_f = Is * e_f / nvt_f;
+    double g_r = Is * e_r / nvt_r;
 
     // ── Base charge factor qb ───────────────────────────────────────────────
     // q1 is the Early (base-width modulation) term, q2 the high-injection one.
@@ -191,28 +217,46 @@ analog module NPN<double Is,  double Nf,  double Nr,
     if (Vaf > 0.0) { inv_vaf = 1.0 / Vaf; }
     if (Var > 0.0) { inv_var = 1.0 / Var; }
 
-    // Forward Early effect is modulation by the COLLECTOR-base voltage, so vbc
+    // Forward Early effect is modulation by the collector junction, so vbc
     // pairs with Vaf and vbe with Var — not the other way round.
     double denom = 1.0 - vbc * inv_vaf - vbe * inv_var;
+    double dq1_1 = 0.0;
+    double dq1_2 = 0.0;
     if (denom < 0.1) { denom = 0.1; }   // caps q1 at 10; deep reverse only
     double q1 = 1.0 / denom;
+    if (denom > 0.1) {
+        dq1_1 = q1 * q1 * inv_var;
+        dq1_2 = q1 * q1 * inv_vaf;
+    }
 
     double q2 = 0.0;
-    if (Ikf > 0.0) { q2 = q2 + i_f / Ikf; }
-    if (Ikr > 0.0) { q2 = q2 + i_r / Ikr; }
-    if (q2 < 0.0)  { q2 = 0.0; }        // i_f, i_r reach -Is in reverse bias
+    double dq2_1 = 0.0;
+    double dq2_2 = 0.0;
+    if (Ikf > 0.0) { q2 = q2 + i_f / Ikf; dq2_1 = g_f / Ikf; }
+    if (Ikr > 0.0) { q2 = q2 + i_r / Ikr; dq2_2 = g_r / Ikr; }
+    if (q2 < 0.0)  { q2 = 0.0; dq2_1 = 0.0; dq2_2 = 0.0; }   // i_f, i_r reach -Is in reverse
 
-    double qb = 0.5 * q1 * (1.0 + sqrt(1.0 + 4.0 * q2));
+    double sq = sqrt(1.0 + 4.0 * q2);
+    double qb = 0.5 * q1 * (1.0 + sq);
+    double dqb_1 = 0.5 * dq1_1 * (1.0 + sq) + q1 * dq2_1 / sq;
+    double dqb_2 = 0.5 * dq1_2 * (1.0 + sq) + q1 * dq2_2 / sq;
 
     // ── Terminal currents ───────────────────────────────────────────────────
     // Transport current, thinned by the base charge: this single division is
     // where both the Early effect and high-injection roll-off enter Ic.
-    double i_ct = (i_f - i_r) / qb;
+    double i_t   = (i_f - i_r) / qb;
+    double dit_1 = g_f / qb - (i_f - i_r) * dqb_1 / (qb * qb);
+    double dit_2 = 0.0 - g_r / qb - (i_f - i_r) * dqb_2 / (qb * qb);
+    double i_ct = i_t + dit_1 * dv1 + dit_2 * dv2;
 
     // Base current: ideal component (transport/beta, unaffected by qb) plus
     // the non-ideal recombination component that dominates at low bias.
-    double i_be = i_f / Bf + Ise * (jexp(vbe, Ne * Vt) - 1.0);
-    double i_bc = i_r / Br + Isc * (jexp(vbc, Nc * Vt) - 1.0);
+    double e_e = jexp(vbe, Ne * Vt);
+    double e_c = jexp(vbc, Nc * Vt);
+    double i_be = i_f / Bf + Ise * (e_e - 1.0)
+                + (g_f / Bf + Ise * e_e / (Ne * Vt)) * dv1;
+    double i_bc = i_r / Br + Isc * (e_c - 1.0)
+                + (g_r / Br + Isc * e_c / (Nc * Vt)) * dv2;
 
     current_source<>(i_be) [bi, ei];
     current_source<>(i_bc) [bi, ci];
@@ -231,7 +275,7 @@ analog module NPN<double Is,  double Nf,  double Nr,
     // — with it, this construction fails to converge outright once the
     // synthesized resistance approaches the rest of the loop in size.
     double ib_tot = i_be + i_bc;
-    double rb_eff = rb_of(Rb, Rbm, Irb, ib_tot, qb);
+    double rb_eff = rb_of(Rb, Rbm, Irb, ib_tot, qb + dqb_1 * dv1 + dqb_2 * dv2);
     double v_rb   = rb_eff * I(rbx);
     voltage_source rbx<>(v_rb) [base, bi];
 
@@ -242,15 +286,17 @@ analog module NPN<double Is,  double Nf,  double Nr,
     // cutoff and sets Miller feedthrough.
     //
     // These two statements must stay at the module body's top level — see the
-    // header on processAnalogDdt's walk. The charges are deliberately built
-    // from the LIMITED vbe/vbc and from i_f/i_r, so charge and conduction are
-    // always evaluated at the same operating point.
+    // header on processAnalogDdt's walk. The diffusion charge follows the same
+    // tangent as the transport current (capacitance Tf*g taken at the
+    // linearisation point, as SPICE does); the depletion charge, a mild power
+    // law with nothing to overflow, is built from the TRUE junction voltage, as
+    // in the diode — a limited voltage would carry no derivative (nodiff).
     // The ddt() results are bound to locals rather than written inline into
     // the current_source port lists: a primitive's () argument must be a plain
     // signal name, and processAnalogDdt only rewrites expression, assignment
     // and local-declaration statements anyway.
-    double q_be  = Tf * i_f + q_dep(vbe, Cje, Vje, Mje, Fc);
-    double q_bc  = Tr * i_r + q_dep(vbc, Cjc, Vjc, Mjc, Fc);
+    double q_be  = Tf * (i_f + g_f * dv1) + q_dep(v1, Cje, Vje, Mje, Fc);
+    double q_bc  = Tr * (i_r + g_r * dv2) + q_dep(v2, Cjc, Vjc, Mjc, Fc);
     double i_cbe = ddt(q_be);
     double i_cbc = ddt(q_bc);
 

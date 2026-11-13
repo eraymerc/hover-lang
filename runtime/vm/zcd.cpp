@@ -33,7 +33,20 @@ static Eigen::VectorXd probe(VM *vm, const VMSnapshot &start, const Eigen::Vecto
     vm->in_probe = true;
     vm_run_digital(vm);
     vm->in_probe = false;
-    return vm_drive_vector(vm);
+    Eigen::VectorXd drive = vm_drive_vector(vm);
+    // Logic that reaches the circuit only through analog code — a gate command
+    // read by an analog switch model — never shows in the drive vector: the
+    // analog code that turns it into a current does not run in a probe. The
+    // compiler lists those values (phase_zcd_watch) and they are watched the
+    // same way. Until 2026-11-13 every such model had to copy its command into
+    // a dummy source of its own (a 1 Ohm "witness") for .zcd to see the edge.
+    if (vm->phase_zcd_watch) {
+        vm->phase_zcd_watch(vm);
+        const Eigen::Index n = drive.size();
+        drive.conservativeResize(n + (Eigen::Index)vm->zcd_watch.size());
+        for (size_t i = 0; i < vm->zcd_watch.size(); i++) drive(n + (Eigen::Index)i) = vm->zcd_watch[i];
+    }
+    return drive;
 }
 
 static bool jumped(double a, double b) {

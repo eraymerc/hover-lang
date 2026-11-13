@@ -31,7 +31,7 @@ void BDF2::run(VM *vm) {
 
     int n = (int)vm->solver->last_solution.size();
     hist.reset(vm->solver->last_solution);
-    const std::vector<char> state_rows = lte_state_rows(*vm->solver->sys);
+    const LteRows state_rows = lte_state_rows(*vm->solver->sys);
 
     Eigen::VectorXd correction(n);
     Eigen::VectorXd x_blend(n);
@@ -50,8 +50,10 @@ void BDF2::run(VM *vm) {
     double jac_alpha = -1.0;   // alpha the held Jacobian was formed under
 
     long attempt = 0;   // counts ATTEMPTS, not accepted steps — see step_trace.hpp
+    bool plain_newton = false;          // this attempt is the plain-Newton retry
     bool restart_after_event = false;   // the last step ended on a .zcd event
     RejectRun reject_run;    // bounds the halving spiral — see step_limits.hpp
+    LteFloorRun lte_floor;   // ends a run stuck at the step floor — see lte.hpp
     JacRefresh jac;          // within-step re-form policy — see newton_core.hpp
     EventStepCap event_cap;  // first step after an event — see step_limits.hpp
 
@@ -66,6 +68,8 @@ void BDF2::run(VM *vm) {
         }
 
         vm->solver->sys->dt = dt;
+
+        vm->analog_dt = dt;   // analog code sees t_n + dt (vm.hpp)
         jac.begin_step();
         Eigen::VectorXd x_guess = hist.y[0];
 
@@ -80,6 +84,7 @@ void BDF2::run(VM *vm) {
             hist.restart();
             dt = event_cap.apply(dt, vm->time_step, 2.0 * lte_min_step(max_dt), vm->time);
             vm->solver->sys->dt = dt;
+            vm->analog_dt = dt;   // analog code sees t_n + dt (vm.hpp)
         }
 
         bool converged   = false;
@@ -138,13 +143,21 @@ void BDF2::run(VM *vm) {
             // x_prev1 for the whole step, which is wrong for a device whose
             // conductance moves orders of magnitude between the guess and the
             // solution, and dt is not the knob that fixes it.
-            if (jac.due(iter, conv.worst_ratio)) {
+            if (!plain_newton && jac.due(iter, conv.worst_ratio)) {
                 jacobian = vm_compute_jacobian(vm, x_guess);
                 vm->solver->g_dirty = 1;
                 jacobian_current_this_step = true;
             }
 
             api_update_solution(vm->api, x_guess);
+            // Plain Newton forms J AFTER the update, so the Jacobian and the residual
+            // see the same nr_prev and the limiters linearise both at one point
+            // (newton_trust_region.hpp, PLAIN-NEWTON RETRY).
+            if (plain_newton) {
+                jacobian = vm_compute_jacobian(vm, x_guess);
+                vm->solver->g_dirty = 1;
+                jacobian_current_this_step = true;
+            }
             vm_run_analog(vm);
             vm_run_phase_b(vm);
 
@@ -184,6 +197,7 @@ void BDF2::run(VM *vm) {
             // genuine physical correction term, so the residual term is
             // null. (Solvers WITH a real physical term — e.g. trapezoidal's
             // trap_base — must pass that term ONLY, never the norton part.)
+            if (plain_newton) { x_guess = x_new; continue; }   // retry mode: undamped (newton_trust_region.hpp)
             TrustRegionResult tr = trust_region_step(
                 vm, trust, x_guess, x_new, alpha, x_blend, nullptr);
             if (tr.collapsed) {
@@ -193,6 +207,8 @@ void BDF2::run(VM *vm) {
                 x_guess = tr.x_candidate;
             }
         }
+
+        if (converged) plain_newton = false;
 
         if (!converged) {
             // Documented rule: "Should this happen and the Jacobian not be
@@ -258,6 +274,13 @@ void BDF2::run(VM *vm) {
                 step_trace("bdf2", attempt, vm->time, dt, iters, "jac-refresh");
                 continue;
             }
+            if (!plain_newton) {
+                // One retry at this dt as plain Newton (newton_trust_region.hpp).
+                plain_newton = true;
+                step_trace("bdf2", attempt, vm->time, dt, iters, "plain-newton");
+                continue;
+            }
+            plain_newton = false;
             // Jacobian was already current and still failed — the failure is
             // genuinely about the step size now.
             //
@@ -396,7 +419,7 @@ void BDF2::run(VM *vm) {
         if (lte_r < 0.0 && lm.p > 1) { lm = lte_be(); lte_r = lte_ratio(ls, lm); }
         if (lte_r > 1.0 && dt > lte_min_step(max_dt)) {
             vm_restore_state(vm, checkpoint);
-            vm->time_step = dt * lte_factor(lte_r, lm);
+            vm->time_step = lte_next_step(dt, lte_r, lm, max_dt);
             step_trace("bdf2", attempt, vm->time, dt, iters, "lte-reject");
             continue;
         }
@@ -406,13 +429,21 @@ void BDF2::run(VM *vm) {
 
         solver_advance_time(vm->solver, x_guess);
         vm->time += dt;
+        vm->analog_dt = 0.0;
         logger_log_step(&vm->logger, vm->time, vm->solver->sys, vm->solver->last_solution);
         if (vm->phase_log) vm->phase_log(vm);
         logger_log_signals(&vm->logger, vm->values);
 
         if (lte_r >= 0.0) {
-            // The error estimate picks the next step; the .tran step is a ceiling.
-            vm->time_step = std::min(max_dt, dt * lte_factor(lte_r, lm));
+            if (lte_floor.exhausted(dt, lte_r, max_dt)) {
+                fprintf(stderr, "[BDF2] FATAL: timestep too small at t=%.3e: the truncation error "
+                                "stayed over tolerance at the minimum step (%.1e s)\n", vm->time, lte_min_step(max_dt));
+                vm_fail(vm);
+                break;
+            }
+            // The error estimate picks the next step; the .tran step is a ceiling,
+            // lte_min_step the floor.
+            vm->time_step = lte_next_step(dt, lte_r, lm, max_dt);
             if (iters > max_iter / 2) vm->time_step = std::min(vm->time_step, 0.8 * dt);
             step_trace("bdf2", attempt, vm->time, dt, iters, "lte");
         } else if (iters <= 5) {

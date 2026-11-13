@@ -110,6 +110,10 @@ struct VM {
     // jacobian_scratch directly. Null when the deck's analog code could not be
     // differentiated (codegen/autodiff.go) — the Jacobian is then numerical.
     void (*phase_jacobian)(VM *vm) = nullptr;
+    // .zcd's second channel (vm/zcd.cpp): fills zcd_watch with the logic
+    // values analog code reads. Null when the deck has none.
+    void (*phase_zcd_watch)(VM *vm) = nullptr;
+    std::vector<double> zcd_watch;
 
     // save_state_vars / restore_state_vars copy every Hover `state`
     // variable's current C++ global value into/from vm->state_vals, by the
@@ -157,9 +161,36 @@ struct VM {
     // must not fire there (vm/zcd.cpp).
     bool in_probe = false;
 
+    // The time point analog code sees (docs/hoveR_sorunlar.txt item 36). An
+    // implicit step from t_n solves the circuit AT t_n + dt, so a source
+    // written as a function of `time` must be evaluated there, as SPICE
+    // evaluates a SIN source: while the analog and AD phases run (in_analog),
+    // time() is vm->time + analog_dt and dt() is analog_dt. The solvers that
+    // advance vm->time only after accepting a step (bdf2, ndf2,
+    // euler_adaptive, gauss_siedel) set analog_dt to the step for the length
+    // of the attempt and back to 0 after the advance; outside a step (OP,
+    // boot) it is 0. Logic (digital/module domain) keeps vm->time: it runs once
+    // at the step's start and holds, which is what .zcd is built on.
+    double analog_dt = 0.0;
+    bool   in_analog = false;
+
     // Pre-allocated Jacobian scratch — used by implicit solvers
     Eigen::MatrixXd jacobian_scratch;
     long jacobian_ad_fallbacks = 0;   // AD Jacobians that fell back to the numerical one
+
+    // Each analog-driven current source's linearisation as the last AD
+    // Jacobian saw it — the source and dI/dx (up to hvr::Dual::K entries). The
+    // KCL veto compares a source's true current at a step-converged point with
+    // what this linearisation predicted, SPICE's per-device convergence test
+    // (vm_noncon_ratio). Valid only when that Jacobian came from AD.
+    struct AdLin {
+        const struct CurrentSourceRecord *rec;
+        int    n;
+        int    i[8];
+        double d[8];
+    };
+    std::vector<AdLin> ad_lin;
+    bool ad_lin_valid = false;
     Eigen::VectorXd base_b_scratch;
 
 };

@@ -284,9 +284,7 @@ module main<>()[]
                      (motor_i_d, motor_i_q, theta_e, iq_ref, id_ref,
                       ref_a, ref_b, ref_c)[];
 
-    // ── Power stage ── Instantiated in signal order (references → scaling →
-    // modulator): digital modules run in instantiation order, and .zcd needs
-    // each to see this step's input.
+    // ── Power stage ── references → scaling → modulator.
     module scale = VoltsToRef<310>(ref_a, ref_b, ref_c, rn_a, rn_b, rn_c)[];
     module pwm = Spwm3MinMax<20k>(rn_a, rn_b, rn_c, s_a, s_b, s_c)[];
 
