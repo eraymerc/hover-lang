@@ -113,6 +113,12 @@ void NDF2::run(VM *vm) {
 
         TrustRegionState trust;
 
+        // A trust-region rejection leaves x_guess where it was. That is not a new
+        // Newton iterate, so it is not installed again: installing it made the
+        // previous iterate equal the current one, and everything read through
+        // nr_prev() then moved although Newton had not — a junction limiter
+        // anchored on its own output took one more step per rejection.
+        bool iterate_moved = true;
         for (int iter = 0; iter < max_iter; iter++) {
             iters++;
 
@@ -126,7 +132,8 @@ void NDF2::run(VM *vm) {
                 jacobian_current_this_step = true;
             }
 
-            api_update_solution(vm->api, x_guess);
+            if (iterate_moved) api_update_solution(vm->api, x_guess);
+            iterate_moved = true;   // every path but a rejection moves it
             // Plain Newton forms J AFTER the update, so the Jacobian and the residual
             // see the same nr_prev and the limiters linearise both at one point
             // (newton_trust_region.hpp, PLAIN-NEWTON RETRY).
@@ -171,6 +178,7 @@ void NDF2::run(VM *vm) {
             if (plain_newton) { x_guess = x_new; continue; }   // retry mode: undamped (newton_trust_region.hpp)
             TrustRegionResult tr = trust_region_step(
                 vm, trust, x_guess, x_new, alpha, x_blend, nullptr);
+            iterate_moved = tr.accepted;
             if (tr.collapsed) {
                 break;
             }

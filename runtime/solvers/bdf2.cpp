@@ -111,30 +111,28 @@ void BDF2::run(VM *vm) {
 
         TrustRegionState trust; // default radius=1.0; per-component scaling does the real adaptation
 
-        // A "PEEK INSTEAD OF UPDATE" FIX WAS TRIED HERE AND REVERTED.
+        // NOT INSTALLING A REJECTED ITERATE — HISTORY.
         //
         // api_update_solution shifts prev_solution := last_solution, and
-        // prev_solution is what nr_prev() reports. When the trust region
-        // rejects a candidate x_guess does not move — and trust_region_step has
-        // already restored the read-view to x_guess — so this update sets
-        // prev_solution == last_solution == x_guess: nr_prev() answers with the
-        // CURRENT point. Every junction limiter in the standard library is fed
-        // from nr_prev() (pnjlim in the diode, both BJTs and the LED), and
-        // handed v_old == v_new they take their pass-through path and limit
-        // nothing. So junction limiting switches itself off for as long as the
-        // trust region keeps rejecting — the hardest part of the solve, and the
-        // whole reason the limiter exists.
-        //
-        // The reasoning survives; the fix does not. Tracking whether the
-        // iterate moved and calling api_peek_solution instead of
-        // api_update_solution when it did not — which leaves prev_solution
-        // pointing at the last genuinely different iterate, the correct meaning
-        // of "previous Newton iterate" — broke examples/BJT/npn_amp.hvr
-        // outright (FATAL at t = 0, previously 3083 steps) and did not rescue
-        // examples/Optoelectronics/phototransistor/optocoupler.hvr, which was
-        // the deck it was written for. Evidently some models depend on the
-        // limiter releasing during a rejection sequence. Do not re-apply
-        // without understanding which, and why.
+        // prev_solution is what nr_prev() reports. Installing x_guess again after
+        // a rejection therefore made nr_prev() answer with the CURRENT point.
+        // Skipping that install was tried once before and reverted: with the
+        // junction limiters then anchored on nr_prev(V(a) - V(b)) it broke
+        // examples/BJT/npn_amp.hvr (FATAL at t = 0) — those models relied on the
+        // limiter releasing during a rejection sequence. The standard library
+        // now anchors every limiter on its own output, nr_prev(vl), and with
+        // that the skip is right: npn_amp, pnp_amp, optocoupler and rectifier
+        // are bit-identical with it, and the diode bridges lose a sixth of
+        // their Newton iterations (the anchor no longer walks while Newton
+        // stands still). A deck that still limits from nr_prev(V(...)) keeps a
+        // LIMITED junction through a rejection sequence where it used to be
+        // released.
+        // A trust-region rejection leaves x_guess where it was. That is not a new
+        // Newton iterate, so it is not installed again: installing it made the
+        // previous iterate equal the current one, and everything read through
+        // nr_prev() then moved although Newton had not — a junction limiter
+        // anchored on its own output took one more step per rejection.
+        bool iterate_moved = true;
         for (int iter = 0; iter < max_iter; iter++) {
             iters++;
 
@@ -149,7 +147,8 @@ void BDF2::run(VM *vm) {
                 jacobian_current_this_step = true;
             }
 
-            api_update_solution(vm->api, x_guess);
+            if (iterate_moved) api_update_solution(vm->api, x_guess);
+            iterate_moved = true;   // every path but a rejection moves it
             // Plain Newton forms J AFTER the update, so the Jacobian and the residual
             // see the same nr_prev and the limiters linearise both at one point
             // (newton_trust_region.hpp, PLAIN-NEWTON RETRY).
@@ -200,6 +199,7 @@ void BDF2::run(VM *vm) {
             if (plain_newton) { x_guess = x_new; continue; }   // retry mode: undamped (newton_trust_region.hpp)
             TrustRegionResult tr = trust_region_step(
                 vm, trust, x_guess, x_new, alpha, x_blend, nullptr);
+            iterate_moved = tr.accepted;
             if (tr.collapsed) {
                 break;
             }
