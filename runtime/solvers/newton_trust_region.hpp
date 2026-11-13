@@ -48,7 +48,22 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PLAIN-NEWTON RETRY — what the adaptive solvers do when the trust region fails
+// PLAIN NEWTON FIRST, TRUST REGION AS THE RETRY
+//
+// ORDER (2026-11-14). Every step attempt is first solved as plain Newton — the
+// full step every iteration, the Jacobian re-formed every iteration, limiting
+// only inside the device models — and only an attempt that fails is retried
+// ONCE at the same dt under the trust region; if that fails too, dt is cut.
+// It used to be the other way round. Measured over 54 decks with the order
+// reversed: no deck fails, steady-state values agree to 4-6 digits, and Newton
+// iterations fall by 25 % (foc), 35 % (switched_h_bridge), 48 % (SPICE-diode
+// bridge) and 53 % (h_bridge_inverter). The reason is the one below: while a
+// junction limiter is walking a device towards conduction the residual must
+// rise before it falls, and a method that only accepts falling residuals
+// rejects the right steps.
+//
+// The text below was written when plain Newton was the retry; the mechanics it
+// describes are unchanged.
 //
 // The trust region accepts a step only if the true residual goes DOWN. A
 // commutation onto a diode that was in deep cut-off needs a Newton path that

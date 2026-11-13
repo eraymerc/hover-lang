@@ -43,7 +43,7 @@ void Trapezoidal::run(VM *vm) {
     bool jacobian_valid = false;
     double jac_alpha = -1.0;      // alpha the held Jacobian was formed under (see the slots note)
     bool force_euler = true; // ALWAYS start the simulation with a Backward Euler step
-    bool plain_newton = false;          // this attempt is the plain-Newton retry
+    bool plain_newton = true;   // this attempt is plain Newton (the first try); false = the trust-region retry
     bool restart_after_event = false;   // the last step ended on a .zcd event
     EventStepCap event_cap;             // first step after an event — see step_limits.hpp
 
@@ -154,9 +154,13 @@ void Trapezoidal::run(VM *vm) {
                 cached_jacobian = vm_compute_jacobian(vm, x_guess);
                 vm->solver->g_dirty = 1;
                 jacobian_current_this_step = true;
+                // vm_compute_jacobian has just evaluated the analog phase and phase B at
+                // this very read-view (its baseline) and left that state in place, so
+                // the residual is already there: evaluating again would repeat it.
+            } else {
+                vm_run_analog(vm);
+                vm_run_phase_b(vm);
             }
-            vm_run_analog(vm);
-            vm_run_phase_b(vm);
 
             norton_correction = cached_jacobian * x_guess;
             Eigen::VectorXd x_new;
@@ -203,7 +207,7 @@ void Trapezoidal::run(VM *vm) {
             // Verilog-AMS-style language. The residual is scored against the
             // TRUE physical equation (phys_correction only), so accept/reject
             // is meaningful even on stiff diode/BJT junctions.
-            if (plain_newton) { x_guess = x_new; continue; }   // retry mode: undamped (newton_trust_region.hpp)
+            if (plain_newton) { x_guess = x_new; continue; }   // plain Newton: undamped (newton_trust_region.hpp)
             TrustRegionResult tr = trust_region_step(
                 vm, trust, x_guess, x_new, alpha, x_anchor, phys_correction);
             iterate_moved = tr.accepted;
@@ -216,7 +220,7 @@ void Trapezoidal::run(VM *vm) {
         // 5. Adaptive Timestep Control & Recovery
         // .zcd: a logic output that jumps inside this step (vm/zcd.hpp): re-solve
         // the step to end just after it; the step that does is accepted.
-        if (converged) plain_newton = false;
+        if (converged) plain_newton = true;
         bool event_here = false;
         if (converged && vm->zcd_enabled) {
             const double s_ev = vm_locate_event(vm, checkpoint, x_guess, dt);
@@ -311,13 +315,13 @@ void Trapezoidal::run(VM *vm) {
                 step_trace("trap", attempt, vm->time, dt, iters, "jac-refresh");
                 continue;
             }
-            if (!plain_newton) {
-                // One retry at this dt as plain Newton (newton_trust_region.hpp).
-                plain_newton = true;
-                step_trace("trap", attempt, vm->time, dt, iters, "plain-newton");
+            if (plain_newton) {
+                // Plain Newton failed: one retry at this dt under the trust region (newton_trust_region.hpp).
+                plain_newton = false;
+                step_trace("trap", attempt, vm->time, dt, iters, "trust-region");
                 continue;
             }
-            plain_newton = false;
+            plain_newton = true;
 
             // A fresh Jacobian still failed — now it is genuinely about dt.
             reject_run.note(dt);

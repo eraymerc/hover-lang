@@ -76,9 +76,13 @@ EulerAdaptive::StepResult EulerAdaptive::take_implicit_step(VM *vm, double dt) {
         if (plain_newton) {
             jacobian = vm_compute_jacobian(vm, x_guess);
             vm->solver->g_dirty = 1;
+            // vm_compute_jacobian has just evaluated the analog phase and phase B at
+            // this very read-view (its baseline) and left that state in place, so
+            // the residual is already there: evaluating again would repeat it.
+        } else {
+            vm_run_analog(vm);
+            vm_run_phase_b(vm);
         }
-        vm_run_analog(vm);
-        vm_run_phase_b(vm);
 
         correction = jacobian * x_guess;
 
@@ -103,7 +107,7 @@ EulerAdaptive::StepResult EulerAdaptive::take_implicit_step(VM *vm, double dt) {
         // large constant to both endpoints of the accept/reject comparison
         // (J is huge at stiff junctions), blinding the trust region.
         // Backward Euler here has no physical correction term.
-        if (plain_newton) { x_guess = x_new; continue; }   // retry mode: undamped (newton_trust_region.hpp)
+        if (plain_newton) { x_guess = x_new; continue; }   // plain Newton: undamped (newton_trust_region.hpp)
         TrustRegionResult tr = trust_region_step(
             vm, trust, x_guess, x_new, alpha, x_anchor, nullptr);
         iterate_moved = tr.accepted;
@@ -166,7 +170,7 @@ void EulerAdaptive::run(VM *vm) {
         }
 
         StepResult step = take_implicit_step(vm, dt);
-        if (step.converged) plain_newton = false;
+        if (step.converged) plain_newton = true;
 
         // .zcd (vm/zcd.hpp): the step is already committed, so a logic jump
         // inside it rolls it back and re-solves it to end just after the jump.
@@ -236,13 +240,13 @@ void EulerAdaptive::run(VM *vm) {
             }
         } else {
             vm_restore_state(vm, checkpoint);
-            if (!plain_newton) {
-                // One retry at this dt as plain Newton (newton_trust_region.hpp).
-                plain_newton = true;
-                step_trace("euler_adaptive", attempt, vm->time, dt, step.iters, "plain-newton");
+            if (plain_newton) {
+                // Plain Newton failed: one retry at this dt under the trust region (newton_trust_region.hpp).
+                plain_newton = false;
+                step_trace("euler_adaptive", attempt, vm->time, dt, step.iters, "trust-region");
                 continue;
             }
-            plain_newton = false;
+            plain_newton = true;
             reject_run.note(dt);
             // Back off from the step that FAILED, not from vm->time_step: the
             // restore above put back the checkpoint's preferred step, which is

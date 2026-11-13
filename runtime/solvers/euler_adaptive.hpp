@@ -62,7 +62,7 @@ private:
     ConvergenceReport conv;
 
     // The current attempt is the plain-Newton retry (newton_trust_region.hpp).
-    bool plain_newton = false;
+    bool plain_newton = true;   // this attempt is plain Newton (the first try); false = the trust-region retry
 
     // The iterate the last attempt gave up on, and the history vector it was
     // solved against. Kept so run() can dump them after a FATAL;

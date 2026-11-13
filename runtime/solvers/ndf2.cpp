@@ -46,7 +46,7 @@ void NDF2::run(VM *vm) {
     double jac_alpha = -1.0;   // alpha the held Jacobian was formed under
 
     long attempt = 0;   // counts ATTEMPTS, not accepted steps — see step_trace.hpp
-    bool plain_newton = false;          // this attempt is the plain-Newton retry
+    bool plain_newton = true;   // this attempt is plain Newton (the first try); false = the trust-region retry
     bool restart_after_event = false;   // the last step ended on a .zcd event
 
     while (vm->time < vm->end_time) {
@@ -141,9 +141,13 @@ void NDF2::run(VM *vm) {
                 jacobian = vm_compute_jacobian(vm, x_guess);
                 vm->solver->g_dirty = 1;
                 jacobian_current_this_step = true;
+                // vm_compute_jacobian has just evaluated the analog phase and phase B at
+                // this very read-view (its baseline) and left that state in place, so
+                // the residual is already there: evaluating again would repeat it.
+            } else {
+                vm_run_analog(vm);
+                vm_run_phase_b(vm);
             }
-            vm_run_analog(vm);
-            vm_run_phase_b(vm);
 
             correction = jacobian * x_guess;
 
@@ -175,7 +179,7 @@ void NDF2::run(VM *vm) {
             // residual at both x_current and x_candidate swamps the
             // accept/reject comparison. NDF2 has no physical correction
             // term, so the residual term is null.
-            if (plain_newton) { x_guess = x_new; continue; }   // retry mode: undamped (newton_trust_region.hpp)
+            if (plain_newton) { x_guess = x_new; continue; }   // plain Newton: undamped (newton_trust_region.hpp)
             TrustRegionResult tr = trust_region_step(
                 vm, trust, x_guess, x_new, alpha, x_blend, nullptr);
             iterate_moved = tr.accepted;
@@ -187,7 +191,7 @@ void NDF2::run(VM *vm) {
             }
         }
 
-        if (converged) plain_newton = false;
+        if (converged) plain_newton = true;
 
         if (!converged) {
             vm_restore_state(vm, checkpoint);
@@ -196,13 +200,13 @@ void NDF2::run(VM *vm) {
                 step_trace("ndf2", attempt, vm->time, dt, iters, "jac-refresh");
                 continue;
             }
-            if (!plain_newton) {
-                // One retry at this dt as plain Newton (newton_trust_region.hpp).
-                plain_newton = true;
-                step_trace("ndf2", attempt, vm->time, dt, iters, "plain-newton");
+            if (plain_newton) {
+                // Plain Newton failed: one retry at this dt under the trust region (newton_trust_region.hpp).
+                plain_newton = false;
+                step_trace("ndf2", attempt, vm->time, dt, iters, "trust-region");
                 continue;
             }
-            plain_newton = false;
+            plain_newton = true;
             reject_run.note(dt);
             // Back off from the step that FAILED, not from vm->time_step: the
             // restore above put back the checkpoint's preferred step, which is
