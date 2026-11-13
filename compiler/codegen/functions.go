@@ -89,7 +89,9 @@ func (g *generator) emitOneFunction(fn *elaborator.FunctionInfo) {
 		g.line("%s", g.hoverTypeOf(p.Type).cDecayedLocalDecl(localName, p.Name))
 	}
 
+	g.inFunction++
 	g.emitStmt(decl.Body, fnLogic, true)
+	g.inFunction--
 	g.line("return %s; // fallthrough", ret.zeroValue())
 	g.pop()
 	g.raw("}")

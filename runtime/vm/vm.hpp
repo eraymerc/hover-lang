@@ -13,6 +13,7 @@
 #include "snapshot.hpp"
 #include "logger.hpp"
 #include "state_slots.hpp"
+#include "nr_locals.hpp"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // RETURN SIGNAL
@@ -193,6 +194,9 @@ struct VM {
     bool ad_lin_valid = false;
     Eigen::VectorXd base_b_scratch;
 
+    // nr_prev() of analog variables, one slot per variable per module
+    // instance (vm/nr_locals.hpp). Empty for a deck without any.
+    NrLocals nr;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

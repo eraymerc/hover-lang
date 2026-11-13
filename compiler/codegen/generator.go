@@ -104,6 +104,16 @@ type generator struct {
 	// emitted twice still maps to one slot.
 	stateSlots map[string]int
 
+	// nr_prev(x) of analog variables (nrlocals.go): nrSlots numbers them, one
+	// runtime slot per variable per module instance, by mangled name;
+	// nrWrites caches which globals analog code assigns; recordNr is set while
+	// phase_analog is emitted (its assignments store into the slots);
+	// inFunction > 0 while a function body is emitted.
+	nrSlots    map[string]int
+	nrWrites   map[string]bool
+	recordNr   bool
+	inFunction int
+
 	// errors collects hard validation failures found while emitting
 	// expressions, where emitExpr's (string, CType) signature leaves no room
 	// for an error return. Same deferred-diagnostic shape as

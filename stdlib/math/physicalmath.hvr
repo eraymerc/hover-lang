@@ -52,52 +52,36 @@ func double limexp(double x) {
 //
 // Parameters:
 //   v_new  : proposed junction voltage for this iteration
-//   v_old  : the previous iteration's voltage. Obtain it with nr_prev(), e.g.
-//              pnjlim(V(a) - V(b), nr_prev(V(a) - V(b)), nvt, vcrit)
-//            nr_prev() and NOT a plain read: this needs the previous ITERATE,
-//            which is exactly what nr_prev() reports.
+//   v_old  : the voltage the device used at the previous iteration — the
+//            LIMITED one, read with nr_prev() of the variable this call is
+//            assigned to, as SPICE's DIOload anchors on its own stored state:
+//              double vl = pnjlim(V(a) - V(b), nr_prev(vl), nvt, vcrit);
+//            (nr_prev(V(a) - V(b)), the previous NODE voltages, also works;
+//            it lets the junction jump the whole way whenever the iterate
+//            stops moving — see the manual's nr_prev() of a variable.)
 //   nvt    : thermal voltage times the junction's emission coefficient
 //   v_crit : voltage at which the exponential's curvature starts to dominate,
 //            nvt*log(nvt/(sqrt(2)*Is)). Below it no limiting is applied.
 //
-// Two guards mean it does nothing in the common case: anything below v_crit
-// passes through, and so does any step smaller than 2*nvt. Past both, the step
-// is compressed logarithmically.
+// Exactly SPICE3's DEVpnjlim: below v_crit, or for a step under 2*nvt, the
+// voltage passes through; an upward step is compressed to
+// v_old + nvt*log(1 + dv/nvt); a downward step from a forward-biased v_old
+// lands on v_crit, the knee; from a v_old at or below zero the exponential is
+// re-entered from its own scale, nvt*log(v_new/nvt).
 //
-// The v_old > 0 branches are mirror images of each other. That symmetry is the
-// property the previous implementation of this function lacked: it computed
-// arg = 1 + dv/vt and fell back to v_crit whenever arg went non-positive —
-// which happens precisely on a large DOWNWARD step, so a junction retreating
-// from a bad guess was answered with a jump UP to v_crit, large and in the
-// wrong direction. It also never engaged at all while v_new <= v_crit, however
-// violent the step.
-//
-// A NOTE ON THE SEAM AT |dv| = 2*nvt, AND A FIX THAT DID NOT WORK
-// ──────────────────────────────────────────────────────────────
-// This branch is discontinuous where it meets the pass-through guard above.
-// Any |dv| < 2*nvt passes straight through, so the limited branch is entered
-// at arg = 2+, where log(arg - 2) -> -infinity: at arg = 2.0001 pass-through
-// returns 2*nvt above v_old while this branch returns 7.2*nvt BELOW it, with a
-// local slope of 10000 rather than 1.
-//
-// That matters more in Hover than in SPICE. SPICE excludes its limiter from
-// the Jacobian — $limit moves the operating point and dI/dV is taken with
-// respect to the unlimited voltage — whereas this function sits in the analog
-// block's ordinary data flow, so its slope is part of the derivative the
-// solver gets. (True of the automatic differentiation the Jacobian comes from
-// since 0.9 just as of the finite differences before it.)
-//
-// Shifting the log by one — log(arg - 1) — removes the discontinuity in both
-// value and slope: at arg = 2 it returns exactly v_old + 2*nvt with slope 1,
-// matching pass-through on both counts, and it agrees with Berkeley to a
-// fraction of nvt far from the seam (6.6347 vs 6.6444 at arg = 105).
-//
-// It was tried, and it is NOT an improvement in practice. It did not fix the
-// full-bridge rectifier it was aimed at, and it broke examples/BJT/npn_amp.hvr,
-// which stopped converging at t = 0 having previously run in 3165 steps. The
-// big downward jump this branch makes near the seam is evidently doing useful
-// work on hard cold starts, however ugly it looks. Berkeley's form is restored
-// here; do not "fix" the discontinuity again without re-running npn_amp.
+// WHY BERKELEY'S FORM AGAIN (2026-11-13). Until then this was a symmetric
+// variant, v_old +- nvt*(2 + log(|dv|/nvt - 2)), kept because a smooth
+// variant (log(|dv|/nvt - 1)) had broken examples/BJT/npn_amp.hvr at t = 0 —
+// measured while the Jacobian still differentiated THROUGH this function, which
+// nodiff() has since ended. That form returns v_old itself at
+// |dv| = (2 + e^-2)*nvt: anchored on its own output, the limiter has a fixed
+// point 2.135 nvt away from the true voltage, where it never moves again and
+// "one more application" (the convergence test's released evaluation) cannot
+// see it. Berkeley's has none — log(1 + dv/nvt) > 0 for every step it limits,
+// and v_crit is never v_old there. Measured with the device anchor against the
+// symmetric form: npn_amp and every amplifier example unchanged bit for bit,
+// h_bridge_inverter 1.707 M Newton iterations instead of 1.735 M, a diode
+// behind 1 Ohm stepped to 10 V without .op 8 convergence vetoes instead of 77.
 // ─────────────────────────────────────────────────────────────────────────────
 func double pnjlim(double v_new, double v_old, double nvt, double v_crit) {
     if (v_new <= v_crit) { return v_new; }
@@ -106,12 +90,11 @@ func double pnjlim(double v_new, double v_old, double nvt, double v_crit) {
     if (dv < 2.0 * nvt && dv > -2.0 * nvt) { return v_new; }
 
     if (v_old > 0.0) {
-        double arg = dv / nvt;
-        if (arg > 2.0) {
-            return v_old + nvt * (2.0 + log(arg - 2.0));
+        double arg = 1.0 + dv / nvt;
+        if (arg > 0.0) {
+            return v_old + nvt * log(arg);
         }
-        // arg < -2 here, so -2 - arg > 0 and the log is always defined.
-        return v_old - nvt * (2.0 + log(-2.0 - arg));
+        return v_crit;
     }
 
     // No usable forward history (previous iterate at or below zero). Re-enter
@@ -119,6 +102,37 @@ func double pnjlim(double v_new, double v_old, double nvt, double v_crit) {
     // solver's guess landed. v_new > v_crit > 0 from the first branch, so the
     // log argument is positive.
     return nvt * log(v_new / nvt);
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// limvds / fetlim — the MOSFET's step bounds on Vds and Vgs
+//
+// Hover's simplified forms of SPICE's DEVlimvds / DEVfetlim, which have more
+// regions: one Newton iteration may move the voltage by at most
+// 2 |v_old| + 2 (limvds) or 2 |v_old - von| + 2 (fetlim) volts. Like pnjlim
+// they take the previous iterate's value as v_old — the device's own previous
+// LIMITED voltage, nr_prev() of the variable they are assigned to:
+//
+//     double vgs = nodiff(fetlim(V(gate) - V(si), nr_prev(vgs), von));
+//
+// They are functions, not inline code in the models, for exactly that: the
+// anchor has to be read inside the declaration of the variable it anchors.
+// ─────────────────────────────────────────────────────────────────────────────
+func double limvds(double v_new, double v_old) {
+    double dv_max = 2.0 * fabs(v_old) + 2.0;
+    double dv     = v_new - v_old;
+    if (dv >  dv_max) { dv =  dv_max; }
+    if (dv < -dv_max) { dv = -dv_max; }
+    return v_old + dv;
+}
+
+func double fetlim(double v_new, double v_old, double von) {
+    double dv_max = 2.0 * fabs(v_old - von) + 2.0;
+    double dv     = v_new - v_old;
+    if (dv >  dv_max) { dv =  dv_max; }
+    if (dv < -dv_max) { dv = -dv_max; }
+    return v_old + dv;
 }
 
 

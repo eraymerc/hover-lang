@@ -67,7 +67,8 @@ from <math> import exp, sqrt, pnjlim, jexp, vcrit_of, q_dep;
 //
 //  What keeps the iteration in bounds instead:
 //    · pnjlim() limits the STEP, not the value — the Berkeley junction
-//      limiter, fed the previous NR iterate via nr_prev(). It never flattens
+//      limiter, anchored on the limited voltage this junction used at the
+//      previous NR iterate, nr_prev(vl). It never flattens
 //      the curve; it only refuses to leap across it in one bound. It is
 //      transparent to the Jacobian (nodiff, SPICE's companion form): the
 //      junction is linearised at the limited voltage with its true slope.
@@ -155,7 +156,10 @@ analog module Diode<double Is,  double N,
 
     // ── Junction limiting, SPICE's way ──────────────────────────────────────
     // pnjlim bounds how far one Newton iteration may travel up the exponential
-    // (nr_prev() is the previous NEWTON iterate, not the previous timestep).
+    // from vl as the previous NEWTON iterate left it — nr_prev(vl), the
+    // device's own limited voltage, as SPICE's DIOload anchors on its stored
+    // state. (nr_prev(V(ai) - V(cathode)), the previous node voltages, let the
+    // junction jump the whole way whenever the iterate stopped moving.)
     // The limited voltage vd is where the junction is LINEARISED; every term
     // below is the tangent line at vd evaluated at the TRUE voltage v,
     //
@@ -177,13 +181,12 @@ analog module Diode<double Is,  double N,
     // jexp() holds its exponent at 60 against overflow, so the limited voltage
     // is held there too (60 nVt, about 1.5 V per unit N): beyond it the
     // exponential has no slope left to linearise at, and the tangent from
-    // 60 nVt continues the curve instead. pnjlim reads the previous NODE
-    // iterate, which during a hard commutation can sit kilovolts away; without
-    // this bound vd stayed up there, on the flat part of jexp, and the tangent
-    // was meaningless.
+    // 60 nVt continues the curve instead. The hold is part of the model, not
+    // of the limiting: with the device anchor vl rarely gets there, but a
+    // junction a commutation drives kilovolts forward still climbs ~10 nVt per
+    // iteration past it, onto the flat part of jexp, without it.
     double v  = V(ai) - V(cathode);
-    double vl = pnjlim(V(ai) - V(cathode), nr_prev(V(ai) - V(cathode)),
-                       nvt, vcrit_of(Is, nvt));
+    double vl = pnjlim(V(ai) - V(cathode), nr_prev(vl), nvt, vcrit_of(Is, nvt));
     if (vl > 60.0 * nvt) { vl = 60.0 * nvt; }
     double vd = nodiff(vl);
 
@@ -228,18 +231,13 @@ analog module Diode<double Is,  double N,
     // voltage of a diode whose saturation current is Ibv makes the same
     // limiter apply verbatim. The overflow guard (u/Vt <= 40) is part of the
     // limiting: past it the term continues along its tangent.
-    //
-    // The V()-differences are respelled rather than reusing v: nr_prev()
-    // rewrites the V() leaves inside its argument, so it has to be handed the
-    // node expression, not a local.
     double ibv_eff = Ibv;
     if (ibv_eff <= 0.0) { ibv_eff = 1.0e-12; }   // keeps vcrit_of finite
 
     double i_bv = 0.0;
     if (Bv > 0.0) {
         double u  = 0.0 - (Bv + v);
-        double ul = pnjlim(-(Bv + (V(ai) - V(cathode))),
-                           nr_prev(-(Bv + (V(ai) - V(cathode)))),
+        double ul = pnjlim(-(Bv + (V(ai) - V(cathode))), nr_prev(ul),
                            Vt, vcrit_of(ibv_eff, Vt));
         if (ul > 40.0 * Vt) { ul = 40.0 * Vt; }
         double ub = nodiff(ul);

@@ -10,8 +10,9 @@ from <math> import pnjlim, jexp, vcrit_of;
 // color and makes the exponential noticeably steeper right at turn-on.
 // That steepness is exactly the case the manual's nr_prev() junction
 // limiting (13.1) is built for, so this model uses it rather than a bare
-// hard clamp: each NR iteration's voltage guess is bounded to move at
-// most one thermal-voltage-scaled step from the previous iterate.
+// hard clamp: each NR iteration's junction voltage is bounded to move a
+// logarithmically compressed step from the one it used at the previous
+// iterate (nr_prev(vl)).
 //
 // light_out is a second, purely-informational port: luminous intensity
 // driven onto it as a voltage, proportional to forward current. Units are
@@ -45,9 +46,7 @@ analog module LED<double Is, double n, double Vt, double Vf_clamp, double eta>()
     // 1.5 MV and 30 pA in the LED (docs/hoveR_sorunlar.txt item 41). Before
     // that, a hard clamp on vLim had made the slope exactly zero.
     double v  = V(anode) - V(cathode);
-    double vl = pnjlim(V(anode) - V(cathode),
-                       nr_prev(V(anode) - V(cathode)),
-                       nVt, vcrit_of(Is, nVt));
+    double vl = pnjlim(V(anode) - V(cathode), nr_prev(vl), nVt, vcrit_of(Is, nVt));
     if (vl > Vf_clamp) { vl = Vf_clamp; }
     double vd = nodiff(vl);
 

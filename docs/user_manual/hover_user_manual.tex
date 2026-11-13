@@ -1560,13 +1560,14 @@ timestep's solve. It is the iteration-level counterpart to \code{state}: where
 remembers it across \textit{iterations} within a single timestep's nonlinear
 solve.
 
-Mechanically, \code{nr\_prev()} does not introduce any storage of its own. It
-re-emits its argument with every nested \code{V()} and \code{I()} call routed to
-its previous-iteration source (\code{api\_V\_prev} / \code{api\_I\_prev}) instead
-of the working-iterate source (\code{api\_V} / \code{api\_I}). Everything else in
-the expression --- parameters, arithmetic, \code{time}, \code{dt} --- is emitted
-unchanged. Only \code{V()} and \code{I()} carry iteration history, so only they
-are redirected. Nesting is well defined: \code{nr\_prev()} inside an otherwise
+Mechanically, for \code{V()} and \code{I()} \code{nr\_prev()} introduces no
+storage of its own. It re-emits its argument with every nested \code{V()} and
+\code{I()} call routed to its previous-iteration source (\code{api\_V\_prev} /
+\code{api\_I\_prev}) instead of the working-iterate source (\code{api\_V} /
+\code{api\_I}). Parameters, arithmetic, \code{time} and \code{dt} are emitted
+unchanged. A variable assigned by analog code is read from a per-instance slot
+holding its value at the previous iterate --- see ``\code{nr\_prev()} of a
+variable'' below. Nesting is well defined: \code{nr\_prev()} inside an otherwise
 ordinary expression, or even \code{nr\_prev()} inside \code{nr\_prev()}, behaves
 correctly and does not leak the redirection to sibling expressions.
 
@@ -1601,8 +1602,8 @@ if (dv < -vt) { dv = -vt; }
 double vLim = vOld + dv;            // limited voltage feeds the device model
 \end{lstlisting}
 
-\textbf{Note:} \code{nr\_prev()} only redirects \code{V()} and \code{I()}; it is
-not a general time-domain memory. To remember a value from a previous
+\textbf{Note:} \code{nr\_prev()} is iteration history, not a general
+time-domain memory. To remember a value from a previous
 \textit{timestep}, use \code{state}. On the first iteration of a timestep's solve
 there is no earlier iterate, so \code{nr\_prev()} returns that step's starting
 guess --- meaning the very first iteration applies no limiting, which is the
@@ -1641,14 +1642,75 @@ double iPrev = nr_prev(I(Vsense));          // previous-iterate branch current
 double scaled= nr_prev(V(a) * 2.0 - V(b));  // params/constants pass through
 \end{lstlisting}
 
-\textbf{Note:} The redirection applies \textit{only} to \code{V()} and
-\code{I()}. It does \textbf{not} give the previous-iteration value of a computed
-local or \code{state} signal --- \code{nr\_prev(x)}, where \code{x} is an
-ordinary variable, emits \code{x} unchanged and is therefore a no-op. Likewise
+\textbf{Note:} Parameters, constants, \code{time} and \code{dt} pass through
+unchanged, and so do inputs that no analog code writes (logic is
+sample-and-hold: constant across the iterations of a step).
 \code{nr\_prev(time)}, \code{nr\_prev(dt)}, or any expression containing no
-\code{V()}/\code{I()} leaves reduces to the plain expression. To remember a
-computed value across iterations, recompute it from \code{nr\_prev}-wrapped
-\code{V()}/\code{I()} reads rather than wrapping the variable.
+\code{V()}/\code{I()} leaves and no analog variable reduces to the plain
+expression. A \textit{variable} inside \code{nr\_prev()} is the subject of the
+next subsection.
+
+\subsubsection{nr\_prev() of a variable --- the limiter's own anchor}
+A variable that an analog module assigns, inside \code{nr\_prev()}, means that
+variable as the evaluation at the previous Newton iterate left it: its last
+assigned value in that evaluation. This is what a junction limiter should be
+anchored on --- the voltage the device itself used last iteration, after
+limiting, which is what SPICE stores per device (\code{DIOload} limits against
+\code{CKTstate0}, not against the node voltages). The variable may appear inside
+its own declaration:
+
+\begin{lstlisting}
+double v  = V(a) - V(k);
+double vl = pnjlim(V(a) - V(k), nr_prev(vl), nvt, vcrit); // anchored on itself
+if (vl > 60.0 * nvt) { vl = 60.0 * nvt; }                 // nr_prev(vl) sees this too
+double vd = nodiff(vl);
+\end{lstlisting}
+
+\code{nr\_prev(V(a) - V(k))} would anchor the same limiter on the previous
+\textit{node} voltages instead. The two differ exactly when it matters: when the
+iterate stops moving while the junction is still far from it, a node anchor sees
+a step under $2\,nV_t$ and lets the junction jump all the way (to the model's
+$60\,nV_t$ hold, from where Newton walks down about one $nV_t$ per iteration); a
+device anchor keeps compressing the step. A diode behind 1\,$\Omega$ stepped to
+10\,V took 45--48 iterations per plain-Newton retry with the node anchor and 6--7
+with the device anchor.
+
+The rules:
+\begin{itemize}
+  \item \textbf{One slot per variable per module instance}, like \code{ddt()}:
+        two diodes never share a value. The slot is written after every
+        assignment to the variable in the analog phase, so it holds the
+        variable's \emph{last} value of that evaluation (above: after the hold).
+  \item \textbf{The previous iterate's evaluation, never a probe.} The analog
+        block runs many times per iterate --- residual, Jacobian, trust-region
+        trials, the convergence test. Only the evaluation at the iterate itself
+        counts; the runtime tells it from the probes by the solution vector it
+        is looking at (\code{runtime/vm/nr\_locals.hpp}). A rejected step,
+        truncation-error rejection or \code{.zcd} probe rolls the slots back
+        with the rest of the state.
+  \item \textbf{First iteration of a step}: the value from the last iterate of
+        the previous accepted step (SPICE's accepted state). \textbf{Very first
+        evaluation of the run} (operating point start): 0, the same as
+        \code{nr\_prev(V(...))} reads from the zero solution.
+  \item \textbf{When the previous iterate is the current point} (the convergence
+        test's ``limiters released'' evaluation, where \code{nr\_prev(V(a))}
+        equals \code{V(a)}): the value from the evaluation just before, at the
+        same point --- for a limiter, one more application of it. A limiter that
+        is idle stays where it is; one still moving its variable shows up as a
+        difference, and convergence is refused.
+  \item \textbf{No derivative}: under automatic differentiation the value is a
+        constant, as it is a stored number.
+  \item \textbf{Analog module bodies only.} Inside a function it is a compile
+        error --- one C function serves every caller, so a function local has
+        no instance to keep a value for; pass \code{nr\_prev(x)} into the
+        function from the module, as the models pass it into \code{pnjlim}.
+        In a digital module it is an error too: logic runs once per step,
+        outside Newton.
+\end{itemize}
+
+The standard library's junction models (\code{Diode}, both BJTs, \code{LED},
+the MOSFET bulk junctions) and the MOSFET's \code{fetlim}/\code{limvds} are
+anchored this way.
 
 \textbf{Note:} \code{nr\_prev} reaches into \textit{call arguments}
 (e.g. \code{sin(V(a))}), but not into a user function's \textit{body}. If a
@@ -1671,7 +1733,7 @@ applying that tangent line to the \emph{true} voltage (the companion model);
 
 \begin{lstlisting}
 double v  = V(a) - V(k);
-double vd = nodiff(pnjlim(V(a) - V(k), nr_prev(V(a) - V(k)), nvt, vcrit));
+double vd = nodiff(pnjlim(V(a) - V(k), nr_prev(vd), nvt, vcrit));
 double e  = jexp(vd, nvt);
 double id = Is * (e - 1.0) + Is * e / nvt * (v - vd);   // f(vd) + f'(vd) (v - vd)
 \end{lstlisting}

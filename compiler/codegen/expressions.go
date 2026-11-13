@@ -58,6 +58,12 @@ func (g *generator) emitExpr(expr ast.Expression, logic elaborator.LogicObject) 
 		return formatDoubleLiteral(val), CDouble
 
 	case *ast.IdentifierExpression:
+		if g.usingPrevAPI { // a variable inside nr_prev(...) — nrlocals.go
+			if k, ok := g.nrSlot(n.Value, logic); ok {
+				t := g.identifierType(n.Value, logic)
+				return emitCast(fmt.Sprintf("sim.nr_local(%d)", k), CDouble, t), t
+			}
+		}
 		code := g.resolveIdent(n.Value, logic)
 		return code, g.identifierType(n.Value, logic)
 
@@ -280,6 +286,11 @@ func (g *generator) emitExpr(expr ast.Expression, logic elaborator.LogicObject) 
 			// even nr_prev inside nr_prev, however unusual) behaves
 			// correctly rather than leaking the flag to unrelated
 			// sibling expressions emitted afterward.
+			//
+			// A VARIABLE inside it means the same thing for the variable: its
+			// value as the previous Newton iterate's evaluation left it — one
+			// runtime slot per variable per module instance (nrlocals.go; the
+			// IdentifierExpression case above).
 			if len(n.Arguments) > 0 {
 				saved := g.usingPrevAPI
 				g.usingPrevAPI = true

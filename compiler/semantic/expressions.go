@@ -46,6 +46,9 @@ func (a *Analyzer) checkExpression(exp ast.Expression) ast.Type {
 		if sym, ok := a.currentScope.Resolve(node.Value); ok {
 			return sym.Type
 		}
+		if a.nrPrevDepth > 0 && a.declaring != nil && a.declaring.Name == node.Value {
+			return a.declaring.Type // nr_prev(x) inside x's own declaration
+		}
 		a.addError(node, fmt.Sprintf("Undeclared variable '%s'", node.Value))
 		return ast.TUnknown
 	case *ast.NumberExpression:
@@ -148,8 +151,16 @@ func (a *Analyzer) checkExpression(exp ast.Expression) ast.Type {
 		return r
 	case *ast.CallExpression:
 		a.checkExpression(node.Function)
+		isNrPrev := false
+		if id, ok := node.Function.(*ast.IdentifierExpression); ok && id.Value == "nr_prev" {
+			isNrPrev = true
+			a.nrPrevDepth++
+		}
 		for _, arg := range node.Arguments {
 			a.checkExpression(arg)
+		}
+		if isNrPrev {
+			a.nrPrevDepth--
 		}
 		return ast.TDouble
 	case *ast.ArrayExpression:

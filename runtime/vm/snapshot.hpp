@@ -1,5 +1,6 @@
 #pragma once
 #include "state_slots.hpp"
+#include "nr_locals.hpp"
 
 #include <Eigen/Dense>
 #include <unordered_map>
@@ -32,6 +33,7 @@ struct VMSnapshot {
     std::vector<double>                     cs_last_vals;  // current sources, System::current_sources iteration order
     std::vector<long>                       clock_last_tick; // per VMClock: a rolled-back step un-runs its tick
     StateSlots                              slots;           // ddt/idt history and recipe
+    NrLocals                                nr;              // nr_prev() of analog variables
 };
 
 // Forward declaration

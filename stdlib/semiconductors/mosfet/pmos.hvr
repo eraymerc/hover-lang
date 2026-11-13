@@ -1,4 +1,4 @@
-from <math> import fabs, sqrt, pnjlim, jexp, vcrit_of, q_dep;
+from <math> import fabs, sqrt, pnjlim, fetlim, limvds, jexp, vcrit_of, q_dep;
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  P-Channel MOSFET — SPICE Level 1 (Shichman-Hodges)
@@ -74,13 +74,7 @@ analog module PMOS4<double VTO,  double KP,   double GAMMA, double PHI, double L
 
     // ── limvds, and the mode it selects ─────────────────────────────────────
     double vds_true = V(si) - V(di);
-    double vds_old  = nr_prev(V(si) - V(di));
-
-    double dvd_max = 2.0 * fabs(vds_old) + 2.0;
-    double dvd     = vds_true - vds_old;
-    if (dvd >  dvd_max) { dvd =  dvd_max; }
-    if (dvd < -dvd_max) { dvd = -dvd_max; }
-    double vds = nodiff(vds_old + dvd);   // linearisation point (see the channel current)
+    double vds = nodiff(limvds(V(si) - V(di), nr_prev(vds)));   // linearisation point (see the channel current)
 
     double flip = 1.0;
     if (vds < 0.0) { flip = -1.0; }
@@ -100,13 +94,7 @@ analog module PMOS4<double VTO,  double KP,   double GAMMA, double PHI, double L
 
     // ── fetlim ──────────────────────────────────────────────────────────────
     double vgs_true = V(si) - V(gate);
-    double vgs_old  = nr_prev(V(si) - V(gate));
-
-    double dvg_max = 2.0 * fabs(vgs_old - von) + 2.0;
-    double dvg     = vgs_true - vgs_old;
-    if (dvg >  dvg_max) { dvg =  dvg_max; }
-    if (dvg < -dvg_max) { dvg = -dvg_max; }
-    double vgs = nodiff(vgs_old + dvg);
+    double vgs = nodiff(fetlim(V(si) - V(gate), nr_prev(vgs), von));
 
     // ── Channel current ─────────────────────────────────────────────────────
     double vch  = vds * flip;
@@ -167,8 +155,8 @@ analog module PMOS4<double VTO,  double KP,   double GAMMA, double PHI, double L
     // ── Bulk junctions ──────────────────────────────────────────────────────
     // Forward voltages are measured terminal-above-well, the reverse of the
     // NMOS, and the currents flow out of the terminal into the well.
-    double vbs_l = pnjlim(V(si) - V(bulk), nr_prev(V(si) - V(bulk)), nvt, vcrit);
-    double vbd_l = pnjlim(V(di) - V(bulk), nr_prev(V(di) - V(bulk)), nvt, vcrit);
+    double vbs_l = pnjlim(V(si) - V(bulk), nr_prev(vbs_l), nvt, vcrit);
+    double vbd_l = pnjlim(V(di) - V(bulk), nr_prev(vbd_l), nvt, vcrit);
 
     // Companion form, as in the diode: linearised at the limited voltage
     // (held below 60 nvt, where jexp() stops growing), evaluated at the true one.

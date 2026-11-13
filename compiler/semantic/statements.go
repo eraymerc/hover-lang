@@ -40,7 +40,9 @@ func (a *Analyzer) checkStatement(stmt ast.Statement) {
 
 		for _, decl := range node.Decls {
 			if decl.Value != nil {
+				a.declaring = &Symbol{Name: decl.Name, Type: node.Type}
 				a.checkExpression(decl.Value)
+				a.declaring = nil
 			}
 			// A wire or variable sharing a name with a circuit element would
 			// make V(x)/I(x)/.save(x) ambiguous. Caught here for the precise

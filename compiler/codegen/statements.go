@@ -62,6 +62,7 @@ func (g *generator) emitStmt(stmt ast.Statement, logic elaborator.LogicObject, i
 			} else if d.Value != nil {
 				valCode, valType := g.emitExpr(d.Value, logic)
 				g.line("%s = %s;", target, castToHover(valCode, valType, ht))
+				g.emitNrRecord(target)
 			}
 		}
 
@@ -71,6 +72,9 @@ func (g *generator) emitStmt(stmt ast.Statement, logic elaborator.LogicObject, i
 			lhsHT := g.typeOf(lhs)
 			rhsCode, rhsType := g.emitExpr(s.Right, logic)
 			g.line("%s = %s;", lhs, castToHover(rhsCode, rhsType, lhsHT))
+			if !inFunc {
+				g.emitNrRecord(lhs)
+			}
 		} else {
 			lhsCode, lhsT := g.emitExpr(s.Left, logic)
 			rhsCode, rhsType := g.emitExpr(s.Right, logic)

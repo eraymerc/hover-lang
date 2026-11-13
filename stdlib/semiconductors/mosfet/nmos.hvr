@@ -1,4 +1,4 @@
-from <math> import fabs, sqrt, pnjlim, jexp, vcrit_of, q_dep;
+from <math> import fabs, sqrt, pnjlim, fetlim, limvds, jexp, vcrit_of, q_dep;
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  N-Channel MOSFET — SPICE Level 1 (Shichman-Hodges)
@@ -35,7 +35,9 @@ from <math> import fabs, sqrt, pnjlim, jexp, vcrit_of, q_dep;
 //  ── Per-iteration limiting (manual 13.1) ────────────────────────────────────
 //
 //  SPICE calls these fetlim (on Vgs) and limvds (on Vds); both bound how far
-//  the working voltage guess may move from the previous NR iterate. The scale
+//  the working voltage guess may move from the value the device used at the
+//  previous NR iterate — nr_prev(vgs), nr_prev(vds), its own limited voltages,
+//  as SPICE anchors on its stored state (math's fetlim/limvds). The scale
 //  is different from a junction's: a diode has a natural one, the thermal
 //  voltage, because its nonlinearity is exponential. A square law has no such
 //  scale, so the bound is taken proportional to the overdrive itself with a
@@ -138,14 +140,11 @@ analog module NMOS4<double VTO,  double KP,   double GAMMA, double PHI, double L
     // Needs no threshold, so it runs first. A single unbounded iterate in
     // triode can overshoot the rail and hand the next iteration a wildly wrong
     // region, which is the failure this bound exists to stop.
+    // Anchored on vds itself — the limited value this device used at the
+    // previous Newton iterate (nr_prev of a variable), as SPICE anchors on
+    // its stored state, not on the node voltages.
     double vds_true = V(di) - V(si);
-    double vds_old  = nr_prev(V(di) - V(si));
-
-    double dvd_max = 2.0 * fabs(vds_old) + 2.0;
-    double dvd     = vds_true - vds_old;
-    if (dvd >  dvd_max) { dvd =  dvd_max; }
-    if (dvd < -dvd_max) { dvd = -dvd_max; }
-    double vds = nodiff(vds_old + dvd);   // linearisation point (see the channel current)
+    double vds = nodiff(limvds(V(di) - V(si), nr_prev(vds)));   // linearisation point (see the channel current)
 
     // flip = -1 is SPICE's reverse mode: the terminal called "drain" is acting
     // as the physical source.
@@ -171,13 +170,7 @@ analog module NMOS4<double VTO,  double KP,   double GAMMA, double PHI, double L
 
     // ── fetlim ──────────────────────────────────────────────────────────────
     double vgs_true = V(gate) - V(si);
-    double vgs_old  = nr_prev(V(gate) - V(si));
-
-    double dvg_max = 2.0 * fabs(vgs_old - von) + 2.0;
-    double dvg     = vgs_true - vgs_old;
-    if (dvg >  dvg_max) { dvg =  dvg_max; }
-    if (dvg < -dvg_max) { dvg = -dvg_max; }
-    double vgs = nodiff(vgs_old + dvg);
+    double vgs = nodiff(fetlim(V(gate) - V(si), nr_prev(vgs), von));
 
     // ── Channel current ─────────────────────────────────────────────────────
     // In reverse mode the overdrive re-references to Vgd = Vgs - Vds and the
@@ -189,8 +182,8 @@ analog module NMOS4<double VTO,  double KP,   double GAMMA, double PHI, double L
 
     // A pure square law is unbounded in Vgs; a real device runs out of carriers
     // (velocity saturation) long before this. This also covers the very first
-    // iteration, where there is no NR history and nr_prev() returns the
-    // cold-start guess.
+    // iteration, where there is no NR history and fetlim's anchor is the
+    // cold-start value.
     double vgst_capped = 0.0;
     if (vgst > 20.0) { vgst = 20.0; vgst_capped = 1.0; }
 
@@ -250,8 +243,8 @@ analog module NMOS4<double VTO,  double KP,   double GAMMA, double PHI, double L
     // IS is the total saturation current of each junction. SPICE also supports
     // a per-area JS scaled by AD/ASRC; that is not carried here, so AD/ASRC and
     // PD/PSRC scale the capacitances only.
-    double vbs_l = pnjlim(V(bulk) - V(si), nr_prev(V(bulk) - V(si)), nvt, vcrit);
-    double vbd_l = pnjlim(V(bulk) - V(di), nr_prev(V(bulk) - V(di)), nvt, vcrit);
+    double vbs_l = pnjlim(V(bulk) - V(si), nr_prev(vbs_l), nvt, vcrit);
+    double vbd_l = pnjlim(V(bulk) - V(di), nr_prev(vbd_l), nvt, vcrit);
 
     // Companion form, as in the diode: linearised at the limited voltage
     // (held below 60 nvt, where jexp() stops growing), evaluated at the true one.

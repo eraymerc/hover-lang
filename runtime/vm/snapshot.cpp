@@ -30,6 +30,7 @@ VMSnapshot vm_save_state(const VM *vm) {
         snap.cs_last_vals.push_back(kv.second.last_value);
     for (const VMClock &c : vm->clocks) snap.clock_last_tick.push_back(c.last_tick);
     snap.slots = vm->slots;
+    snap.nr = vm->nr;
 
     // Every Hover `state` variable's current value, copied out of its C++
     // global by save_state_vars into vm->state_vals. vm->values (the logged
@@ -72,6 +73,7 @@ void vm_restore_state(VM *vm, const VMSnapshot &snap) {
         vm->clocks[i].last_tick = snap.clock_last_tick[i];
     }
     vm->slots = snap.slots;
+    vm->nr = snap.nr;
 
     // Write the restored values back into the real C++ state globals —
     // this is the actual rollback. Without this call vm->state_vals would

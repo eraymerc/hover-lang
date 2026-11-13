@@ -47,9 +47,11 @@ from <math> import sqrt, pnjlim, jexp, vcrit_of, q_dep, rb_of;
 //
 //  Junction limiting is math's pnjlim(), fed from nr_prev(). pnjlim() takes
 //  the previous iterate as an ordinary argument — it cannot see iteration
-//  history by itself — and nr_prev() is exactly the thing that reports it:
+//  history by itself — and nr_prev() of the limited variable reports the
+//  voltage this junction used at the previous Newton iterate, SPICE's stored
+//  device state (one slot per instance):
 //
-//      pnjlim(V(bi) - V(ei), nr_prev(V(bi) - V(ei)), nvt_f, vcrit)
+//      double l1 = pnjlim(V(bi) - V(ei), nr_prev(l1), nvt_f, vcrit)
 //
 //  It bounds the STEP, not the device. At convergence the step is small and
 //  the limiter is in pass-through, so the answer sits on the true exponential
@@ -171,7 +173,8 @@ analog module NPN<double Is,  double Nf,  double Nr,
 
     // ── Junction limiting, SPICE's way ──────────────────────────────────────
     // pnjlim bounds how far one Newton iteration may travel up each junction's
-    // exponential (nr_prev() is the previous NEWTON iterate). Each junction is
+    // exponential, from the limited voltage it used at the previous NEWTON
+    // iterate (nr_prev(l1), not the previous node voltages). Each junction is
     // limited once, on its ideal Is/nvt; the limited pair (d1, d2) is where the
     // transistor is LINEARISED, and every current below is the tangent plane at
     // (d1, d2) evaluated at the TRUE junction voltages (v1, v2):
@@ -189,10 +192,8 @@ analog module NPN<double Is,  double Nf,  double Nr,
     // growing: past it there is no slope left to linearise at.
     double v1 = V(bi) - V(ei);
     double v2 = V(bi) - V(ci);
-    double l1 = pnjlim(V(bi) - V(ei), nr_prev(V(bi) - V(ei)),
-                       nvt_f, vcrit_of(Is, nvt_f));
-    double l2 = pnjlim(V(bi) - V(ci), nr_prev(V(bi) - V(ci)),
-                       nvt_r, vcrit_of(Is, nvt_r));
+    double l1 = pnjlim(V(bi) - V(ei), nr_prev(l1), nvt_f, vcrit_of(Is, nvt_f));
+    double l2 = pnjlim(V(bi) - V(ci), nr_prev(l2), nvt_r, vcrit_of(Is, nvt_r));
     if (l1 > 60.0 * nvt_f) { l1 = 60.0 * nvt_f; }
     if (l2 > 60.0 * nvt_r) { l2 = 60.0 * nvt_r; }
     double vbe = nodiff(l1);

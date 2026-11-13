@@ -258,6 +258,9 @@ func (g *generator) emitSimSetup(cfg simConfig, onSolverError string) {
 	if len(g.stateSlots) > 0 {
 		g.line("sim.init_state_slots(%d);  // ddt()/idt() call sites", len(g.stateSlots))
 	}
+	if len(g.nrSlots) > 0 {
+		g.line("sim.init_nr_slots(%d);  // nr_prev() of analog variables", len(g.nrSlots))
+	}
 	g.line("sim.init_vm(%s, %s, %t, %t);", cfg.tStep, cfg.tEnd, cfg.zcdEnabled, cfg.opEnabled)
 	if cfg.acEnabled {
 		g.line("// .ac small-signal sweep")

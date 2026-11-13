@@ -161,6 +161,8 @@ void hvr_rt_reset_analog(VM *vm) {
         vm->api->last_solution.setZero();
         vm->api->prev_solution.setZero();
     }
+    // nr_prev() of analog variables starts from 0 again, as on a fresh run.
+    nr_resize(vm->nr, vm->nr.size());
 }
 
 void hvr_rt_free_result(HVRLogResult *r) {

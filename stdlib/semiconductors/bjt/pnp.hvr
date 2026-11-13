@@ -64,10 +64,8 @@ analog module PNP<double Is,  double Nf,  double Nr,
     // downstream then treats veb/vcb exactly as the NPN treats vbe/vbc.
     double v1 = V(ei) - V(bi);
     double v2 = V(ci) - V(bi);
-    double l1 = pnjlim(V(ei) - V(bi), nr_prev(V(ei) - V(bi)),
-                       nvt_f, vcrit_of(Is, nvt_f));
-    double l2 = pnjlim(V(ci) - V(bi), nr_prev(V(ci) - V(bi)),
-                       nvt_r, vcrit_of(Is, nvt_r));
+    double l1 = pnjlim(V(ei) - V(bi), nr_prev(l1), nvt_f, vcrit_of(Is, nvt_f));
+    double l2 = pnjlim(V(ci) - V(bi), nr_prev(l2), nvt_r, vcrit_of(Is, nvt_r));
     if (l1 > 60.0 * nvt_f) { l1 = 60.0 * nvt_f; }
     if (l2 > 60.0 * nvt_r) { l2 = 60.0 * nvt_r; }
     double veb = nodiff(l1);

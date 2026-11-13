@@ -30,6 +30,9 @@ func (g *generator) emitPhaseByDomain(domain token.Type, fnName string, clock st
 	g.raw(fmt.Sprintf("static void %s(hvr::Sim &sim) {", fnName))
 	g.push()
 	g.line("(void)sim;")
+	if domain == token.ANALOG && len(g.nrSlots) > 0 {
+		g.line("sim.nr_begin();  // nr_prev() of analog variables (runtime/vm/nr_locals.hpp)")
+	}
 
 	// All variables are file-scope globals — no C blocks needed.
 	// Emit statements flat; use comments to mark module boundaries.
@@ -63,9 +66,7 @@ func (g *generator) emitPhaseDigital() {
 	g.emitPhaseByDomain(token.DIGITAL, "phase_digital", "")
 }
 
-func (g *generator) emitPhaseAnalog() {
-	g.emitPhaseByDomain(token.ANALOG, "phase_analog", "")
-}
+// emitPhaseAnalog is in nrlocals.go.
 
 // branchCurrentColumn is the vm->values key (and hence CSV column header) for
 // a .save()d element current. Element and net names are disjoint by

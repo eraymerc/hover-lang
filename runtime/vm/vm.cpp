@@ -152,8 +152,16 @@ double vm_noncon_ratio(VM *vm, const Eigen::VectorXd &x, const Eigen::VectorXd &
     // limvds) never act on a branch that moved less than 2 nVt, so when no node
     // moved 10 mV in that iteration there is nothing to find and the two extra
     // passes are skipped.
+    //
+    // That shortcut holds for limiters anchored on nr_prev(V(...)), not for
+    // those anchored on their own output, nr_prev(x) (vm/nr_locals.hpp): those
+    // can still be holding a junction after the nodes have stopped — SPICE's
+    // icheck. With an AD Jacobian the per-device test above sees it (the
+    // solve's tangent at the held voltage misses the true current at x);
+    // without one only these passes can, so they always run then.
     const int nn = sys->num_nodes;
-    if (nn > 0 && (x_iter.head(nn) - prev_saved.head(nn)).cwiseAbs().maxCoeff() > 1e-2) {
+    if (nn > 0 && ((x_iter.head(nn) - prev_saved.head(nn)).cwiseAbs().maxCoeff() > 1e-2 ||
+                   (vm->nr.size() > 0 && !vm->ad_lin_valid))) {
         api->last_solution = x_iter;
         api->prev_solution = prev_saved;
         vm_run_analog(vm);

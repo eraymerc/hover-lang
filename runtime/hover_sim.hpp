@@ -333,6 +333,17 @@ public:
     double ddt(int slot, double q);
     double idt(int slot, double x);
 
+    // nr_prev(x) of an analog VARIABLE x (runtime/vm/nr_locals.hpp): one slot
+    // per variable per module instance, numbered by the compiler
+    // (codegen/nrlocals.go). nr_begin opens an evaluation of phase_analog and
+    // decides what its nr_prev(x) reads; nr_local reads slot k; nr_record
+    // stores x after every assignment to it in phase_analog. The AD phase
+    // reads the same values, as constants, and records nothing.
+    void   init_nr_slots(int n);
+    void   nr_begin();
+    double nr_local(int k) const;
+    void   nr_record(int k, double v);
+
     // The VM's named-value table: the logged signals.
     void   set_value(const char *key, double v);
     double value(const char *key) const;

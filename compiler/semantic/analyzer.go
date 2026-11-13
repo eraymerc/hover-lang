@@ -27,6 +27,16 @@ type Analyzer struct {
 	// types are not alias-qualifiable (see RegisterImportedStructs), so
 	// unlike importAliases this is a single flat namespace.
 	structs map[string]*StructInfo
+
+	// declaring is the variable whose initialiser is being checked, and
+	// nrPrevDepth > 0 while inside an nr_prev(...) argument. Together they
+	// admit the one self-reference the language has:
+	//     double vl = pnjlim(V(a) - V(b), nr_prev(vl), nvt, vcrit);
+	// nr_prev(vl) is vl as the previous Newton iterate's evaluation left it
+	// (codegen/nrlocals.go), so it exists before this declaration runs. Any
+	// other read of a variable in its own initialiser is still undeclared.
+	declaring   *Symbol
+	nrPrevDepth int
 }
 
 func NewAnalyzer() *Analyzer {

@@ -25,6 +25,10 @@ void api_update_solution(API *api, const Eigen::VectorXd &solution) {
     // via their own cold-start conventions.
     api->prev_solution = api->last_solution;
     api->last_solution = solution;
+    // The installed view, for nr_prev() of analog variables (vm/nr_locals.hpp).
+    api->serial++;
+    api->inst_prev = api->prev_solution;
+    api->inst_last = solution;
 }
 
 // Set the read-view (last_solution) WITHOUT shifting prev_solution. This is

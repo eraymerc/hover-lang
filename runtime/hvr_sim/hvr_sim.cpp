@@ -341,5 +341,9 @@ void Sim::set_state_init(Phase init) {
 double Sim::ddt(int slot, double q) { return slots_ddt(impl_->vm.slots, slot, q); }
 double Sim::idt(int slot, double x) { return slots_idt(impl_->vm.slots, slot, x); }
 double Sim::value(const char *key) const { return impl_->vm.values[key]; }
+void Sim::init_nr_slots(int n) { nr_resize(impl_->vm.nr, n); }
+void Sim::nr_begin() { ::nr_begin(impl_->vm.nr, impl_->api); }
+double Sim::nr_local(int k) const { return impl_->vm.nr.cur[k]; }
+void Sim::nr_record(int k, double v) { impl_->vm.nr.W[k] = v; }
 
 }  // namespace hvr

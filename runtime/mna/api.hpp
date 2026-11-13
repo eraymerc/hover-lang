@@ -36,6 +36,14 @@ struct API {
     // of any single value in isolation.
     Eigen::VectorXd  prev_solution;
     int              g_dirty;        // 1 = G changed, must refactorize
+    // The INSTALLED iterate: the view api_update_solution last set, kept
+    // because probes overwrite last_solution (and vm_noncon_ratio
+    // prev_solution) in place. serial counts installs. nr_prev() of an analog
+    // variable tells the iterate's own evaluation from a probe by comparing
+    // the read-view against these (vm/nr_locals.hpp).
+    long             serial = 0;
+    Eigen::VectorXd  inst_last;
+    Eigen::VectorXd  inst_prev;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
