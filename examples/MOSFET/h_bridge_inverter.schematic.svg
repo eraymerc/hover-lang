@@ -1,0 +1,183 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-8 40 896 440" class="hv-schematic" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11">
+<g transform="translate(48,144)">
+  <polyline points="0,-32 0,-16"/>
+  <polyline points="0,16 0,32"/>
+  <circle cx="0" cy="0" r="16" class="bold"/>
+  <polyline points="-3.5,-7 3.5,-7"/>
+  <polyline points="0,-10.5 0,-3.5"/>
+  <polyline points="-3.5,7 3.5,7"/>
+</g>
+<text x="24" y="148" text-anchor="end">24 V</text>
+<g transform="translate(288,128)">
+  <circle cx="19.2" cy="-5.6" r="20.8" class="bold"/>
+  <polyline points="-32,-16 6.4,-16"/>
+  <rect x="6.4" y="-16" width="1.6" height="20.8" class="fill"/>
+  <rect x="11.2" y="-19.68" width="4" height="7.36" class="fill"/>
+  <rect x="11.2" y="-9.28" width="4" height="7.36" class="fill"/>
+  <rect x="11.2" y="1.12" width="4" height="7.36" class="fill"/>
+  <polyline points="15.2,-16 32,-16 32,-32"/>
+  <polyline points="15.2,4.8 32,4.8 32,32"/>
+  <polyline points="15.2,-5.6 32,-5.6 32,-16"/>
+  <polygon points="27.04,-5.6 20,-2.72 20,-8.48" class="fill"/>
+</g>
+<g transform="translate(288,256)">
+  <circle cx="19.2" cy="5.6" r="20.8" class="bold"/>
+  <polyline points="-32,16 6.4,16"/>
+  <rect x="6.4" y="-4.8" width="1.6" height="20.8" class="fill"/>
+  <rect x="11.2" y="-8.48" width="4" height="7.36" class="fill"/>
+  <rect x="11.2" y="1.92" width="4" height="7.36" class="fill"/>
+  <rect x="11.2" y="12.32" width="4" height="7.36" class="fill"/>
+  <polyline points="15.2,-4.8 32,-4.8 32,-32"/>
+  <polyline points="15.2,16 32,16 32,32"/>
+  <polyline points="15.2,5.6 32,5.6 32,16"/>
+  <polygon points="20.16,5.6 27.2,2.72 27.2,8.48" class="fill"/>
+</g>
+<polyline points="320,64 320,96"/>
+<polyline points="320,160 320,224"/>
+<circle class="dot" cx="320" cy="192" r="2.4"/>
+<path d="M320 288 V296 M312 296 H328 M315 299 H325 M318 302 H322"/>
+<text x="334" y="126">BSS84</text>
+<text x="334" y="266">2N7000</text>
+<g transform="translate(224,112)">
+  <polyline points="32,0 20.8,0"/>
+  <polyline points="-20.8,0 -32,0"/>
+  <rect x="-20.8" y="-8.8" width="41.6" height="17.6" class="bold"/>
+</g>
+<text x="224" y="98" text-anchor="middle">470 Ω</text>
+<polyline points="176,112 192,112"/>
+<g transform="translate(176,144)">
+  <polyline points="0,-32 0,-16"/>
+  <polyline points="0,16 0,32"/>
+  <circle cx="0" cy="0" r="16" class="bold"/>
+  <polyline points="-3.5,-7 3.5,-7"/>
+  <polyline points="0,-10.5 0,-3.5"/>
+  <polyline points="-3.5,7 3.5,7"/>
+</g>
+<path d="M176 176 V184 M168 184 H184 M171 187 H181 M174 190 H178"/>
+<polyline points="368,420 96,420 96,144 161,144" class="dash"/>
+<polygon class="fill" points="153,140.5 160,144 153,147.5"/>
+<text x="128" y="138" text-anchor="middle" class="dim" font-size="10">cmd_TL</text>
+<g transform="translate(224,272)">
+  <polyline points="32,0 20.8,0"/>
+  <polyline points="-20.8,0 -32,0"/>
+  <rect x="-20.8" y="-8.8" width="41.6" height="17.6" class="bold"/>
+</g>
+<text x="224" y="258" text-anchor="middle">470 Ω</text>
+<polyline points="176,272 192,272"/>
+<g transform="translate(176,304)">
+  <polyline points="0,-32 0,-16"/>
+  <polyline points="0,16 0,32"/>
+  <circle cx="0" cy="0" r="16" class="bold"/>
+  <polyline points="-3.5,-7 3.5,-7"/>
+  <polyline points="0,-10.5 0,-3.5"/>
+  <polyline points="-3.5,7 3.5,7"/>
+</g>
+<path d="M176 336 V344 M168 344 H184 M171 347 H181 M174 350 H178"/>
+<polyline points="368,404 112,404 112,304 161,304" class="dash"/>
+<polygon class="fill" points="153,300.5 160,304 153,307.5"/>
+<text x="136" y="298" text-anchor="middle" class="dim" font-size="10">cmd_BL</text>
+<g transform="translate(672,128)">
+  <circle cx="-19.2" cy="-5.6" r="20.8" class="bold"/>
+  <polyline points="32,-16 -6.4,-16"/>
+  <rect x="-8" y="-16" width="1.6" height="20.8" class="fill"/>
+  <rect x="-15.2" y="-19.68" width="4" height="7.36" class="fill"/>
+  <rect x="-15.2" y="-9.28" width="4" height="7.36" class="fill"/>
+  <rect x="-15.2" y="1.12" width="4" height="7.36" class="fill"/>
+  <polyline points="-15.2,-16 -32,-16 -32,-32"/>
+  <polyline points="-15.2,4.8 -32,4.8 -32,32"/>
+  <polyline points="-15.2,-5.6 -32,-5.6 -32,-16"/>
+  <polygon points="-27.04,-5.6 -20,-2.72 -20,-8.48" class="fill"/>
+</g>
+<g transform="translate(672,256)">
+  <circle cx="-19.2" cy="5.6" r="20.8" class="bold"/>
+  <polyline points="32,16 -6.4,16"/>
+  <rect x="-8" y="-4.8" width="1.6" height="20.8" class="fill"/>
+  <rect x="-15.2" y="-8.48" width="4" height="7.36" class="fill"/>
+  <rect x="-15.2" y="1.92" width="4" height="7.36" class="fill"/>
+  <rect x="-15.2" y="12.32" width="4" height="7.36" class="fill"/>
+  <polyline points="-15.2,-4.8 -32,-4.8 -32,-32"/>
+  <polyline points="-15.2,16 -32,16 -32,32"/>
+  <polyline points="-15.2,5.6 -32,5.6 -32,16"/>
+  <polygon points="-20.16,5.6 -27.2,2.72 -27.2,8.48" class="fill"/>
+</g>
+<polyline points="640,64 640,96"/>
+<polyline points="640,160 640,224"/>
+<circle class="dot" cx="640" cy="192" r="2.4"/>
+<path d="M640 288 V296 M632 296 H648 M635 299 H645 M638 302 H642"/>
+<text x="626" y="126" text-anchor="end">BSS84</text>
+<text x="626" y="266" text-anchor="end">2N7000</text>
+<g transform="translate(736,112)">
+  <polyline points="32,0 20.8,0"/>
+  <polyline points="-20.8,0 -32,0"/>
+  <rect x="-20.8" y="-8.8" width="41.6" height="17.6" class="bold"/>
+</g>
+<text x="736" y="98" text-anchor="middle">470 Ω</text>
+<polyline points="784,112 768,112"/>
+<g transform="translate(784,144)">
+  <polyline points="0,-32 0,-16"/>
+  <polyline points="0,16 0,32"/>
+  <circle cx="0" cy="0" r="16" class="bold"/>
+  <polyline points="-3.5,-7 3.5,-7"/>
+  <polyline points="0,-10.5 0,-3.5"/>
+  <polyline points="-3.5,7 3.5,7"/>
+</g>
+<path d="M784 176 V184 M776 184 H792 M779 187 H789 M782 190 H786"/>
+<polyline points="592,420 864,420 864,144 799,144" class="dash"/>
+<polygon class="fill" points="807,140.5 800,144 807,147.5"/>
+<text x="832" y="138" text-anchor="middle" class="dim" font-size="10">cmd_TR</text>
+<g transform="translate(736,272)">
+  <polyline points="32,0 20.8,0"/>
+  <polyline points="-20.8,0 -32,0"/>
+  <rect x="-20.8" y="-8.8" width="41.6" height="17.6" class="bold"/>
+</g>
+<text x="736" y="258" text-anchor="middle">470 Ω</text>
+<polyline points="784,272 768,272"/>
+<g transform="translate(784,304)">
+  <polyline points="0,-32 0,-16"/>
+  <polyline points="0,16 0,32"/>
+  <circle cx="0" cy="0" r="16" class="bold"/>
+  <polyline points="-3.5,-7 3.5,-7"/>
+  <polyline points="0,-10.5 0,-3.5"/>
+  <polyline points="-3.5,7 3.5,7"/>
+</g>
+<path d="M784 336 V344 M776 344 H792 M779 347 H789 M782 350 H786"/>
+<polyline points="592,404 848,404 848,304 799,304" class="dash"/>
+<polygon class="fill" points="807,300.5 800,304 807,307.5"/>
+<text x="824" y="298" text-anchor="middle" class="dim" font-size="10">cmd_BR</text>
+<polyline points="48,112 48,64 640,64"/>
+<circle class="dot" cx="320" cy="64" r="2.4"/>
+<path d="M48 176 V184 M40 184 H56 M43 187 H53 M46 190 H50"/>
+<text x="330" y="184" class="net">bridge_a</text>
+<polyline points="320,192 400,192"/>
+<g transform="translate(432,192) rotate(-90)"><path d="M0 -32 V-21.12 M0 21.12 V32"/><path d="M0 -21.12 a5.28 5.28 0 0 1 0 10.56 a5.28 5.28 0 0 1 0 10.56 a5.28 5.28 0 0 1 0 10.56 a5.28 5.28 0 0 1 0 10.56" class="bold"/></g>
+<text x="432" y="172" text-anchor="middle">14 mH</text>
+<polyline points="464,192 496,192"/>
+<circle class="dot" cx="496" cy="192" r="2.4"/>
+<circle class="dot" cx="592" cy="192" r="2.4"/>
+<polyline points="496,192 496,160 512,160"/>
+<polyline points="496,192 496,224 512,224"/>
+<g transform="translate(544,160)">
+  <polyline points="32,0 7.52,0"/>
+  <polyline points="-7.52,0 -32,0"/>
+  <rect x="2.72" y="-12" width="4.8" height="24" class="fill"/>
+  <rect x="-7.52" y="-12" width="4.8" height="24" class="fill"/>
+</g>
+<text x="544" y="142" text-anchor="middle">1.4 µF</text>
+<g transform="translate(544,224)">
+  <polyline points="32,0 20.8,0"/>
+  <polyline points="-20.8,0 -32,0"/>
+  <rect x="-20.8" y="-8.8" width="41.6" height="17.6" class="bold"/>
+</g>
+<text x="544" y="250" text-anchor="middle">200 Ω</text>
+<polyline points="576,160 592,160 592,224 576,224"/>
+<polyline points="592,192 640,192"/>
+<text x="490" y="184" text-anchor="end" class="net">out_p</text>
+<text x="630" y="184" text-anchor="end" class="net">out_n</text>
+<rect x="368" y="384" width="224" height="56"/>
+<text x="480" y="402" text-anchor="middle">SPWM modulator</text>
+<text x="480" y="416" text-anchor="middle" class="dim" font-size="10">50 Hz ref · 20 kHz carrier</text>
+<text x="480" y="430" text-anchor="middle" class="dim" font-size="10">m 0.8 · dead band 0.05</text>
+<polyline points="480,440 480,463" class="dash"/>
+<polygon class="fill" points="476.5,457 480,464 483.5,457"/>
+<text x="488" y="460" class="net">v_ref</text>
+</svg>

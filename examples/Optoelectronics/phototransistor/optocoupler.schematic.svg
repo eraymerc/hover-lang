@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 16 656 288" class="hv-schematic" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11">
+  <g transform="translate(64,144)"><path d="M0 -32 V-16 M0 16 V32"/><circle cx="0" cy="0" r="16" class="bold"/><path d="M-3.5 -7 H3.5 M0 -10.5 V-3.5"/><path d="M-3.5 7 H3.5"/></g>
+  <path d="M64 112 V64 H112 M176 64 H208 M272 64 H304 V112 M64 176 V272 H304 V176"/>
+  <g transform="translate(144,64) rotate(90)"><path d="M0 -32 V-20.8 M0 20.8 V32"/><rect x="-8.8" y="-20.8" width="17.6" height="41.6" class="bold"/></g>
+  <g transform="translate(240,64) rotate(90)"><path d="M0 -32 V-20.8 M0 20.8 V32"/><rect x="-8.8" y="-20.8" width="17.6" height="41.6" class="bold"/></g>
+  <g transform="translate(304,144)"><path d="M0 -32 V-12 M0 12 V32"/><polygon points="-12,-12 12,-12 0,7.2" class="fill"/><rect x="-12" y="7.2" width="24" height="4.8" class="fill"/><path d="M16 -4.8 H24 M16 4.8 H24"/><polygon points="31.2,-4.8 23.2,-8.2 23.2,-1.4" class="fill"/><polygon points="31.2,4.8 23.2,1.4 23.2,8.2" class="fill"/></g>
+  <circle class="dot" cx="184" cy="272" r="2.4"/>
+  <path d="M184 272 V280 M176 280 H192 M179 283 H189 M182 286 H186"/>
+  <text x="88" y="140">1 kHz sine</text>
+  <text x="88" y="154" class="dim">0…5 V</text>
+  <text x="144" y="92" text-anchor="middle">220 Ω</text>
+  <text x="240" y="92" text-anchor="middle">1 Ω</text>
+  <text x="240" y="106" class="dim" text-anchor="middle">sense</text>
+  <text x="312" y="100" class="net">led_anode</text>
+  <text x="286" y="142" text-anchor="end">ledRed</text>
+  <text x="286" y="156" class="dim" text-anchor="end">red LED</text>
+  <path d="M338 144 H398" class="dash"/>
+  <text x="368" y="134" class="net" text-anchor="middle">light_bus</text>
+  <g transform="translate(448,176)"><circle cx="6.4" cy="0" r="20.8" class="bold"/><rect x="-1.6" y="-13.6" width="4" height="27.2" class="fill"/><path d="M2.4 -4 L16 -17.6 V-32 M2.4 4 L16 17.6 V32"/><polygon points="13.28,14.88 10.4,8 6.4,12" class="fill"/><path d="M-32 0 H-1.6"/><path d="M-48 -32 H-36 V-22"/><path d="M-36 -32 L-22 -18 M-36 -22 L-22 -8"/><polygon points="-22,-18 -24.12,-24.36 -28.36,-20.12" class="fill"/><polygon points="-22,-8 -24.12,-14.36 -28.36,-10.12" class="fill"/></g>
+  <g transform="translate(464,96)"><path d="M0 -32 V-20.8 M0 20.8 V32"/><rect x="-8.8" y="-20.8" width="17.6" height="41.6" class="bold"/></g>
+  <g transform="translate(416,224)"><path d="M0 -32 V-20.8 M0 20.8 V32"/><rect x="-8.8" y="-20.8" width="17.6" height="41.6" class="bold"/></g>
+  <g transform="translate(592,144)"><path d="M0 -32 V-16 M0 16 V32"/><circle cx="0" cy="0" r="16" class="bold"/><path d="M-3.5 -7 H3.5 M0 -10.5 V-3.5"/><path d="M-3.5 7 H3.5"/></g>
+  <path d="M464 64 V32 H592 V112 M464 128 V144 M416 176 V192 M416 256 V272 H592 V176 M464 208 V272"/>
+  <circle class="dot" cx="464" cy="272" r="2.4"/>
+  <circle class="dot" cx="528" cy="272" r="2.4"/>
+  <path d="M528 272 V280 M520 280 H536 M523 283 H533 M526 286 H530"/>
+  <text x="448" y="100" text-anchor="end">2.2 kΩ</text>
+  <text x="400" y="228" text-anchor="end">1 MΩ</text>
+  <text x="472" y="140" class="net">pt_collector</text>
+  <text x="480" y="184">pt</text>
+  <text x="480" y="198" class="dim">Bf 500</text>
+  <text x="616" y="148">5 V</text>
+</svg>

@@ -6,7 +6,7 @@
 
 .save(main.m1_gate, main.m1_drain, main.v_in);
 .op;
-.tran(0, 100m, 10u); // 30 ms run, 10 µs max step (1 kHz sine shows 30 full cycles)
+.tran(0, 100m, 10u); // 100 ms run, 10 µs max step (1 kHz sine shows 100 full cycles)
 .solver(ndf2);
 
 import <parts/mosfet/nmos>;

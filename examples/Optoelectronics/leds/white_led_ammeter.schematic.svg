@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 8 448 200" class="hv-schematic" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11">
+  <g transform="translate(64,112)"><path d="M0 -32 V-16 M0 16 V32"/><circle cx="0" cy="0" r="16" class="bold"/><path d="M-3.5 -7 H3.5 M0 -10.5 V-3.5"/><path d="M-3.5 7 H3.5"/></g>
+  <path d="M64 80 V48 H112 M176 48 H274 M302 48 H352 V80 M208 48 V80 M64 144 V176 H352 V144 M208 144 V176"/>
+  <g transform="translate(144,48) rotate(90)"><path d="M0 -32 V-20.8 M0 20.8 V32"/><rect x="-8.8" y="-20.8" width="17.6" height="41.6" class="bold"/></g>
+  <g transform="translate(208,112)"><path d="M0 -32 V-7.52 M0 7.52 V32"/><rect x="-12" y="-7.52" width="24" height="4.8" class="fill"/><rect x="-12" y="2.72" width="24" height="4.8" class="fill"/></g>
+  <g transform="translate(352,112)"><path d="M0 -32 V-12 M0 12 V32"/><polygon points="-12,-12 12,-12 0,7.2" class="fill"/><rect x="-12" y="7.2" width="24" height="4.8" class="fill"/><path d="M16 -4.8 H24 M16 4.8 H24"/><polygon points="31.2,-4.8 23.2,-8.2 23.2,-1.4" class="fill"/><polygon points="31.2,4.8 23.2,1.4 23.2,8.2" class="fill"/></g>
+  <circle cx="288" cy="48" r="14" class="bold"/>
+  <text x="288" y="52" text-anchor="middle">A</text>
+  <polygon points="334,48 327,44.5 327,51.5" class="fill"/>
+  <circle class="dot" cx="208" cy="48" r="2.4"/>
+  <circle class="dot" cx="208" cy="176" r="2.4"/>
+  <circle class="dot" cx="128" cy="176" r="2.4"/>
+  <path d="M128 176 V184 M120 184 H136 M123 187 H133 M126 190 H130"/>
+  <text x="40" y="116" text-anchor="end">5 V</text>
+  <text x="144" y="76" text-anchor="middle">1 kΩ</text>
+  <text x="224" y="116">10 µF</text>
+  <text x="208" y="36" class="net" text-anchor="middle">out</text>
+  <text x="288" y="26" class="net" text-anchor="middle">I(vsense)</text>
+  <text x="288" y="80" class="dim" text-anchor="middle">vsense 0 V</text>
+  <text x="336" y="110" text-anchor="end">led_white</text>
+  <text x="336" y="124" class="dim" text-anchor="end">white LED</text>
+  <text x="388" y="116" class="net">light</text>
+</svg>

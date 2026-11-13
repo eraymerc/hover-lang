@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="96 32 560 320" class="hv-schematic" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11">
+  <path d="M128 64 L592 64"/>
+  <path d="M128 320 L592 320"/>
+  <path d="M128 64 L128 96"/>
+  <g transform="translate(128,128) rotate(180)"><path d="M0 -32 V-12 M0 12 V32"/><polygon points="-12,-12 12,-12 0,7.2" class="fill"/><rect x="-12" y="7.2" width="24" height="4.8" class="fill"/></g>
+  <path d="M128 160 L128 224"/>
+  <g transform="translate(128,256) rotate(180)"><path d="M0 -32 V-12 M0 12 V32"/><polygon points="-12,-12 12,-12 0,7.2" class="fill"/><rect x="-12" y="7.2" width="24" height="4.8" class="fill"/></g>
+  <path d="M128 288 L128 320"/>
+  <path d="M416 64 L416 96"/>
+  <g transform="translate(416,128) rotate(180)"><path d="M0 -32 V-12 M0 12 V32"/><polygon points="-12,-12 12,-12 0,7.2" class="fill"/><rect x="-12" y="7.2" width="24" height="4.8" class="fill"/></g>
+  <path d="M416 160 L416 224"/>
+  <g transform="translate(416,256) rotate(180)"><path d="M0 -32 V-12 M0 12 V32"/><polygon points="-12,-12 12,-12 0,7.2" class="fill"/><rect x="-12" y="7.2" width="24" height="4.8" class="fill"/></g>
+  <path d="M416 288 L416 320"/>
+  <circle class="dot" cx="128" cy="192" r="2.4"/>
+  <circle class="dot" cx="416" cy="192" r="2.4"/>
+  <path d="M128 192 L224 192"/>
+  <g transform="translate(256,192)"><path d="M-32 0 H-16 M16 0 H32"/><circle cx="0" cy="0" r="16" class="bold"/><path d="M-10.5 0 H-3.5 M-7 -3.5 V3.5"/><path d="M3.5 0 H10.5"/></g>
+  <path d="M288 192 L416 192"/>
+  <circle class="dot" cx="368" cy="192" r="2.4"/>
+  <path d="M368 192 L368 224"/>
+  <g transform="translate(368,256)"><path d="M0 -32 V-20.8 M0 20.8 V32"/><rect x="-8.8" y="-20.8" width="17.6" height="41.6" class="bold"/></g>
+  <path d="M368 288 L368 320"/>
+  <path d="M512 64 L512 96"/>
+  <path d="M512 160 L512 320"/>
+  <path d="M592 64 L592 96"/>
+  <path d="M592 160 L592 320"/>
+  <g transform="translate(512,128)"><path d="M0 -32 V-7.52 M0 7.52 V32"/><rect x="-12" y="-7.52" width="24" height="4.8" class="fill"/><rect x="-12" y="2.72" width="24" height="4.8" class="fill"/></g>
+  <g transform="translate(592,128)"><path d="M0 -32 V-20.8 M0 20.8 V32"/><rect x="-8.8" y="-20.8" width="17.6" height="41.6" class="bold"/></g>
+  <circle class="dot" cx="368" cy="320" r="2.4"/>
+  <circle class="dot" cx="416" cy="320" r="2.4"/>
+  <circle class="dot" cx="512" cy="320" r="2.4"/>
+  <circle class="dot" cx="416" cy="64" r="2.4"/>
+  <circle class="dot" cx="512" cy="64" r="2.4"/>
+  <circle class="dot" cx="256" cy="320" r="2.4"/>
+  <path d="M256 320 V330 M248 330 H264 M251 333 H261 M254 336 H258"/>
+  <text x="146" y="124">D1</text>
+  <text x="146" y="138">1N4007</text>
+  <text x="146" y="252">D4</text>
+  <text x="146" y="266">1N4007</text>
+  <text x="434" y="124">D3</text>
+  <text x="434" y="138">1N4007</text>
+  <text x="434" y="252">D2</text>
+  <text x="434" y="266">1N4007</text>
+  <text x="256" y="160" text-anchor="middle">24 V pk</text>
+  <text x="256" y="230" text-anchor="middle">50 Hz</text>
+  <text x="356" y="260" text-anchor="end">1 MΩ</text>
+  <text x="528" y="132">10 µF</text>
+  <text x="604" y="132">1 kΩ</text>
+  <text x="176" y="184" text-anchor="middle" class="net">ac_in1</text>
+  <text x="328" y="184" text-anchor="middle" class="net">ac_in2</text>
+  <text x="272" y="56" text-anchor="middle" class="net">dc_out</text>
+</svg>

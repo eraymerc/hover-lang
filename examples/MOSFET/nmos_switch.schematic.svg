@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="16 0 656 336" class="hv-schematic" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11">
+  <rect x="32" y="112" width="80" height="192"/>
+  <text x="72" y="204" text-anchor="middle">GateSeq</text>
+  <text x="72" y="220" class="dim" text-anchor="middle">1 µs tick</text>
+  <path class="dash" d="M112 144 H169"/>
+  <polygon class="fill" points="176,144 169,140.5 169,147.5"/>
+  <text x="118" y="138" class="dim">cmd_H</text>
+  <text x="216" y="148" class="dim">0 / 34 V</text>
+  <path class="dash" d="M112 272 H169"/>
+  <polygon class="fill" points="176,272 169,268.5 169,275.5"/>
+  <text x="118" y="266" class="dim">cmd_L</text>
+  <text x="216" y="276" class="dim">0 / 10 V</text>
+  <g transform="translate(192,144)"><path d="M0 -32 V-16 M0 16 V32"/><circle cx="0" cy="0" r="16" class="bold"/><path d="M-3.5 -7 H3.5 M0 -10.5 V-3.5"/><path d="M-3.5 7 H3.5"/></g>
+  <path d="M192 112 L224 112"/>
+  <g transform="translate(192,176)"><path d="M0 0 V8 M-8 8 H8 M-5 11 H5 M-2 14 H2"/></g>
+  <g transform="translate(192,272)"><path d="M0 -32 V-16 M0 16 V32"/><circle cx="0" cy="0" r="16" class="bold"/><path d="M-3.5 -7 H3.5 M0 -10.5 V-3.5"/><path d="M-3.5 7 H3.5"/></g>
+  <path d="M192 240 L224 240"/>
+  <path d="M192 304 L608 304"/>
+  <g transform="translate(256,112) rotate(90)"><path d="M0 -32 V-20.8 M0 20.8 V32"/><rect x="-8.8" y="-20.8" width="17.6" height="41.6" class="bold"/></g>
+  <path d="M288 112 L320 112"/>
+  <g transform="translate(256,240) rotate(90)"><path d="M0 -32 V-20.8 M0 20.8 V32"/><rect x="-8.8" y="-20.8" width="17.6" height="41.6" class="bold"/></g>
+  <path d="M288 240 L320 240"/>
+  <text x="256" y="96" text-anchor="middle">10 Ω</text>
+  <text x="256" y="224" text-anchor="middle">10 Ω</text>
+  <text x="304" y="104" class="net" text-anchor="middle">gate_h</text>
+  <text x="304" y="232" class="net" text-anchor="middle">gate_l</text>
+  <g transform="translate(352,96)"><circle cx="19.2" cy="5.6" r="20.8" class="bold"/><path d="M-32 16 H6.4"/><rect x="6.4" y="-4.8" width="1.6" height="20.8" class="fill"/><rect x="11.2" y="-8.48" width="4" height="7.36" class="fill"/><rect x="11.2" y="1.92" width="4" height="7.36" class="fill"/><rect x="11.2" y="12.32" width="4" height="7.36" class="fill"/><path d="M15.2 -4.8 H32 V-32 M15.2 16 H32 V32 M15.2 5.6 H32 V16"/><polygon points="20.16,5.6 27.2,2.72 27.2,8.48" class="fill"/></g>
+  <g transform="translate(352,224)"><circle cx="19.2" cy="5.6" r="20.8" class="bold"/><path d="M-32 16 H6.4"/><rect x="6.4" y="-4.8" width="1.6" height="20.8" class="fill"/><rect x="11.2" y="-8.48" width="4" height="7.36" class="fill"/><rect x="11.2" y="1.92" width="4" height="7.36" class="fill"/><rect x="11.2" y="12.32" width="4" height="7.36" class="fill"/><path d="M15.2 -4.8 H32 V-32 M15.2 16 H32 V32 M15.2 5.6 H32 V16"/><polygon points="20.16,5.6 27.2,2.72 27.2,8.48" class="fill"/></g>
+  <text x="400" y="92">MH</text>
+  <text x="400" y="106">IRF540N</text>
+  <text x="400" y="220">ML</text>
+  <text x="400" y="234">IRF540N</text>
+  <path d="M384 64 L384 32 L608 32"/>
+  <path d="M384 128 L384 192"/>
+  <circle class="dot" cx="384" cy="160" r="2.4"/>
+  <path d="M384 256 L384 304"/>
+  <circle class="dot" cx="384" cy="304" r="2.4"/>
+  <g transform="translate(464,160) rotate(90)"><path d="M0 -32 V-21.12 M0 21.12 V32"/><path d="M0 -21.12 a5.28 5.28 0 0 1 0 10.56 a5.28 5.28 0 0 1 0 10.56 a5.28 5.28 0 0 1 0 10.56 a5.28 5.28 0 0 1 0 10.56" class="bold"/></g>
+  <path d="M384 160 L432 160"/>
+  <path d="M496 160 L528 160"/>
+  <text x="464" y="140" text-anchor="middle">200 µH</text>
+  <text x="396" y="152" class="net">sw</text>
+  <g transform="translate(528,224)"><path d="M0 -32 V-20.8 M0 20.8 V32"/><rect x="-8.8" y="-20.8" width="17.6" height="41.6" class="bold"/></g>
+  <path d="M528 160 L528 192"/>
+  <path d="M528 256 L528 304"/>
+  <circle class="dot" cx="528" cy="304" r="2.4"/>
+  <text x="536" y="152" class="net">i_sense</text>
+  <text x="544" y="228">5 Ω</text>
+  <g transform="translate(608,168)"><path d="M0 -32 V-16 M0 16 V32"/><circle cx="0" cy="0" r="16" class="bold"/><path d="M-3.5 -7 H3.5 M0 -10.5 V-3.5"/><path d="M-3.5 7 H3.5"/></g>
+  <path d="M608 32 L608 136"/>
+  <path d="M608 200 L608 304"/>
+  <text x="632" y="172">24 V</text>
+  <g transform="translate(464,304)"><path d="M0 0 V8 M-8 8 H8 M-5 11 H5 M-2 14 H2"/></g>
+  <circle class="dot" cx="464" cy="304" r="2.4"/>
+</svg>

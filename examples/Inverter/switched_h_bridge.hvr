@@ -6,13 +6,14 @@
 //             voltage error on the reconstructed 50 Hz output
 // ─────────────────────────────────────────────────────────────────────────────
 //
-//  The same benchmark as examples/MOSFET/h_bridge_inverter.hvr — 24 V bus,
-//  bipolar sine-triangle PWM at m = 0.8, 50 Hz out of a 20 kHz carrier, 14 mH
-//  per leg, 1.4 uF split filter capacitors with the 68 Ohm common-mode damping
-//  leg, 200 Ohm load — with the transistors replaced by the switched-resistor
-//  ("level C") bridge. Where that deck integrates gate charge and junction
-//  physics at every edge, this one switches a conductance and lets a diode
-//  pick up the current; 40 ms runs in about a second and a half.
+//  The inverter benchmark of ideal_h_bridge.hvr — 24 V bus, bipolar
+//  sine-triangle PWM at m = 0.8, 50 Hz out of a 20 kHz carrier, 14 mH per leg,
+//  1.4 uF split filter capacitors with the 68 Ohm common-mode damping leg,
+//  200 Ohm load — driven by the switched-resistor ("level C") bridge instead
+//  of ideal legs. Where the transistor-level examples/MOSFET/
+//  h_bridge_inverter.hvr integrates gate charge and junction physics at every
+//  edge, this one switches a conductance and lets a diode pick up the
+//  current; 40 ms runs in about a second and a half.
 //
 //    vdc ──┬─ hi ─┬── a ──[14 mH]── out_p ──┬─ 1.4 uF ─┐
 //          │      │                         │          ├─ 68 Ohm ─ gnd
@@ -107,7 +108,7 @@ module main<>() []
                     (g_a_hi, g_a_lo, g_b_hi, g_b_lo) [vdc, gnd, a, b];
 
     // 4. LC filter with the common-mode damping leg. Why the split capacitors
-    // and the 68 Ohm are needed is explained in h_bridge_inverter.hvr.
+    // and the 68 Ohm are needed is explained in ideal_h_bridge.hvr.
     L La<14m>() [a, out_p];
     L Lb<14m>() [b, out_n];
     C<1.4u>()   [out_p, cm_mid];

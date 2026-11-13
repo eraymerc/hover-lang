@@ -6,10 +6,11 @@
 //             50 Hz fundamental
 // ─────────────────────────────────────────────────────────────────────────────
 //
-//  This is the circuit of examples/MOSFET/h_bridge_inverter.hvr with the four
-//  transistors replaced by two ideal legs: 24 V bus, m = 0.8, 50 Hz out of a
-//  20 kHz carrier, 14 mH per leg, 1.4 µF split capacitors with the 68 Ohm
-//  common-mode damping leg, 200 Ohm load. That deck is the device-level view —
+//  This is the bridge of examples/MOSFET/h_bridge_inverter.hvr with the four
+//  transistors replaced by two ideal legs — 24 V bus, m = 0.8, 50 Hz out of a
+//  20 kHz carrier — driving the inverter benchmark's filter: 14 mH per leg,
+//  1.4 µF split capacitors with the 68 Ohm common-mode damping leg, 200 Ohm
+//  load (that deck uses a single inductor; see step 4 below for this one). That deck is the device-level view —
 //  dead time, body-diode recirculation, gate charge, on-resistance. This one is
 //  the switching-function view: each leg sits on one rail or the other, every
 //  PWM edge is kept but is an ideal step, and there is no dead time, so the
@@ -80,10 +81,22 @@ module main<>() []
     // 3. Ideal bridge.
     module bridge = ideal.IdealHBridge<>(s_a, s_b) [vdc, gnd, bridge_a, bridge_b];
 
-    // 4. LC filter with the split capacitors and the common-mode damping leg
-    // (see h_bridge_inverter.hvr for why 68 Ohm to ground is not optional), and
-    // the 200 Ohm load. The inductors also keep every capacitor off the leg
-    // nodes, which an ideal leg requires.
+    // 4. LC filter with the split capacitors and the common-mode damping leg,
+    // and the 200 Ohm load. The inductors also keep every capacitor off the
+    // leg nodes, which an ideal leg requires.
+    //
+    // With an inductor in each leg there are two currents, and a capacitor
+    // straight across out_p/out_n would leave their sum — the common mode —
+    // with nothing to fix it (KCL forces i_la = -i_lb only if nothing returns
+    // to ground). Splitting the capacitor and returning its midpoint cm_mid to
+    // ground gives the common mode an equation; the 68 Ohm damps it. 7 mH (the
+    // inductors in parallel) against 2.8 µF (the capacitors in parallel) is a
+    // 1.1 kHz tank with sqrt(7m/2.8u) = 50 Ohm characteristic impedance, so
+    // 68 Ohm gives a damping ratio near 0.7; without it the 12 V common-mode
+    // step at start-up would ring to twice its value. Differentially nothing
+    // changes: 1.4 µF in series with 1.4 µF is 0.7 µF across the output, the
+    // differential current cancels at cm_mid, and the resistor dissipates
+    // nothing at 50 Hz.
     L la<14m>() [bridge_a, out_p];
     L lb<14m>() [bridge_b, out_n];
     C<1.4u>()   [out_p, cm_mid];

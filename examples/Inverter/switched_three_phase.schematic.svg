@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="16 0 800 616" class="hv-schematic" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11">
+<g transform="translate(336,320)"><path d="M-160 -96 H112 M-160 96 H112"/><path d="M-96 -96 V-80 M-96 -32 V32 M-96 80 V96"/><circle cx="-96" cy="-80" r="2.4"/><circle cx="-96" cy="-32" r="2.4"/><circle cx="-96" cy="32" r="2.4"/><circle cx="-96" cy="80" r="2.4"/><path d="M-96 -32 L-120 -76 M-96 80 L-120 36"/><path d="M-80 -96 V96"/><polygon points="-88,-38 -72,-38 -80,-54" class="fill"/><path d="M-88 -54 H-72"/><polygon points="-88,58 -72,58 -80,42" class="fill"/><path d="M-88 42 H-72"/><circle cx="-80" cy="0" r="2.4" class="fill"/><path d="M-112 -160 V-61.34" class="dash"/><path d="M-144 -160 V58 H-108" class="dash"/><circle cx="-80" cy="-96" r="2.4" class="fill"/><circle cx="-80" cy="96" r="2.4" class="fill"/><circle cx="-96" cy="-96" r="2.4" class="fill"/><circle cx="-96" cy="96" r="2.4" class="fill"/><path d="M-96 0 H-64 V88 A8 8 0 0 1 -64 104 V160"/><circle cx="-96" cy="0" r="2.4" class="fill"/><path d="M0 -96 V-80 M0 -32 V32 M0 80 V96"/><circle cx="0" cy="-80" r="2.4"/><circle cx="0" cy="-32" r="2.4"/><circle cx="0" cy="32" r="2.4"/><circle cx="0" cy="80" r="2.4"/><path d="M0 -32 L-24 -76 M0 80 L-24 36"/><path d="M16 -96 V96"/><polygon points="8,-38 24,-38 16,-54" class="fill"/><path d="M8 -54 H24"/><polygon points="8,58 24,58 16,42" class="fill"/><path d="M8 42 H24"/><circle cx="16" cy="0" r="2.4" class="fill"/><path d="M-16 -160 V-61.34" class="dash"/><path d="M-48 -160 V58 H-12" class="dash"/><circle cx="16" cy="-96" r="2.4" class="fill"/><circle cx="16" cy="96" r="2.4" class="fill"/><circle cx="0" cy="-96" r="2.4" class="fill"/><circle cx="0" cy="96" r="2.4" class="fill"/><path d="M0 0 H32 V88 A8 8 0 0 1 32 104 V160"/><circle cx="0" cy="0" r="2.4" class="fill"/><path d="M96 -96 V-80 M96 -32 V32 M96 80 V96"/><circle cx="96" cy="-80" r="2.4"/><circle cx="96" cy="-32" r="2.4"/><circle cx="96" cy="32" r="2.4"/><circle cx="96" cy="80" r="2.4"/><path d="M96 -32 L72 -76 M96 80 L72 36"/><path d="M112 -96 V96"/><polygon points="104,-38 120,-38 112,-54" class="fill"/><path d="M104 -54 H120"/><polygon points="104,58 120,58 112,42" class="fill"/><path d="M104 42 H120"/><circle cx="112" cy="0" r="2.4" class="fill"/><path d="M80 -160 V-61.34" class="dash"/><path d="M48 -160 V58 H84" class="dash"/><circle cx="96" cy="-96" r="2.4" class="fill"/><circle cx="96" cy="96" r="2.4" class="fill"/><path d="M96 0 H128 V160"/><circle cx="96" cy="0" r="2.4" class="fill"/></g>
+<g transform="translate(96,320)"><path d="M0 -32 V-16 M0 16 V32"/><circle cx="0" cy="0" r="16" class="bold"/><path d="M-3.5 -7 H3.5 M0 -10.5 V-3.5"/><path d="M-3.5 7 H3.5"/></g>
+<path d="M96 288 V224 H176"/>
+<path d="M96 352 V416 H176"/>
+<circle class="dot" cx="96" cy="416" r="2.4"/>
+<path d="M96 416 V424 M88 424 H104 M91 427 H101 M94 430 H98"/>
+<text x="72" y="316" text-anchor="end">vbus</text>
+<text x="72" y="330" text-anchor="end">48 V</text>
+<polygon points="132,224 139,220.5 139,227.5" class="fill"/>
+<text x="132" y="216" class="net" text-anchor="middle">I(vbus)</text>
+<rect x="176" y="56" width="64" height="48"/>
+<text x="208" y="77.5" text-anchor="middle">DeadTime</text>
+<text x="208" y="90.5" class="dim" text-anchor="middle" font-size="10">500 ns</text>
+<path d="M192 104 V160" class="dash"/>
+<polygon points="192,158 188.5,151 195.5,151" class="fill"/>
+<path d="M224 104 V160" class="dash"/>
+<polygon points="224,158 220.5,151 227.5,151" class="fill"/>
+<rect x="272" y="56" width="64" height="48"/>
+<text x="304" y="77.5" text-anchor="middle">DeadTime</text>
+<text x="304" y="90.5" class="dim" text-anchor="middle" font-size="10">500 ns</text>
+<path d="M288 104 V160" class="dash"/>
+<polygon points="288,158 284.5,151 291.5,151" class="fill"/>
+<path d="M320 104 V160" class="dash"/>
+<polygon points="320,158 316.5,151 323.5,151" class="fill"/>
+<rect x="368" y="56" width="64" height="48"/>
+<text x="400" y="77.5" text-anchor="middle">DeadTime</text>
+<text x="400" y="90.5" class="dim" text-anchor="middle" font-size="10">500 ns</text>
+<path d="M384 104 V160" class="dash"/>
+<polygon points="384,158 380.5,151 387.5,151" class="fill"/>
+<path d="M416 104 V160" class="dash"/>
+<polygon points="416,158 412.5,151 419.5,151" class="fill"/>
+<text x="186" y="136" class="net" text-anchor="end" font-size="10">g_a_lo</text>
+<text x="230" y="136" class="net" font-size="10">g_a_hi</text>
+<rect x="32" y="56" width="112" height="48"/>
+<text x="88" y="77.5" text-anchor="middle">Spwm3</text>
+<text x="88" y="90.5" class="dim" text-anchor="middle" font-size="10">m 0.8, 20 kHz</text>
+<path d="M144 80 H174" class="dash"/>
+<polygon points="176,80 169,76.5 169,83.5" class="fill"/>
+<text x="160" y="74" class="dim" text-anchor="middle" font-size="10">s_a</text>
+<path d="M128 56 V32 H304" class="dash"/>
+<path d="M304 32 V58" class="dash"/>
+<polygon points="304,56 300.5,49 307.5,49" class="fill"/>
+<text x="296" y="27" class="dim" text-anchor="end" font-size="10">s_b</text>
+<path d="M96 56 V16 H400" class="dash"/>
+<path d="M400 16 V58" class="dash"/>
+<polygon points="400,56 396.5,49 403.5,49" class="fill"/>
+<text x="392" y="11" class="dim" text-anchor="end" font-size="10">s_c</text>
+<path d="M272 480 V592 H544"/>
+<text x="266" y="540" class="net" text-anchor="end">a</text>
+<polygon points="528,592 521,588.5 521,595.5" class="fill"/>
+<text x="512" y="584" class="net" text-anchor="middle">I(La)</text>
+<g transform="translate(576,592) rotate(90)"><path d="M0 -32 V-20.8 M0 20.8 V32"/><rect x="-8.8" y="-20.8" width="17.6" height="41.6" class="bold"/></g>
+<text x="576" y="577" text-anchor="middle">10 Ω</text>
+<path d="M608 592 H640"/>
+<g transform="translate(672,592) rotate(-90)"><path d="M0 -32 V-21.12 M0 21.12 V32"/><path d="M0 -21.12 a5.28 5.28 0 0 1 0 10.56 a5.28 5.28 0 0 1 0 10.56 a5.28 5.28 0 0 1 0 10.56 a5.28 5.28 0 0 1 0 10.56" class="bold"/></g>
+<text x="672" y="577" text-anchor="middle">La 5 mH</text>
+<path d="M704 592 H736"/>
+<path d="M368 480 V544 H544"/>
+<text x="362" y="516" class="net" text-anchor="end">b</text>
+<polygon points="528,544 521,540.5 521,547.5" class="fill"/>
+<text x="512" y="536" class="net" text-anchor="middle">I(Lb)</text>
+<g transform="translate(576,544) rotate(90)"><path d="M0 -32 V-20.8 M0 20.8 V32"/><rect x="-8.8" y="-20.8" width="17.6" height="41.6" class="bold"/></g>
+<text x="576" y="529" text-anchor="middle">10 Ω</text>
+<path d="M608 544 H640"/>
+<g transform="translate(672,544) rotate(-90)"><path d="M0 -32 V-21.12 M0 21.12 V32"/><path d="M0 -21.12 a5.28 5.28 0 0 1 0 10.56 a5.28 5.28 0 0 1 0 10.56 a5.28 5.28 0 0 1 0 10.56 a5.28 5.28 0 0 1 0 10.56" class="bold"/></g>
+<text x="672" y="529" text-anchor="middle">Lb 5 mH</text>
+<path d="M704 544 H736"/>
+<path d="M464 480 V496 H544"/>
+<text x="458" y="494" class="net" text-anchor="end">c</text>
+<polygon points="528,496 521,492.5 521,499.5" class="fill"/>
+<text x="512" y="488" class="net" text-anchor="middle">I(Lc)</text>
+<g transform="translate(576,496) rotate(90)"><path d="M0 -32 V-20.8 M0 20.8 V32"/><rect x="-8.8" y="-20.8" width="17.6" height="41.6" class="bold"/></g>
+<text x="576" y="481" text-anchor="middle">10 Ω</text>
+<path d="M608 496 H640"/>
+<g transform="translate(672,496) rotate(-90)"><path d="M0 -32 V-21.12 M0 21.12 V32"/><path d="M0 -21.12 a5.28 5.28 0 0 1 0 10.56 a5.28 5.28 0 0 1 0 10.56 a5.28 5.28 0 0 1 0 10.56 a5.28 5.28 0 0 1 0 10.56" class="bold"/></g>
+<text x="672" y="481" text-anchor="middle">Lc 5 mH</text>
+<path d="M704 496 H736"/>
+<path d="M736 496 V592"/>
+<circle class="dot" cx="736" cy="544" r="2.4"/>
+<text x="744" y="548" class="net">n</text>
+<text x="744" y="562" class="dim" font-size="10">floating</text>
+</svg>

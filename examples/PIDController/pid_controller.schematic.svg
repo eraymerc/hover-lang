@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 272" class="hv-schematic" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11">
+  <rect x="128" y="8" width="96" height="40"/>
+  <text x="176" y="24" text-anchor="middle">clock mcu</text>
+  <text x="176" y="40" class="dim" text-anchor="middle">10 kHz</text>
+  <path d="M176 48 V73" class="dash"/>
+  <polygon points="176,80 172.5,73 179.5,73" class="fill"/>
+  <rect x="112" y="80" width="128" height="112"/>
+  <text x="176" y="112" text-anchor="middle">ctrl: PID</text>
+  <text x="176" y="136" class="dim" text-anchor="middle">kp 0.05</text>
+  <text x="176" y="152" class="dim" text-anchor="middle">ki 10  kd 0</text>
+  <text x="176" y="176" class="dim" text-anchor="middle">@mcu</text>
+  <path d="M24 144 H105" class="dash"/>
+  <polygon points="112,144 105,140.5 105,147.5" class="fill"/>
+  <text x="24" y="136" class="net">setpoint</text>
+  <text x="24" y="160" class="dim">3.3</text>
+  <path d="M240 176 H297" class="dash"/>
+  <polygon points="304,176 297,172.5 297,179.5" class="fill"/>
+  <text x="268" y="168" class="net" text-anchor="middle">out</text>
+  <g transform="translate(320,176) rotate(180)"><path d="M0 -32 V-16 M0 16 V32"/><circle cx="0" cy="0" r="16" class="bold"/><path d="M0 -9 V4"/><polygon points="0,10 -4,3 4,3" class="fill"/></g>
+  <g transform="translate(416,176)"><path d="M0 -32 V-20.8 M0 20.8 V32"/><rect x="-8.8" y="-20.8" width="17.6" height="41.6" class="bold"/></g>
+  <g transform="translate(512,176)"><path d="M0 -32 V-7.52 M0 7.52 V32"/><rect x="-12" y="-7.52" width="24" height="4.8" class="fill"/><rect x="-12" y="2.72" width="24" height="4.8" class="fill"/></g>
+  <path d="M247 112 H320 V144 M320 112 H512 V144 M416 112 V144 M320 208 V240 H512 V208 M416 208 V240"/>
+  <polygon points="240,112 247,108.5 247,115.5" class="fill"/>
+  <circle class="dot" cx="320" cy="112" r="2.4"/>
+  <circle class="dot" cx="416" cy="112" r="2.4"/>
+  <circle class="dot" cx="416" cy="240" r="2.4"/>
+  <circle class="dot" cx="368" cy="240" r="2.4"/>
+  <path d="M368 240 V248 M360 248 H376 M363 251 H373 M366 254 H370"/>
+  <text x="272" y="104" class="dim" text-anchor="middle">sense</text>
+  <text x="464" y="104" class="net" text-anchor="middle">plant_node</text>
+  <text x="344" y="180" class="dim">I = out</text>
+  <text x="432" y="180">1 kΩ</text>
+  <text x="528" y="180">10 µF</text>
+</svg>

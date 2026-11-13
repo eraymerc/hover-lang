@@ -1,0 +1,108 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 48 952 424" class="hv-schematic" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11">
+  <!-- DC bus -->
+  <g transform="translate(32,304)">
+    <path d="M0 -32 V-16 M0 16 V32"/>
+    <circle cx="0" cy="0" r="16" class="bold"/>
+    <path d="M-3.5 -7 H3.5 M0 -10.5 V-3.5"/>
+    <path d="M-3.5 7 H3.5"/>
+  </g>
+  <text x="56" y="300">vbus</text>
+  <text x="56" y="316">24 V</text>
+  <path d="M32 272 V80 H384 V224"/>
+  <path d="M32 336 V432 H384 V384"/>
+  <polygon points="32,204 28.5,197 35.5,197" class="fill"/>
+  <text x="42" y="206" class="net">I(vbus)</text>
+  <circle class="dot" cx="208" cy="432" r="2.4"/>
+  <path d="M208 432 V448 M200 448 H216 M203 451 H213 M206 454 H210"/>
+
+  <!-- Reference and command (digital) -->
+  <rect x="80" y="112" width="112" height="48"/>
+  <text x="136" y="132" text-anchor="middle">SineDuty1Ph</text>
+  <text x="136" y="149" text-anchor="middle" class="dim" font-size="10">50 Hz  m = 0.8</text>
+  <path d="M192 128 H272 V272 H298" class="dash"/>
+  <polygon points="304,272 297,268.5 297,275.5" class="fill"/>
+  <circle class="dot" cx="224" cy="128" r="2.4"/>
+  <path d="M224 128 V186" class="dash"/>
+  <polygon points="224,192 220.5,185 227.5,185" class="fill"/>
+  <path d="M112 160 V336 H298" class="dash"/>
+  <polygon points="304,336 297,332.5 297,339.5" class="fill"/>
+  <circle class="dot" cx="208" cy="336" r="2.4"/>
+  <path d="M208 336 V262" class="dash"/>
+  <polygon points="208,256 204.5,263 211.5,263" class="fill"/>
+  <text x="288" y="265" text-anchor="middle" class="net">d_a</text>
+  <text x="288" y="329" text-anchor="middle" class="net">d_b</text>
+  <rect x="160" y="192" width="96" height="64"/>
+  <text x="208" y="213" text-anchor="middle">Command</text>
+  <text x="208" y="229" text-anchor="middle" class="dim" font-size="10">(d_a−d_b)·24</text>
+  <text x="208" y="246" text-anchor="middle" class="net">v_cmd</text>
+
+  <!-- Averaged H-bridge (stdlib symbol, drawn at 2x) -->
+  <g transform="translate(384,304)">
+    <rect x="-48" y="-48" width="96" height="96" class="bold"/>
+    <path d="M-48 48 L48 -48"/>
+    <path d="M-36 -30 H-12 M-36 -18 H-12"/>
+    <path d="M8 24 C14 10 20 10 24 24 C28 38 34 38 40 24"/>
+    <path d="M0 -80 V-48 M0 48 V80"/>
+    <path d="M48 -32 H80 M48 32 H80 M-80 -32 H-48 M-80 32 H-48"/>
+  </g>
+
+  <!-- Bridge outputs, leg currents -->
+  <path d="M464 272 H496 V224 H576"/>
+  <path d="M464 336 H496 V384 H576"/>
+  <polygon points="496,256 492.5,249 499.5,249" class="fill"/>
+  <text x="506" y="258" class="net" font-size="10">I(bridge.leg_a.vleg)</text>
+  <polygon points="496,352 492.5,359 499.5,359" class="fill"/>
+  <text x="506" y="358" class="net" font-size="10">I(bridge.leg_b.vleg)</text>
+  <text x="536" y="216" text-anchor="middle" class="net">bridge_a</text>
+  <text x="536" y="402" text-anchor="middle" class="net">bridge_b</text>
+
+  <!-- LC filter -->
+  <g transform="translate(608,224) rotate(-90)">
+    <path d="M0 -32 V-21.12 M0 21.12 V32"/>
+    <path d="M0 -21.12 a5.28 5.28 0 0 1 0 10.56 a5.28 5.28 0 0 1 0 10.56 a5.28 5.28 0 0 1 0 10.56 a5.28 5.28 0 0 1 0 10.56" class="bold"/>
+  </g>
+  <text x="608" y="208" text-anchor="middle">14 mH</text>
+  <g transform="translate(608,384) rotate(-90)">
+    <path d="M0 -32 V-21.12 M0 21.12 V32"/>
+    <path d="M0 -21.12 a5.28 5.28 0 0 1 0 10.56 a5.28 5.28 0 0 1 0 10.56 a5.28 5.28 0 0 1 0 10.56 a5.28 5.28 0 0 1 0 10.56" class="bold"/>
+  </g>
+  <text x="608" y="402" text-anchor="middle">14 mH</text>
+  <path d="M640 224 H784"/>
+  <path d="M640 384 H784"/>
+  <text x="744" y="216" text-anchor="middle" class="net">out_p</text>
+  <text x="744" y="402" text-anchor="middle" class="net">out_n</text>
+
+  <!-- Load -->
+  <circle class="dot" cx="704" cy="224" r="2.4"/>
+  <circle class="dot" cx="704" cy="384" r="2.4"/>
+  <path d="M704 224 V272 M704 336 V384"/>
+  <g transform="translate(704,304)">
+    <path d="M0 -32 V-20.8 M0 20.8 V32"/>
+    <rect x="-8.8" y="-20.8" width="17.6" height="41.6" class="bold"/>
+  </g>
+  <text x="718" y="308">200 Ω</text>
+
+  <!-- Split capacitors, common-mode damping leg -->
+  <g transform="translate(784,256)">
+    <path d="M0 -32 V-7.52 M0 7.52 V32"/>
+    <rect x="-12" y="-7.52" width="24" height="4.8" class="fill"/>
+    <rect x="-12" y="2.72" width="24" height="4.8" class="fill"/>
+  </g>
+  <g transform="translate(784,352)">
+    <path d="M0 -32 V-7.52 M0 7.52 V32"/>
+    <rect x="-12" y="-7.52" width="24" height="4.8" class="fill"/>
+    <rect x="-12" y="2.72" width="24" height="4.8" class="fill"/>
+  </g>
+  <text x="770" y="260" text-anchor="end">1.4 µF</text>
+  <text x="770" y="356" text-anchor="end">1.4 µF</text>
+  <path d="M784 288 V320"/>
+  <circle class="dot" cx="784" cy="304" r="2.4"/>
+  <path d="M784 304 H832"/>
+  <text x="808" y="296" text-anchor="middle" class="net">cm_mid</text>
+  <g transform="translate(864,304) rotate(90)">
+    <path d="M0 -32 V-20.8 M0 20.8 V32"/>
+    <rect x="-8.8" y="-20.8" width="17.6" height="41.6" class="bold"/>
+  </g>
+  <text x="864" y="288" text-anchor="middle">68 Ω</text>
+  <path d="M896 304 H928 V352 M920 352 H936 M923 355 H933 M926 358 H930"/>
+</svg>

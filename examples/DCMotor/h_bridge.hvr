@@ -19,8 +19,6 @@
 // .zcd hunting for them. (.zcd was here for exactly those edges.)
 .clock(mcu, 1m);
 
-import <semiconductors/bjt>;
-import <semiconductors> as devices;
 import <parts/diode> as parts;
 import <parts/bjt/npn> as npnp;
 import <parts/bjt/pnp> as pnpp;

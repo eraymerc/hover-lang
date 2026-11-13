@@ -50,7 +50,10 @@ module main<>() []
 
     // 2. Input Source: 20 mV AC sine (1 kHz) on a -1.8731 V DC pedestal.
     // The pedestal matches the divider so the coupling capacitor sits at 0 V
-    // in the steady state — see nmos_amp.hvr for why .op cares.
+    // in the steady state. This deck runs without .op, so it starts from rest
+    // and the first ~10 ms show the bias settling (0.34 µF into the
+    // 31k || 300k divider, tau ≈ 9.6 ms); add `.op;` to start at the bias
+    // point instead, as nmos_amp.hvr does.
     module signal_source = AC_Source<-1.8731, 20m, 1k>()[v_in, gnd];
 
     // 3. Bias network and load

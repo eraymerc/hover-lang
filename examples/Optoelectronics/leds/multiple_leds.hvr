@@ -14,14 +14,14 @@
 .op;
 .tran(0, 5m, 50u);
 .solver(ndf2);
-from <optoelectronics/leds> import LED, LED_RED, LED_GREEN;
+from <optoelectronics/leds> import LED_RED, LED_GREEN;
 // ═══════════════════════════════════════════════════════════════
 //  TOP-LEVEL TESTBENCH — independent 5V/220ohm drive per LED
 // ═══════════════════════════════════════════════════════════════
 //
 //   Each color gets its OWN limiting resistor straight from vcc, not a
 //   shared one. Different-Vf diodes in parallel off a single resistor
-//   current-hog toward the lower-Vf device (see conversation) -- separate
+//   current-hog toward the lower-Vf device -- separate
 //   branches avoid that entirely, since each LED's current is set only
 //   by its own resistor and its own Vf.
 //

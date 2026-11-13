@@ -5,11 +5,11 @@
 //             power balance
 // ─────────────────────────────────────────────────────────────────────────────
 //
-//  The same circuit as examples/MOSFET/h_bridge_inverter.hvr — 24 V bus,
-//  bipolar sine modulation at m = 0.8 and 50 Hz, 14 mH per leg, 1.4 µF split
-//  filter capacitors with the 68 Ohm common-mode damping leg, 200 Ohm load —
+//  The 24 V, m = 0.8, 50 Hz bridge of examples/MOSFET/h_bridge_inverter.hvr,
 //  with the four MOSFETs and the 20 kHz carrier replaced by their switching-
-//  period average. See that deck for why the filter is shaped the way it is.
+//  period average, and the inverter benchmark's filter: 14 mH per leg, 1.4 µF
+//  split capacitors with the 68 Ohm common-mode damping leg, 200 Ohm load.
+//  ideal_h_bridge.hvr explains why the filter is shaped the way it is.
 //
 //  What changes: no carrier, so no 20 kHz ripple and no dead-time or body-
 //  diode effects; the bridge legs are ideal controlled voltage sources at

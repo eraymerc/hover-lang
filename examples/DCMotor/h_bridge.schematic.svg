@@ -1,0 +1,202 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-8 40 960 432" class="hv-schematic" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11">
+<g transform="translate(48,144)">
+  <polyline points="0,-32 0,-16"/>
+  <polyline points="0,16 0,32"/>
+  <circle cx="0" cy="0" r="16" class="bold"/>
+  <polyline points="-3.5,-7 3.5,-7"/>
+  <polyline points="0,-10.5 0,-3.5"/>
+  <polyline points="-3.5,7 3.5,7"/>
+</g>
+<text x="24" y="148" text-anchor="end">12 V</text>
+<g transform="translate(304,128)">
+  <circle cx="6.4" cy="0" r="20.8" class="bold"/>
+  <polyline points="-32,0 -1.6,0"/>
+  <rect x="-1.6" y="-13.6" width="4" height="27.2" class="fill"/>
+  <polyline points="2.4,-4 16,-17.6 16,-32"/>
+  <polyline points="2.4,4 16,17.6 16,32"/>
+  <polygon points="5.92,-7.52 12.8,-10.4 8.8,-14.4" class="fill"/>
+</g>
+<g transform="translate(304,256)">
+  <circle cx="6.4" cy="0" r="20.8" class="bold"/>
+  <polyline points="-32,0 -1.6,0"/>
+  <rect x="-1.6" y="-13.6" width="4" height="27.2" class="fill"/>
+  <polyline points="2.4,-4 16,-17.6 16,-32"/>
+  <polyline points="2.4,4 16,17.6 16,32"/>
+  <polygon points="13.28,14.88 10.4,8 6.4,12" class="fill"/>
+</g>
+<polyline points="272,128 256,128"/>
+<polyline points="272,256 256,256"/>
+<polyline points="320,64 320,96"/>
+<polyline points="320,160 320,224"/>
+<circle class="dot" cx="320" cy="192" r="2.4"/>
+<path d="M320 288 V296 M312 296 H328 M315 299 H325 M318 302 H322"/>
+<text x="338" y="132">2N2907</text>
+<text x="338" y="260">2N2222</text>
+<g transform="translate(400,128)">
+  <polyline points="0,32 0,12"/>
+  <polyline points="0,-12 0,-32"/>
+  <polygon points="12,12 -12,12 0,-7.2" class="fill"/>
+  <rect x="-12" y="-12" width="24" height="4.8" class="fill"/>
+</g>
+<g transform="translate(400,256)">
+  <polyline points="0,32 0,12"/>
+  <polyline points="0,-12 0,-32"/>
+  <polygon points="12,12 -12,12 0,-7.2" class="fill"/>
+  <rect x="-12" y="-12" width="24" height="4.8" class="fill"/>
+</g>
+<polyline points="320,96 400,96"/>
+<circle class="dot" cx="320" cy="96" r="2.4"/>
+<polyline points="320,160 400,160"/>
+<circle class="dot" cx="320" cy="160" r="2.4"/>
+<polyline points="320,224 400,224"/>
+<circle class="dot" cx="320" cy="224" r="2.4"/>
+<polyline points="320,288 400,288"/>
+<circle class="dot" cx="320" cy="288" r="2.4"/>
+<text x="416" y="132" font-size="10">1N5819</text>
+<text x="416" y="260" font-size="10">1N5819</text>
+<g transform="translate(224,128)">
+  <polyline points="32,0 20.8,0"/>
+  <polyline points="-20.8,0 -32,0"/>
+  <rect x="-20.8" y="-8.8" width="41.6" height="17.6" class="bold"/>
+</g>
+<text x="224" y="114" text-anchor="middle">1 Ω</text>
+<polyline points="176,128 192,128"/>
+<g transform="translate(176,160)">
+  <polyline points="0,-32 0,-16"/>
+  <polyline points="0,16 0,32"/>
+  <circle cx="0" cy="0" r="16" class="bold"/>
+  <polyline points="-3.5,-7 3.5,-7"/>
+  <polyline points="0,-10.5 0,-3.5"/>
+  <polyline points="-3.5,7 3.5,7"/>
+</g>
+<path d="M176 192 V200 M168 200 H184 M171 203 H181 M174 206 H178"/>
+<polyline points="400,436 96,436 96,160 161,160" class="dash"/>
+<polygon class="fill" points="153,156.5 160,160 153,163.5"/>
+<text x="128" y="154" text-anchor="middle" class="net" font-size="10">cmd_TL</text>
+<g transform="translate(224,256)">
+  <polyline points="32,0 20.8,0"/>
+  <polyline points="-20.8,0 -32,0"/>
+  <rect x="-20.8" y="-8.8" width="41.6" height="17.6" class="bold"/>
+</g>
+<text x="224" y="242" text-anchor="middle">1 Ω</text>
+<polyline points="176,256 192,256"/>
+<g transform="translate(176,288)">
+  <polyline points="0,-32 0,-16"/>
+  <polyline points="0,16 0,32"/>
+  <circle cx="0" cy="0" r="16" class="bold"/>
+  <polyline points="-3.5,-7 3.5,-7"/>
+  <polyline points="0,-10.5 0,-3.5"/>
+  <polyline points="-3.5,7 3.5,7"/>
+</g>
+<path d="M176 320 V328 M168 328 H184 M171 331 H181 M174 334 H178"/>
+<polyline points="400,420 112,420 112,288 161,288" class="dash"/>
+<polygon class="fill" points="153,284.5 160,288 153,291.5"/>
+<text x="136" y="282" text-anchor="middle" class="net" font-size="10">cmd_BL</text>
+<g transform="translate(720,128)">
+  <circle cx="-6.4" cy="0" r="20.8" class="bold"/>
+  <polyline points="32,0 1.6,0"/>
+  <rect x="-2.4" y="-13.6" width="4" height="27.2" class="fill"/>
+  <polyline points="-2.4,-4 -16,-17.6 -16,-32"/>
+  <polyline points="-2.4,4 -16,17.6 -16,32"/>
+  <polygon points="-5.92,-7.52 -12.8,-10.4 -8.8,-14.4" class="fill"/>
+</g>
+<g transform="translate(720,256)">
+  <circle cx="-6.4" cy="0" r="20.8" class="bold"/>
+  <polyline points="32,0 1.6,0"/>
+  <rect x="-2.4" y="-13.6" width="4" height="27.2" class="fill"/>
+  <polyline points="-2.4,-4 -16,-17.6 -16,-32"/>
+  <polyline points="-2.4,4 -16,17.6 -16,32"/>
+  <polygon points="-13.28,14.88 -10.4,8 -6.4,12" class="fill"/>
+</g>
+<polyline points="752,128 768,128"/>
+<polyline points="752,256 768,256"/>
+<polyline points="704,64 704,96"/>
+<polyline points="704,160 704,224"/>
+<circle class="dot" cx="704" cy="192" r="2.4"/>
+<path d="M704 288 V296 M696 296 H712 M699 299 H709 M702 302 H706"/>
+<text x="686" y="132" text-anchor="end">2N2907</text>
+<text x="686" y="260" text-anchor="end">2N2222</text>
+<g transform="translate(624,128)">
+  <polyline points="0,32 0,12"/>
+  <polyline points="0,-12 0,-32"/>
+  <polygon points="12,12 -12,12 0,-7.2" class="fill"/>
+  <rect x="-12" y="-12" width="24" height="4.8" class="fill"/>
+</g>
+<g transform="translate(624,256)">
+  <polyline points="0,32 0,12"/>
+  <polyline points="0,-12 0,-32"/>
+  <polygon points="12,12 -12,12 0,-7.2" class="fill"/>
+  <rect x="-12" y="-12" width="24" height="4.8" class="fill"/>
+</g>
+<polyline points="704,96 624,96"/>
+<circle class="dot" cx="704" cy="96" r="2.4"/>
+<polyline points="704,160 624,160"/>
+<circle class="dot" cx="704" cy="160" r="2.4"/>
+<polyline points="704,224 624,224"/>
+<circle class="dot" cx="704" cy="224" r="2.4"/>
+<polyline points="704,288 624,288"/>
+<circle class="dot" cx="704" cy="288" r="2.4"/>
+<text x="608" y="132" text-anchor="end" font-size="10">1N5819</text>
+<text x="608" y="260" text-anchor="end" font-size="10">1N5819</text>
+<g transform="translate(800,128)">
+  <polyline points="32,0 20.8,0"/>
+  <polyline points="-20.8,0 -32,0"/>
+  <rect x="-20.8" y="-8.8" width="41.6" height="17.6" class="bold"/>
+</g>
+<text x="800" y="114" text-anchor="middle">1 Ω</text>
+<polyline points="848,128 832,128"/>
+<g transform="translate(848,160)">
+  <polyline points="0,-32 0,-16"/>
+  <polyline points="0,16 0,32"/>
+  <circle cx="0" cy="0" r="16" class="bold"/>
+  <polyline points="-3.5,-7 3.5,-7"/>
+  <polyline points="0,-10.5 0,-3.5"/>
+  <polyline points="-3.5,7 3.5,7"/>
+</g>
+<path d="M848 192 V200 M840 200 H856 M843 203 H853 M846 206 H850"/>
+<polyline points="624,436 928,436 928,160 863,160" class="dash"/>
+<polygon class="fill" points="871,156.5 864,160 871,163.5"/>
+<text x="896" y="154" text-anchor="middle" class="net" font-size="10">cmd_TR</text>
+<g transform="translate(800,256)">
+  <polyline points="32,0 20.8,0"/>
+  <polyline points="-20.8,0 -32,0"/>
+  <rect x="-20.8" y="-8.8" width="41.6" height="17.6" class="bold"/>
+</g>
+<text x="800" y="242" text-anchor="middle">1 Ω</text>
+<polyline points="848,256 832,256"/>
+<g transform="translate(848,288)">
+  <polyline points="0,-32 0,-16"/>
+  <polyline points="0,16 0,32"/>
+  <circle cx="0" cy="0" r="16" class="bold"/>
+  <polyline points="-3.5,-7 3.5,-7"/>
+  <polyline points="0,-10.5 0,-3.5"/>
+  <polyline points="-3.5,7 3.5,7"/>
+</g>
+<path d="M848 320 V328 M840 328 H856 M843 331 H853 M846 334 H850"/>
+<polyline points="624,420 912,420 912,288 863,288" class="dash"/>
+<polygon class="fill" points="871,284.5 864,288 871,291.5"/>
+<text x="888" y="282" text-anchor="middle" class="net" font-size="10">cmd_BR</text>
+<polyline points="48,112 48,64 704,64"/>
+<circle class="dot" cx="320" cy="64" r="2.4"/>
+<path d="M48 176 V184 M40 184 H56 M43 187 H53 M46 190 H50"/>
+<polyline points="320,192 480,192"/>
+<polyline points="544,192 704,192"/>
+<g transform="translate(512,192)"><circle cx="0" cy="0" r="20" class="bold"/><path d="M-32 0 H-20 M20 0 H32"/><path d="M-8 7 V-5 L0 4 L8 -5 V7"/></g>
+<text x="330" y="184" class="net">motor_a</text>
+<text x="694" y="184" text-anchor="end" class="net">motor_b</text>
+<text x="512" y="148" text-anchor="middle">DC motor</text>
+<text x="512" y="162" text-anchor="middle" class="dim" font-size="10">2 Ω · 5 mH · Ke 0.05</text>
+<polyline points="500,209 500,319" class="dash"/>
+<polygon class="fill" points="496.5,313 500,320 503.5,313"/>
+<polyline points="524,320 524,211" class="dash"/>
+<polygon class="fill" points="520.5,216 524,209 527.5,216"/>
+<text x="494" y="300" text-anchor="end" class="net" font-size="10">omega_node</text>
+<text x="530" y="300" class="net" font-size="10">loadCmd</text>
+<rect x="440" y="320" width="144" height="40"/>
+<text x="512" y="337" text-anchor="middle">load torque</text>
+<text x="512" y="351" text-anchor="middle" class="dim" font-size="10">10 mN·m · tanh(ω/5)</text>
+<rect x="400" y="400" width="224" height="56"/>
+<text x="512" y="418" text-anchor="middle">H-bridge sequencer</text>
+<text x="512" y="432" text-anchor="middle" class="dim" font-size="10">1 ms tick · reverse at 200 ms</text>
+<text x="512" y="446" text-anchor="middle" class="dim" font-size="10">2 ms dead time each side</text>
+</svg>

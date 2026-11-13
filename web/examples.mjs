@@ -13,6 +13,12 @@
 // ("HVR Example — …" / "Demonstrates: …" work the same way). The category is
 // the deck's top-level folder.
 //
+// A deck may have a hand-drawn schematic beside it, `<name>.schematic.svg`
+// (drawn to the rules in the playground's schematic spec: currentColor only,
+// classes for fill/dash/net labels, no <style> or scripts). The playground
+// inlines it under the plot, so it is checked here for anything that would
+// leak into or script the page.
+//
 // Slow decks are still offered, flagged with their native run time so the page
 // can warn before the browser — several times slower — spends minutes on them.
 // The times below are measured natively (compile + run, `hover <deck>`), so
@@ -48,7 +54,7 @@ const NATIVE_SECONDS = {
   'DCMotor/h_bridge.hvr': 5.0,
   'MOSFET/mosfet_h_bridge.hvr': 6.3,
   'MOSFET/h_bridge_inverter.hvr': 26.6,
-  'PMSM/foc.hvr': 6.3,
+  'PMSM/foc.hvr': 26.5,
 };
 
 // Above this native time the picker marks a deck as slow.
@@ -104,6 +110,21 @@ function header(source) {
   return { title, summary: summary.join(' ').replace(/\s+/g, ' ').trim() };
 }
 
+// The deck's schematic, or null. Inlined into the page, so refuse anything that
+// could style or script it rather than trust the file.
+function schematic(exDir, rel, log) {
+  const file = path.join(exDir, rel.replace(/\.hvr$/, '.schematic.svg'));
+  if (!fs.existsSync(file)) return null;
+  const svg = fs.readFileSync(file, 'utf8').replace(/^\s*<\?xml[^>]*>\s*/, '').trim();
+  const bad = [/<script/i, /<style/i, /<foreignObject/i, /\son\w+\s*=/i, /href\s*=/i, /<image/i, /<use\b/i]
+    .find((re) => re.test(svg));
+  if (!svg.startsWith('<svg') || bad) {
+    log(`examples: ignoring ${path.relative(exDir, file)} (${bad ? 'contains ' + bad : 'not an <svg>'})`);
+    return null;
+  }
+  return svg;
+}
+
 function fallbackTitle(file) {
   const base = path.basename(file, '.hvr').replace(/[_-]+/g, ' ');
   return base.charAt(0).toUpperCase() + base.slice(1);
@@ -128,6 +149,7 @@ export function collectExamples(repo, { log = () => {} } = {}) {
     const dir = rel.split('/')[0];
     const { title, summary } = header(source);
     const seconds = NATIVE_SECONDS[rel];
+    const svg = schematic(exDir, rel, log);
     list.push({
       id: rel.replace(/\.hvr$/, '').toLowerCase(),
       title: title || fallbackTitle(rel),
@@ -136,6 +158,7 @@ export function collectExamples(repo, { log = () => {} } = {}) {
       file: `examples/${rel}`,
       ...(seconds !== undefined ? { seconds } : {}),
       ...(seconds !== undefined && seconds > SLOW_SECONDS ? { slow: true } : {}),
+      ...(svg ? { schematic: svg } : {}),
       source,
     });
   }
@@ -149,6 +172,6 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
   for (const e of collectExamples(repo, { log: (m) => console.log(m) })) {
     const t = e.seconds !== undefined ? ` ${e.seconds}s${e.slow ? ' SLOW' : ''}` : '';
-    console.log(`${e.category.padEnd(16)} ${e.id.padEnd(44)} ${e.title}${t}`);
+    console.log(`${e.category.padEnd(16)} ${e.id.padEnd(44)} ${e.schematic ? '▣' : ' '} ${e.title}${t}`);
   }
 }

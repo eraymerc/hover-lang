@@ -10,7 +10,7 @@
 .solver(ndf2);
 
 from <math> import exp, sin;
-from <optoelectronics/leds> import LED, LED_RED;
+from <optoelectronics/leds> import LED_RED;
 
 // ═══════════════════════════════════════════════════════════════
 //  PHOTOTRANSISTOR DEVICE MODEL
@@ -42,7 +42,8 @@ from <optoelectronics/leds> import LED, LED_RED;
 //
 // IMPORTANT: driven primitive arguments (the () logic port) must be a
 // plain identifier, not an inline expression -- e.g. current_source<>(Ic)
-// works, current_source<>(Bf*i_b) does not (see conversation for why).
+// works, current_source<>(Bf*i_b) does not: the elaborator rejects it
+// ("expression '(Bf * i_b)' cannot be used as a signal/port name").
 
 analog module Phototransistor<double Is, double Bf, double Vt, double responsivity>()
 [wire base, wire collector, wire emitter, wire light_in]
@@ -64,7 +65,7 @@ analog module Phototransistor<double Is, double Bf, double Vt, double responsivi
     double i_c = Bf * i_b_total;   // pre-compute into its own identifier --
                                     // driven primitives need a plain
                                     // identifier argument, not an inline
-                                    // expression (see conversation).
+                                    // expression (see the NOTE above).
 
     current_source<>(i_b_total) [base, emitter];
     current_source<>(i_c)       [collector, emitter];
@@ -77,7 +78,8 @@ analog module Phototransistor<double Is, double Bf, double Vt, double responsivi
 //  TOP-LEVEL TESTBENCH — LED-to-phototransistor optocoupler
 // ═══════════════════════════════════════════════════════════════
 //
-//   vcc --R<220>--> nodeA --R<1>--> led_anode --[LED_RED]--> gnd
+//   vcc_led --R<220>--> nodeA --R<1>--> led_anode --[LED_RED]--> gnd
+//   (vcc_led: 1 kHz sine, 0..5 V)
 //                                                    |
 //                                                 light_bus
 //                                                    |
@@ -86,12 +88,14 @@ analog module Phototransistor<double Is, double Bf, double Vt, double responsivi
 //                                    pt_base --R<1Meg>--> gnd  (bias/bleed
 //                                        resistor, base otherwise unused)
 //
+// The LED is driven by a 1 kHz sine from 0 to 5 V (sineSource below), so
+// the optocoupler is swept between dark and lit once per millisecond.
 // Is=1e-14 (typical silicon junction), Bf=500, responsivity=5e-6 A per
-// light_bus unit. Red LED at ~14mA drives light_bus to ~0.7 (see the
-// earlier LED conversation: eta=50 -> 50*0.014=0.7), giving
+// light_bus unit. At the sine's 5 V peak the red LED carries ~14 mA, which
+// drives light_bus to ~0.7 (LED eta = 50 per A: 50*0.014 = 0.7), giving
 // i_ph = 5e-6*0.7 = 3.5uA, Ic = 500*3.5uA = 1.75mA -- across the 2.2k
 // pull-up that pulls pt_collector down to roughly 5V - 1.75mA*2.2k ~= 1.15V
-// ("lit" state) versus ~5V when the LED is off ("dark" state).
+// ("lit") at the peak, versus ~5V near the sine's 0 V trough ("dark").
 
 func double sineWave(double freq, double phase){
     double pi = 3.14159265;

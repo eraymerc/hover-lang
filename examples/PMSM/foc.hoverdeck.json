@@ -1,0 +1,18 @@
+{
+  "version": 2,
+  "sheets": {
+    "Inverter_3phase": {
+      "blocks": {},
+      "nets": {}
+    },
+    "main": {
+      "blocks": {
+        "I1": {
+          "x": 336,
+          "y": 528
+        }
+      },
+      "nets": {}
+    }
+  }
+}

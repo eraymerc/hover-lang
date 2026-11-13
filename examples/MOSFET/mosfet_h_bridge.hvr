@@ -15,8 +15,8 @@
 // The H-bridge sequencer runs on a 1 kHz timer tick, as it would on a
 // microcontroller. Its commands can only change on a tick, and ticks are
 // points the solver steps exactly onto, so the switching edges at
-// t_switch +/- deadtime (both whole milliseconds) are hit precisely without
-// .zcd hunting for them. (.zcd was here for exactly those edges.)
+// t_switch +/- deadtime (both whole milliseconds) are hit precisely by the
+// clock alone; the .zcd line above is not needed for them.
 .clock(mcu, 1m);
 
 import <parts/mosfet/nmos> as nfet;

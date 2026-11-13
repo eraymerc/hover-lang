@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="8 8 992 624" class="hv-schematic" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11">
+<rect x="16" y="16" width="80" height="48"/>
+<text x="56" y="31" text-anchor="middle">ramp</text>
+<text x="56" y="44" class="dim" text-anchor="middle" font-size="10">314 rad/s</text>
+<text x="56" y="57" class="dim" text-anchor="middle" font-size="10">in 0.1 s</text>
+<rect x="168" y="16" width="64" height="48"/>
+<text x="200" y="37.5" text-anchor="middle">Speed PI</text>
+<text x="200" y="50.5" class="dim" text-anchor="middle" font-size="10">±10 A</text>
+<rect x="264" y="16" width="48" height="48"/>
+<text x="288" y="44" text-anchor="middle">MTPA</text>
+<rect x="344" y="16" width="112" height="48"/>
+<path d="M400 16 V64"/>
+<text x="372" y="37" text-anchor="middle">id, iq</text>
+<text x="372" y="50" text-anchor="middle">PI</text>
+<text x="428" y="37" text-anchor="middle">inv.</text>
+<text x="428" y="50" text-anchor="middle">Park</text>
+<rect x="488" y="16" width="80" height="48"/>
+<text x="528" y="37.5" text-anchor="middle">VoltsToRef</text>
+<text x="528" y="50.5" class="dim" text-anchor="middle" font-size="10">÷ 155 V</text>
+<rect x="600" y="16" width="256" height="48"/>
+<text x="728" y="37.5" text-anchor="middle">Spwm3MinMax</text>
+<text x="728" y="50.5" class="dim" text-anchor="middle" font-size="10">20 kHz</text>
+<rect x="888" y="16" width="96" height="48"/>
+<text x="936" y="37.5" text-anchor="middle">LoadStep</text>
+<text x="936" y="50.5" class="dim" text-anchor="middle" font-size="10">3 N·m @ 0.2 s</text>
+<path d="M96 40 H168" class="dash"/>
+<polygon points="168,40 161,36.5 161,43.5" class="fill"/>
+<text x="132" y="33" class="net" text-anchor="middle" font-size="10">omega_ref</text>
+<path d="M232 40 H264" class="dash"/>
+<polygon points="264,40 257,36.5 257,43.5" class="fill"/>
+<path d="M312 32 H344" class="dash"/>
+<polygon points="344,32 337,28.5 337,35.5" class="fill"/>
+<path d="M312 48 H344" class="dash"/>
+<polygon points="344,48 337,44.5 337,51.5" class="fill"/>
+<path d="M456 40 H488" class="dash"/>
+<polygon points="488,40 481,36.5 481,43.5" class="fill"/>
+<path d="M466 45 L474 35"/>
+<text x="473" y="33" class="dim" font-size="10">3</text>
+<path d="M568 40 H600" class="dash"/>
+<polygon points="600,40 593,36.5 593,43.5" class="fill"/>
+<path d="M578 45 L586 35"/>
+<text x="585" y="33" class="dim" font-size="10">3</text>
+<path d="M632 64 V96" class="dash"/>
+<polygon points="632,94 628.5,87 635.5,87" class="fill"/>
+<text x="638" y="88" class="dim" font-size="10">s_a</text>
+<path d="M728 64 V96" class="dash"/>
+<polygon points="728,94 724.5,87 731.5,87" class="fill"/>
+<text x="734" y="88" class="dim" font-size="10">s_b</text>
+<path d="M824 64 V96" class="dash"/>
+<polygon points="824,94 820.5,87 827.5,87" class="fill"/>
+<text x="830" y="88" class="dim" font-size="10">s_c</text>
+<g transform="translate(744,256)"><path d="M-160 -96 H96 M-160 96 H96"/><path d="M-96 -96 V-80 M-96 -32 V32 M-96 80 V96"/><circle cx="-96" cy="-80" r="2.4"/><circle cx="-96" cy="-32" r="2.4"/><circle cx="-96" cy="32" r="2.4"/><circle cx="-96" cy="80" r="2.4"/><path d="M-96 -32 L-120 -76 M-96 80 L-120 36"/><path d="M-112 -160 V-61.34" class="dash"/><circle cx="-96" cy="0" r="2.4" class="fill"/><path d="M-96 0 H-64 V88 A8 8 0 0 1 -64 104 V160"/><path d="M0 -96 V-80 M0 -32 V32 M0 80 V96"/><circle cx="0" cy="-80" r="2.4"/><circle cx="0" cy="-32" r="2.4"/><circle cx="0" cy="32" r="2.4"/><circle cx="0" cy="80" r="2.4"/><path d="M0 -32 L-24 -76 M0 80 L-24 36"/><path d="M-16 -160 V-61.34" class="dash"/><circle cx="0" cy="0" r="2.4" class="fill"/><path d="M0 0 H32 V88 A8 8 0 0 1 32 104 V160"/><path d="M96 -96 V-80 M96 -32 V32 M96 80 V96"/><circle cx="96" cy="-80" r="2.4"/><circle cx="96" cy="-32" r="2.4"/><circle cx="96" cy="32" r="2.4"/><circle cx="96" cy="80" r="2.4"/><path d="M96 -32 L72 -76 M96 80 L72 36"/><path d="M80 -160 V-61.34" class="dash"/><circle cx="96" cy="0" r="2.4" class="fill"/><path d="M96 0 H128 V160"/></g>
+<g transform="translate(504,256)"><path d="M0 -32 V-16 M0 16 V32"/><circle cx="0" cy="0" r="16" class="bold"/><path d="M-3.5 -7 H3.5 M0 -10.5 V-3.5"/><path d="M-3.5 7 H3.5"/></g>
+<path d="M504 224 V160 H584"/>
+<path d="M504 288 V352 H584"/>
+<circle class="dot" cx="504" cy="352" r="2.4"/>
+<path d="M504 352 V360 M496 360 H512 M499 363 H509 M502 366 H506"/>
+<text x="480" y="252" text-anchor="end">vbus</text>
+<text x="480" y="266" text-anchor="end">310 V</text>
+<polygon points="540,160 547,156.5 547,163.5" class="fill"/>
+<text x="540" y="152" class="net" text-anchor="middle">I(vbus)</text>
+<g transform="translate(776,512)"><circle cx="0" cy="0" r="40" class="bold"/><path d="M-32 -64 V-24 M0 -64 V-40 M32 -64 V-24"/><path d="M-16 14 V-10 L0 8 L16 -10 V14"/><path d="M40 -6 H54 V6 H40" class="bold"/><path d="M54 0 H64"/></g>
+<path d="M680 416 V432 H744 V448"/>
+<path d="M776 416 V448"/>
+<path d="M872 416 V432 H808 V448"/>
+<text x="724" y="514" text-anchor="end">IPMSM</text>
+<text x="724" y="527" class="dim" text-anchor="end" font-size="10">p 4, 3 Ω</text>
+<path d="M840 512 H920 V544"/>
+<text x="880" y="506" class="dim" text-anchor="middle" font-size="10">shaft</text>
+<g transform="translate(920,576)"><path d="M0 -32 V-16 M0 16 V32"/><circle cx="0" cy="0" r="16" class="bold"/><path d="M0 -9 V4"/><polygon points="0,10 -4,3 4,3" class="fill"/></g>
+<path d="M920 608 V616 M912 616 H928 M915 619 H925 M918 622 H922"/>
+<path d="M968 64 V576 H938" class="dash"/>
+<polygon points="937,576 944,572.5 944,579.5" class="fill"/>
+<text x="962" y="300" class="dim" text-anchor="end" font-size="10">t_load</text>
+<path d="M776 552 V560 M728 560 H824"/>
+<path d="M736 560 V576 H428 V64" class="dash"/>
+<polygon points="428,65 424.5,72 431.5,72" class="fill"/>
+<path d="M760 560 V592 H372 V64" class="dash"/>
+<polygon points="372,65 368.5,72 375.5,72" class="fill"/>
+<path d="M784 560 V608 H200 V64" class="dash"/>
+<polygon points="200,65 196.5,72 203.5,72" class="fill"/>
+<path d="M367 404 L377 396"/>
+<text x="380" y="404" class="dim" font-size="10">2</text>
+<text x="206" y="320" class="net">omega</text>
+<text x="366" y="312" class="net" text-anchor="end">motor_i_d</text>
+<text x="366" y="326" class="net" text-anchor="end">motor_i_q</text>
+<text x="434" y="400" class="dim" font-size="10">theta_e</text>
+<path d="M808 560 V576 H856" class="dash"/>
+<polygon points="856,576 849,572.5 849,579.5" class="fill"/>
+<text x="814" y="594" class="net">torque_em</text>
+</svg>

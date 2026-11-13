@@ -1,9 +1,11 @@
 // ─────────────────────────────────────────────────────────────────────────────
 //  HVR Testbench — Field-Oriented Speed Control of an Interior-PM Motor
 //  Validates: cascaded PI speed and dq-current loops, MTPA current sharing,
-//             Park/Clarke transforms in digital logic, min-max (SVPWM)
-//             sine-triangle modulation into an ideal bridge, and the
-//             <electromechanical> IPMSM with a load torque on its shaft port
+//             inverse Park/Clarke in digital logic, min-max (SVPWM)
+//             modulation from <power/modulation/pwm> into the ideal
+//             three-phase bridge of <power/inverter/ideal> on a 310 V DC bus,
+//             and the <electromechanical> IPMSM with a load torque on its
+//             shaft port
 // ─────────────────────────────────────────────────────────────────────────────
 //
 //  An 8-pole interior-magnet machine (p = 4, Rs = 3 Ohm, Ld = 15.79 mH,
@@ -15,11 +17,11 @@
 //      ω_ref ─► Speed PI ─► iq_cmd ─► MTPA ─► id_ref, iq_ref
 //                  ▲                               │
 //                  ω                               ▼
-//                  │         id, iq ◄── Park ◄── dq current PIs ─► vd, vq
+//                  │      id, iq (motor) ──► dq current PIs ─► vd, vq
 //                  │                                   │
 //                  │                          inverse Park/Clarke
 //                  │                                   ▼
-//               IPMSM ◄── bridge ±310 V ◄── 20 kHz SVPWM ◄── va*, vb*, vc*
+//               IPMSM ◄── bridge, 310 V bus ◄── 20 kHz SVPWM ◄── va*, vb*, vc*
 //                  │
 //                shaft ── load torque (current source, N·m)
 //
@@ -33,12 +35,20 @@
 //    - Current PIs on id and iq (Ki/Kp = Rs/L: the PI zero cancels each
 //      axis's R-L pole, about a 1 kHz closed loop) give vd, vq, rotated back
 //      to three phase references with the rotor angle the motor reports
-//      (an ideal encoder).
-//    - The modulator adds the min-max zero sequence to the references (the
-//      carrier-based equivalent of space-vector PWM) and compares them with
-//      a 20 kHz triangle; the bridge is three ideal ±310 V sources to ground.
-//      The motor's star point floats, so only the line-to-line differences
-//      reach the windings.
+//      (an ideal encoder). The motor model also reports id and iq directly,
+//      so there is no forward Clarke/Park on measured phase currents — the
+//      equivalent of ideal current sensing in the rotor frame.
+//    - The phase references, in volts, are scaled by Vdc/2 to the ±1 the
+//      modulator works in. Spwm3MinMax adds the min-max zero sequence (the
+//      carrier-based equivalent of space-vector PWM) and compares them with a
+//      20 kHz triangle; IdealThreePhaseBridge puts each phase on the 310 V
+//      bus or on ground, and draws the chopped bus current from the source
+//      (main.vbus) so that bus power equals motor power at every instant.
+//      Each leg's average is Vdc/2 plus its reference; the Vdc/2 is common
+//      mode, and the motor's star point floats, so only the line-to-line
+//      differences reach the windings. A 310 V bus — 230 V mains, rectified
+//      — gives at most Vdc/√3 = 179 V peak per phase in the linear range,
+//      against about 120 V of back-EMF at 314 rad/s.
 //
 //  ── The run ─────────────────────────────────────────────────────────────────
 //
@@ -48,72 +58,65 @@
 //                   its integrator was holding, and the speed overshoots
 //      200 ms       a 3 N·m load torque steps onto the shaft; the speed dips
 //                   and the PI integrator restores 314 rad/s with iq ≈ 5 A
-//      300 ms       end
+//      500 ms       end
 //
 //  Plot main.omega against main.omega_ref, and main.motor_i_d with
 //  main.motor_i_q: id goes negative exactly when torque is asked for, which
-//  is MTPA at work. main.torque_em is the electromagnetic torque. The phase
+//  is MTPA at work. main.torque_em is the electromagnetic torque, and
+//  −I(main.vbus) the current the bus delivers — chopped at 20 kHz, and
+//  negative while the motor brakes after the ramp. The phase
 //  currents are locals of the motor model: add main.motor_pmsm.m.i_a (and
 //  .i_b, .i_c) to .save to see them.
 //
 //  ── Expected result ─────────────────────────────────────────────────────────
 //
 //  Accelerating J at 3140 rad/s² takes 4.40 N·m. The speed PI starts from
-//  an empty integrator, so the speed lags the ramp by up to 27.7 rad/s (at
-//  20 ms, iq peaking at 8.6 A) and catches it at 93 ms; Te then sits at
-//  4.46 N·m with iq ≈ 7.3 A and id ≈ −1.8 A (MTPA predicts −1.83 A for that
-//  iq). Over 30–95 ms the means are iq 7.98 A, id −2.15 A, Te 4.95 N·m.
+//  an empty integrator, so the speed lags the ramp by up to 27.4 rad/s (at
+//  20 ms, iq peaking at 8.6 A) and catches it at 85 ms. Over 30–95 ms the
+//  means are iq 7.94 A, id −2.12 A, Te 4.92 N·m (MTPA predicts id ≈ −1.8 A
+//  for iq ≈ 7.3 A).
 //
-//  Ramp end: peak 341.5 rad/s at 122 ms (27.5 rad/s, 8.8 % overshoot — a PI
-//  speed loop following a ramp has to discharge its integrator), back within
-//  ±1 rad/s of 314 by 182 ms. iq falls through zero to about −1.5 A
-//  (braking) at 140 ms while the integrator discharges.
+//  Ramp end: peak 343.0 rad/s at 120 ms (9.2 % overshoot — a PI speed loop
+//  following a ramp has to discharge its integrator), back within
+//  ±1.5 rad/s of 314 by 180 ms. iq falls through zero (braking) while the
+//  integrator discharges, and the bus current reverses with it.
 //
-//  Load step: the speed dips to 293.7 rad/s at 221 ms (−20.3 rad/s) and is
-//  back within ±1 rad/s by 280 ms, within ±0.5 rad/s by 284 ms. It settles
-//  with iq ≈ 5.2 A, id ≈ −1.0 A (MTPA: −1.00 A) and Te ≈ 3.0 N·m — the load
-//  plus B·ω = 16 mN·m. The PWM ripple on id and iq is about 0.2 A peak-peak.
+//  Load step: the speed dips to 294.0 rad/s at 220 ms (−20 rad/s) and is
+//  back within ±0.5 rad/s by 322 ms. Over 400–500 ms it holds 314.00 rad/s
+//  with iq 5.08 A, id −0.95 A (MTPA: −1.00 A) and Te 3.02 N·m — the load plus
+//  B·ω = 16 mN·m. Power balances: the bus delivers 1068.6 W, the shaft takes
+//  Te·ω = 947.0 W and the windings 1.5·Rs·(id² + iq²) = 120.2 W. The PWM
+//  ripple on iq is about 0.11 A peak-peak.
 //
 //  The bias-point solve at t = 0 reports OP FAILED: the PWM starts with all
-//  three legs at +310 V, above what the source-stepping DC solve currently
-//  reaches. The transient is unaffected — it starts from rest, which is the
+//  three legs on the 310 V bus, above what the source-stepping DC solve
+//  currently reaches. The transient is unaffected — it starts from rest, which is the
 //  state this run wants.
 //
 //  ── Cost ────────────────────────────────────────────────────────────────────
 //
 //  A 20 kHz PWM resolved at a 1 µs ceiling, with .zcd placing every edge, is
-//  about a million steps per simulated second, and every step is a CSV row:
-//  this run is ~320k steps, ~6 s native and a ~25 MB CSV. The mechanical
-//  time constants are tens of ms, so the deck is deliberately short and its
-//  speed ramp steep (100 ms rather than the 500 ms of the deck it came from):
-//  the same controller, gains and modulator, compressed in time. Each .save
-//  column costs about 4 MB. A 2 µs ceiling halves the steps and the CSV and
-//  moves ω by < 0.1 rad/s and id, iq by < 0.15 A; 5 µs starts to change the
+//  well over a million steps per simulated second, and every step is a CSV
+//  row: this run is ~700k steps, ~26 s native and a ~65 MB CSV — a slow deck
+//  in the browser. The mechanical time constants are tens of ms, so the speed
+//  ramp is steep (100 ms rather than the 500 ms of the deck this came from):
+//  the same controller and gains, compressed in time. Each .save column costs
+//  about 9 MB; a 2 µs ceiling roughly halves the steps and the CSV and moves
+//  ω by < 0.1 rad/s and id, iq by < 0.15 A, while 5 µs starts to change the
 //  controller's sampling visibly (0.6 rad/s, 0.45 A).
 
 .save(main.omega, main.omega_ref,
       main.motor_i_d, main.motor_i_q,
-      main.torque_em);
+      main.torque_em, I(main.vbus));
 
-.tran(0, 300m, 1u);
+.tran(0, 500m, 1u);
 .solver(ndf2);
 .zcd;          // places every PWM edge and the load step exactly
 
 from <math> import sin, cos;
 from <electromechanical> import IPMSM;
-
-// Unit triangle carrier in [-1, 1] at frequency freq.
-func double triangleWave(double freq) {
-    double T = 1.0 / freq;
-    double t = time % T;
-    double result = 0;
-    if (t < T / 2.0) {
-        result = (4.0 * t / T) - 1.0;
-    } else {
-        result = 3.0 - (4.0 * t / T);
-    }
-    return result;
-}
+from <power/inverter/ideal> import IdealThreePhaseBridge;
+from <power/modulation/pwm> import Spwm3MinMax;
 
 // ═══════════════════════════════════════════════════════════════
 //  REFERENCES AND LOAD (digital)
@@ -227,56 +230,14 @@ digital module FOC_controller<double Kp_d, double Ki_d, double Kp_q, double Ki_q
 //  MODULATOR (digital) AND BRIDGE (analog)
 // ═══════════════════════════════════════════════════════════════
 
-digital module PWM_generator_3phase<double carrier, double vdc>
-    (input double ref_a, input double ref_b, input double ref_c,
-     output double va, output double vb, output double vc)[]
+// Phase references in volts → the modulator's ±1: divide by half the bus.
+digital module VoltsToRef<double vdc>
+    (input double va, input double vb, input double vc,
+     output double ra, output double rb, output double rc)[]
 {
-    // ── 1. Min-max (zero-sequence) injection ──
-    double v_max = ref_a;
-    if (ref_b > v_max) { v_max = ref_b; }
-    if (ref_c > v_max) { v_max = ref_c; }
-
-    double v_min = ref_a;
-    if (ref_b < v_min) { v_min = ref_b; }
-    if (ref_c < v_min) { v_min = ref_c; }
-
-    // Common-mode offset; adding it to every phase turns sine PWM into the
-    // SVPWM-equivalent "saddle" references.
-    double v_offset = -0.5 * (v_max + v_min);
-
-    double svpwm_a = ref_a + v_offset;
-    double svpwm_b = ref_b + v_offset;
-    double svpwm_c = ref_c + v_offset;
-
-    // ── 2. Normalise to the carrier's ±1 ──
-    // With the zero sequence, mod_index can go to 2/sqrt(3) = 1.155
-    // without distortion.
-    double mod_index = 1.0;
-    svpwm_a = (mod_index * svpwm_a) / vdc;
-    svpwm_b = (mod_index * svpwm_b) / vdc;
-    svpwm_c = (mod_index * svpwm_c) / vdc;
-
-    // ── 3. Compare with one shared triangle carrier ──
-    double carrierWave = triangleWave(carrier);
-
-    if (svpwm_a > carrierWave) { va = 1; } else { va = -1; }
-    if (svpwm_b > carrierWave) { vb = 1; } else { vb = -1; }
-    if (svpwm_c > carrierWave) { vc = 1; } else { vc = -1; }
-}
-
-// Ideal three-phase bridge: each leg a voltage source of ±310 V to the common
-// ground, following its PWM signal (±1).
-analog module Inverter_3phase<>
-    (input double in_a, input double in_b, input double in_c, input double vdc)
-    [wire va, wire vb, wire vc, wire common_ground]
-{
-    double a = in_a * 310;
-    double b = in_b * 310;
-    double c = in_c * 310;
-
-    voltage_source<>(a)[va, common_ground];
-    voltage_source<>(b)[vb, common_ground];
-    voltage_source<>(c)[vc, common_ground];
+    ra = va / (0.5 * vdc);
+    rb = vb / (0.5 * vdc);
+    rc = vc / (0.5 * vdc);
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -295,9 +256,14 @@ module main<>()[]
     state double id_ref = 0;
     state double theta_e = 0;
 
-    state double signal_va = 0;
-    state double signal_vb = 0;
-    state double signal_vc = 0;
+    wire dc_p;
+
+    state double s_a = 0;
+    state double s_b = 0;
+    state double s_c = 0;
+    state double rn_a = 0;
+    state double rn_b = 0;
+    state double rn_c = 0;
 
     state double motor_i_d = 0;
     state double motor_i_q = 0;
@@ -318,10 +284,14 @@ module main<>()[]
                      (motor_i_d, motor_i_q, theta_e, iq_ref, id_ref,
                       ref_a, ref_b, ref_c)[];
 
-    module generator = PWM_generator_3phase<20k, 310>
-                           (ref_a, ref_b, ref_c, signal_va, signal_vb, signal_vc)[];
+    // ── Power stage ── Instantiated in signal order (references → scaling →
+    // modulator): digital modules run in instantiation order, and .zcd needs
+    // each to see this step's input.
+    module scale = VoltsToRef<310>(ref_a, ref_b, ref_c, rn_a, rn_b, rn_c)[];
+    module pwm = Spwm3MinMax<20k>(rn_a, rn_b, rn_c, s_a, s_b, s_c)[];
 
-    module inverter = Inverter_3phase<>(signal_va, signal_vb, signal_vc, 310)[va, vb, vc, gnd];
+    voltage_source vbus<310>() [dc_p, gnd];     // 310 V DC bus, ideal
+    module inverter = IdealThreePhaseBridge<>(s_a, s_b, s_c)[dc_p, gnd, va, vb, vc];
 
     //                    Rs   Ld      Lq      flux_m p  J       B    theta0
     module motor_pmsm = IPMSM<3.0, 15.79m, 19.41m, 95.5m, 4, 0.0014, 50u, 0>
