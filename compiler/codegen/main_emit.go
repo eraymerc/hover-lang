@@ -283,6 +283,9 @@ func (g *generator) emitSimSetup(cfg simConfig, onSolverError string) {
 	if g.zcdWatch > 0 {
 		g.line("sim.set_zcd_watch(phase_zcd_watch, %d);  // logic read by analog code, for .zcd", g.zcdWatch)
 	}
+	if g.bpSites > 0 {
+		g.line("sim.enable_breakpoints(%t);  // steps land where `time` comparisons flip", g.bpLogicSites > 0)
+	}
 	for _, c := range cfg.clocks {
 		g.line("sim.add_clock(%s, %s, %s);", cStr(c.name), formatDoubleLiteral(c.period), c.phaseFunc())
 	}

@@ -159,9 +159,11 @@ void EulerAdaptive::run(VM *vm) {
         attempt++;
         VMSnapshot checkpoint = vm_save_state(vm);
         double dt = vm->time_step;
-        // End this step on the next clock tick if it would cross one. Local
-        // to the step: the controller's own preferred step is untouched.
-        if (!vm->clocks.empty()) dt = vm_limit_step(vm, dt);
+        // End this step on the next clock tick if it would cross one, and on
+        // the next time breakpoint (vm/breakpoints.hpp). Local to the step:
+        // the controller's own preferred step is untouched.
+        if (vm->bp.enabled) dt = vm_breakpoint_step(vm, dt, max_dt);
+        else if (!vm->clocks.empty()) dt = vm_limit_step(vm, dt);
         // SPICE's breakpoint rule (step_limits.hpp): the step after an event
         // starts short. (Clock ticks are not seen here: this solver's logic
         // pass runs inside take_implicit_step.)
@@ -172,6 +174,16 @@ void EulerAdaptive::run(VM *vm) {
         StepResult step = take_implicit_step(vm, dt);
         if (step.converged) plain_newton = true;
 
+        // Analog code passed a time breakpoint inside this step (already
+        // committed): roll it back and re-solve it to end there (vm/breakpoints.hpp).
+        if (step.converged && vm->bp.enabled && vm_breakpoint_cut(vm)) {
+            vm_restore_state(vm, checkpoint);
+            step_trace("euler_adaptive", attempt, vm->time, dt, step.iters, "bp-cut");
+            continue;
+        }
+        // A step that ends on a breakpoint is treated as one that ends on a
+        // .zcd event: the error history restarts and the next step starts short.
+        if (step.converged && vm->bp.enabled && vm->time == vm->bp.land_at) restart_after_event = true;
         // .zcd (vm/zcd.hpp): the step is already committed, so a logic jump
         // inside it rolls it back and re-solves it to end just after the jump.
         if (step.converged && vm->zcd_enabled) {

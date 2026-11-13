@@ -111,6 +111,12 @@ func (g *generator) emitExpr(expr ast.Expression, logic elaborator.LogicObject) 
 			return g.emitExpr(n.Right, logic)
 		}
 
+		// A comparison of `time` with a threshold: the runtime lands a step on
+		// the instant it flips (breakpoints.go).
+		if code, ok := g.emitTimeCompare(n, logic); ok {
+			return code, CDouble
+		}
+
 		lCode, lType := g.emitExpr(n.Left, logic)
 		rCode, rType := g.emitExpr(n.Right, logic)
 

@@ -277,8 +277,19 @@ public:
     bool run();
     bool run_ac();  // the .ac sweep; writes ac_output.csv
 
+    // Time breakpoints (runtime/vm/breakpoints.hpp): the deck has comparisons
+    // of `time` with thresholds, `logic` when some are in logic code. Call
+    // after set_phases.
+    void enable_breakpoints(bool logic);
+    // At the top of phase_structural (0) and phase_digital (1) of such a deck:
+    // true, once, when the runtime already ran this step's pass to find them.
+    bool logic_ran_early(int phase);
+
     // ── Inside phases ────────────────────────────────────────────────────────
     double time() const;
+    // A recognised time comparison, S(time) op x (codegen/breakpoints.go):
+    // its value exactly as the expression computes it, plus where it flips.
+    double tcmp(int form, double x, double c, double p);
     double dt() const;  // the clock period inside a clocked phase, else the solver step
     double V(const char *net) const;
     double V_prev(const char *net) const;  // previous Newton iterate

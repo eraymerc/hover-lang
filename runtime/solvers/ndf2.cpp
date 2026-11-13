@@ -53,9 +53,12 @@ void NDF2::run(VM *vm) {
         attempt++;
         VMSnapshot checkpoint = vm_save_state(vm);
         double dt = vm->time_step;
-        // End this step on the next clock tick if it would cross one. Local
-        // to the step: the controller's own preferred step is untouched.
-        if (!vm->clocks.empty()) {
+        // End this step on the next clock tick if it would cross one, and on
+        // the next time breakpoint (vm/breakpoints.hpp). Local to the step:
+        // the controller's own preferred step is untouched.
+        if (vm->bp.enabled) {
+            dt = vm_breakpoint_step(vm, dt, max_dt);
+        } else if (!vm->clocks.empty()) {
             dt = vm_limit_step(vm, dt);
         }
 
@@ -257,6 +260,13 @@ void NDF2::run(VM *vm) {
         jacobian_valid = false;
 
         reject_run.clear();
+        // Analog code passed a time breakpoint inside this step: re-solve it to
+        // end there (vm/breakpoints.hpp).
+        if (vm->bp.enabled && vm_breakpoint_cut(vm)) {
+            vm_restore_state(vm, checkpoint);
+            step_trace("ndf2", attempt, vm->time, dt, iters, "bp-cut");
+            continue;
+        }
         // .zcd: a logic output that jumps inside this step (vm/zcd.hpp). The step
         // is re-solved to end just after the jump; the one that does is
         // accepted and the next step restarts the history.

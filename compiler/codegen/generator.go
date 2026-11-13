@@ -114,6 +114,13 @@ type generator struct {
 	recordNr   bool
 	inFunction int
 
+	// Time breakpoints (breakpoints.go): comparisons emitted as sim.tcmp, how
+	// many of them are in logic (or functions), and the variables that may
+	// change within a step (cached).
+	bpSites      int
+	bpLogicSites int
+	bpVary       map[string]bool
+
 	// errors collects hard validation failures found while emitting
 	// expressions, where emitExpr's (string, CType) signature leaves no room
 	// for an error return. Same deferred-diagnostic shape as
@@ -183,6 +190,7 @@ func (g *generator) emit() error {
 		return err
 	}
 	g.finishHandles()
+	g.finishBreakpoints()
 	// Deferred diagnostics from expression emission (bad I() references and
 	// the like) — reported after the whole walk so a user sees every one at
 	// once rather than fixing them one recompile at a time.

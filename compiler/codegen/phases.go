@@ -30,6 +30,9 @@ func (g *generator) emitPhaseByDomain(domain token.Type, fnName string, clock st
 	g.raw(fmt.Sprintf("static void %s(hvr::Sim &sim) {", fnName))
 	g.push()
 	g.line("(void)sim;")
+	if domain != token.ANALOG && clock == "" {
+		g.raw(bpLogicPlaceholder(fnName)) // breakpoints.go: finishBreakpoints
+	}
 	if domain == token.ANALOG && len(g.nrSlots) > 0 {
 		g.line("sim.nr_begin();  // nr_prev() of analog variables (runtime/vm/nr_locals.hpp)")
 	}

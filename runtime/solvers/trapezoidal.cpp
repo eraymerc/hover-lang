@@ -59,9 +59,12 @@ void Trapezoidal::run(VM *vm) {
         attempt++;
         VMSnapshot checkpoint = vm_save_state(vm);
         double dt = vm->time_step;
-        // End this step on the next clock tick if it would cross one. Local
-        // to the step: the controller's own preferred step is untouched.
-        if (!vm->clocks.empty()) {
+        // End this step on the next clock tick if it would cross one, and on
+        // the next time breakpoint (vm/breakpoints.hpp). Local to the step:
+        // the controller's own preferred step is untouched.
+        if (vm->bp.enabled) {
+            dt = vm_breakpoint_step(vm, dt, max_dt);
+        } else if (!vm->clocks.empty()) {
             dt = vm_limit_step(vm, dt);
         }
         api_update_solution(vm->api, vm->solver->last_solution);
@@ -218,9 +221,16 @@ void Trapezoidal::run(VM *vm) {
         }
 
         // 5. Adaptive Timestep Control & Recovery
+        if (converged) plain_newton = true;
+        // Analog code passed a time breakpoint inside this step: re-solve it to
+        // end there (vm/breakpoints.hpp).
+        if (converged && vm->bp.enabled && vm_breakpoint_cut(vm)) {
+            vm_restore_state(vm, checkpoint);
+            step_trace("trap", attempt, vm->time, dt, iters, "bp-cut");
+            continue;
+        }
         // .zcd: a logic output that jumps inside this step (vm/zcd.hpp): re-solve
         // the step to end just after it; the step that does is accepted.
-        if (converged) plain_newton = true;
         bool event_here = false;
         if (converged && vm->zcd_enabled) {
             const double s_ev = vm_locate_event(vm, checkpoint, x_guess, dt);

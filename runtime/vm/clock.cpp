@@ -54,7 +54,9 @@ static long tick_at(const VM *vm, const VMClock &c) {
 }
 
 void vm_run_clocks(VM *vm) {
-    vm->tick_changed = false;
+    // A step that starts on a breakpoint restarts the history as a tick does
+    // (vm/breakpoints.hpp); bp.restart is false in a deck without any.
+    vm->tick_changed = vm->bp.restart;
     if (vm->in_probe) return;   // a .zcd probe re-runs logic; ticks stay on step boundaries
 
     bool due_any = false;
@@ -78,7 +80,8 @@ void vm_run_clocks(VM *vm) {
         }
     }
     const Eigen::VectorXd after = vm_drive_vector(vm);
-    vm->tick_changed = !(before.size() == after.size() && (before.array() == after.array()).all());
+    vm->tick_changed = vm->bp.restart ||
+                       !(before.size() == after.size() && (before.array() == after.array()).all());
 }
 
 double vm_limit_step(const VM *vm, double dt) {

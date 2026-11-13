@@ -274,23 +274,110 @@ order written; every branch-current column is appended after them.
 .zcd;
 \end{lstlisting}
 
-Enables zero-crossing detection for circuits whose logic outputs switch
-discretely — comparators, PWM generators, digital controllers. When active,
-the solver probes one step ahead at each timestep before committing. If any
-logic variable jumps by more than 1.0 between the current state and the
-probe, a discontinuity is declared and the crossing time is isolated by
-bisection down to 1\,ps resolution. The timestep is then shortened to land
-exactly on the event boundary, preventing the integrator from stepping across
-a discontinuity and introducing phase error or false transients.
+Logic (structural and digital modules) runs once at the start of each step
+and holds its outputs for the step. When a logic output jumps at an instant
+\emph{inside} a step --- a comparator flips, a PWM carrier crosses its
+reference, a friction torque reverses with the speed --- the step would
+integrate the old value past it. \code{.zcd} finds that instant and ends the
+step there.
 
-\textbf{Bisection tolerance:} \(10^{-12}\,\text{s}\) (1 picosecond).
+After a step has been solved, the logic is re-run at the step's start, end and
+middle, with the solution interpolated along the step, and everything the logic
+drives into the circuit --- every driven source, and every logic value that
+analog code reads --- is compared. A value that changes by more than 0.1\,\%
+of its size, and not smoothly, has jumped: the jump is bisected to
+\(10^{-6}\) of the step, the step is re-solved to end just after it, and the
+next step restarts the integrator's history with a short step. Because the
+solution is interpolated, events caused by the circuit (a speed crossing zero)
+are found as well as events caused by \code{time}.
 
-\textbf{Performance:} the detection check is entirely skipped when
-\code{.zcd} is absent — analog-only circuits pay no overhead.
+\textbf{What .zcd cannot see:} a value that is the same at both ends of the
+step. A pulse that begins and ends inside one step vanishes. Comparisons of
+\code{time} with a fixed threshold no longer depend on \code{.zcd} for this ---
+they are time breakpoints (next section), with or without \code{.zcd}. What
+still relies on \code{.zcd}, and so still needs a maximum step shorter than
+the shortest pulse that matters:
 
-\textbf{When to use:} any circuit where a logic block produces a step
-output, such as a PWM comparator, a relay model, or a digital PI controller
-whose output saturates.
+\begin{itemize}
+  \item crossings of a nonlinear function of time with a level ---
+        \code{sin(w*time) > 0.5}, a triangle carrier against a reference
+        (sine-triangle PWM), \code{time * f > n};
+  \item a time expression held in a variable before it is compared
+        (\code{double ph = time * f; ... ph - floor(ph) < d}), or passed into
+        a function parameter;
+  \item phase accumulators and state machines (\code{ph = ph + f*dt; if (ph >= 1) ...});
+  \item thresholds that change within a step (computed from \code{dt}, from a
+        user function, or in analog code from \code{V()}/\code{I()});
+  \item events caused by the solution rather than by \code{time}.
+\end{itemize}
+
+\textbf{Fixed-step solvers:} \code{euler\_fixed} and \code{gauss\_siedel} check
+before each step, along time only (the solution held), and shorten that one
+step; the next step is the full step again. \code{trapezoidal\_fixed} has no
+event location.
+
+\textbf{When to use:} any circuit where logic switches discretely ---
+PWM comparators, relays, digital controllers, friction models.
+
+\subsection{Time Breakpoints}
+\label{sec:breakpoints}
+
+A comparison of \code{time} with a threshold is an event whose instant the
+deck states outright, as a SPICE \code{PULSE} source states its corners. The
+compiler finds these comparisons and the variable-step solvers (\code{ndf2},
+\code{bdf2}, \code{trapezoidal}, \code{euler\_adaptive}) end a step exactly on
+each instant at which one flips --- always, with or without \code{.zcd}.
+Nothing has to be declared:
+
+\begin{lstlisting}
+digital module Pulse<double t0, double w, double amp>(output double i) []
+{
+    i = 0.0;
+    if (time >= t0 && time < t0 + w) { i = amp; }   // a 1 us pulse in a 100 ms step: exact
+}
+\end{lstlisting}
+
+\textbf{Recognised:} \(S\;\mathit{op}\;X\) or \(X\;\mathit{op}\;S\) with
+\(\mathit{op}\) one of \code{>}, \code{>=}, \code{<}, \code{<=}, in digital,
+structural and analog modules and in functions they call, where \(S\) is
+
+\begin{itemize}
+  \item \code{time}, \code{time + c}, \code{c + time} or \code{time - c};
+  \item a sawtooth of one of those: \code{fmod(u, T)}, \code{u \% T} or
+        \code{u - floor(u / T) * T} --- pulse trains such as
+        \code{fmod(time, T) < w} flip at \(kT\) and \(kT + w\);
+\end{itemize}
+
+and the threshold \(X\), \code{c} and \code{T} do not change within a step:
+literals, parameters, inputs, \code{state} variables of logic (so a dead-time
+module's \code{time - t\_off >= t\_dead}, with \code{t\_off} a \code{state}
+set to \code{time} at turn-off, is exact), and extern math functions of these.
+Any other variable assigned from \code{time}, \code{dt} or a user function ---
+or, in analog code, from \code{V()}, \code{I()}, \code{ddt()}, \code{idt()} ---
+does not qualify, and that comparison is left to \code{.zcd}. So are
+\code{==}/\code{!=} and comparisons in clocked modules, which only sample at
+their ticks.
+
+\textbf{Exact landing.} The step ends on the first floating-point time at which
+the comparison, evaluated exactly as written, changes its result: \code{time
+>= t0} at \code{t0} itself, \code{time > t0} at the next representable time
+after it. The next step's logic pass therefore sees the new value. On the step
+that ends on a breakpoint, analog code is shown the instant just before it
+(the last instant of the old value); the step that starts there sees the new
+one. A step that starts on a breakpoint restarts the integrator's history with
+a short step, as after a \code{.zcd} event.
+
+\textbf{Limits.} A flip less than \(10^{-9}\) of the maximum step after a step's
+start is not landed --- the next sample sees it --- and flips closer together
+than that are landed together, on the last of them; so no run can be driven to
+a vanishing step. A threshold inside the very first step of a run without
+\code{.op} (the bias step, at most a tenth of the maximum step) is not landed: that
+step integrates the logic as it stands at \(t = 0\). To find the breakpoints in logic,
+the step's logic pass runs before the step size is chosen rather than after
+--- logic cannot tell, since it reads \(t_n\) and the solution at \(t_n\)
+either way. Fixed-step solvers keep
+their grid --- the step the deck chose is its sampling --- and see no
+breakpoints. Decks without a recognised comparison run exactly as before.
 
 \subsection{.op — DC Operating Point}
 
@@ -1751,7 +1838,7 @@ differentiated automatically, \code{nodiff()} is a plain identity.
   \toprule
   \textbf{Keyword} & \textbf{Description} \\
   \midrule
-  \code{time}            & Simulation time in seconds. Read-only, available everywhere. In analog code it is the time point the step solves for ($t_n + dt$, where SPICE evaluates its sources); in digital and structural logic it is the step's start $t_n$ --- logic runs once there and holds for the step. \\
+  \code{time}            & Simulation time in seconds. Read-only, available everywhere. In analog code it is the time point the step solves for ($t_n + dt$, where SPICE evaluates its sources); in digital and structural logic it is the step's start $t_n$ --- logic runs once there and holds for the step. On a step that ends exactly on a time breakpoint (Section~\ref{sec:breakpoints}) analog code sees the instant just before it. \\
   \code{gnd}             & Ground node (0 V reference). Available everywhere as a wire. \\
   \code{state}           & Variable modifier — retains value across timesteps. \\
   \code{dt}              & Timestep in seconds. Read-only, available everywhere. In analog code, the step being solved; in a clocked digital module, the clock period.  \\

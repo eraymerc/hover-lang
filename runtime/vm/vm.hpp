@@ -14,6 +14,7 @@
 #include "logger.hpp"
 #include "state_slots.hpp"
 #include "nr_locals.hpp"
+#include "breakpoints.hpp"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // RETURN SIGNAL
@@ -197,6 +198,11 @@ struct VM {
     // nr_prev() of analog variables, one slot per variable per module
     // instance (vm/nr_locals.hpp). Empty for a deck without any.
     NrLocals nr;
+
+    // Breakpoints: steps that end exactly where the deck's code compares
+    // `time` with a threshold (vm/breakpoints.hpp). Disabled for a deck
+    // without any recognised comparison.
+    VMBreakpoints bp;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -258,7 +264,8 @@ void vm_run_phase_b(VM *vm);
 
 // Shortens a proposed step so it does not cross the next clock tick (and
 // does not stop just short of one). Returns dt unchanged when there are no
-// clocks. Called by the variable-step solvers where they choose dt.
+// clocks. Called by the variable-step solvers where they choose dt — through
+// vm_breakpoint_step (vm/breakpoints.hpp) when the deck has breakpoints.
 double vm_limit_step(const VM *vm, double dt);
 
 // Runs every clock whose next tick is due at vm->time (vm_run_digital calls

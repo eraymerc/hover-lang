@@ -213,7 +213,26 @@ bool Sim::run_ac() { return vm_run_ac(&impl_->vm); }
 
 double Sim::time() const {
     const VM &vm = impl_->vm;
-    return vm.in_analog ? vm.time + vm.analog_dt : vm.time;   // vm.hpp, analog_dt
+    if (!vm.in_analog) return vm.time;
+    const double t = vm.time + vm.analog_dt;   // vm.hpp, analog_dt
+    // A step landed on a breakpoint shows analog code the instant just before
+    // it — the old value's last point (vm/breakpoints.hpp, LEFT LIMIT).
+    // land_at is NaN unless this step lands on one.
+    return t == vm.bp.land_at ? vm.bp.land_left : t;
+}
+double Sim::tcmp(int form, double x, double c, double p) {
+    return vm_bp_compare(&impl_->vm, form, time(), x, c, p);
+}
+bool Sim::logic_ran_early(int phase) {
+    VMBreakpoints &bp = impl_->vm.bp;
+    bool &skip = phase == 0 ? bp.skip_structural : bp.skip_digital;
+    const bool ran = skip;
+    skip = false;
+    return ran;
+}
+void Sim::enable_breakpoints(bool logic) {
+    impl_->vm.bp.enabled = true;
+    impl_->vm.bp.logic = logic;
 }
 double Sim::dt() const {
     const VM &vm = impl_->vm;
