@@ -1,0 +1,75 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  HVR Testbench — Chopper-Fed PM DC Motor
+//  Validates: a buck chopper built from <power/inverter/switched> SwitchCells
+//             (switch + freewheeling diode) at 20 kHz, the
+//             <electromechanical/parts> PMDC24V_100W card, and the
+//             <mechanical> Inertia and CoulombFriction loads
+// ─────────────────────────────────────────────────────────────────────────────
+//
+//      24 V ──┬── SwitchCell (gate s) ──┬── x ── PMDC24V_100W ──shaft──┬── J
+//             │                         │                               └── Coulomb
+//            gnd    SwitchCell (gate 0) ┘   (freewheeling diode)            0.2 N·m
+//
+//  The duty is 0.5 for 150 ms, then 0.8. A comparator against a 20 kHz
+//  triangle (<power/modulation/pwm> SpwmBipolar, whose s_a is "ref above
+//  carrier") makes the gate; .zcd places every edge. While the switch is
+//  off the armature current freewheels through the lower cell's diode
+//  (0.8 V), so the motor sees d·24 V less (1 − d)·0.8 V on average, less
+//  the 10 mΩ switch drop.
+//
+//  The load is the motor's own J and B, 4e-5 kg·m² of extra inertia and
+//  0.2 N·m of Coulomb friction, smoothed through standstill over 1 rad/s
+//  (CoulombFriction<Tc, w_s>: Tc·tanh(ω/w_s) — a hard sign() would be a
+//  torque step at zero speed, which no Newton solver likes).
+//
+//  ── Expected result ─────────────────────────────────────────────────────────
+//
+//    d = 0.5 (120–150 ms mean)  ω = 124.24 rad/s, <ia> = 2.875 A,
+//                               ia ripple 0.31 A peak-peak
+//    d = 0.8 (270–300 ms mean)  ω = 230.30 rad/s, <ia> = 2.890 A,
+//                               ia ripple 0.20 A peak-peak
+//
+//  The motor's averaged equations hold on the simulated averages to
+//  3e-5: <V(x)> = Ra·<ia> + K·ω, and <ia> = (0.2·tanh(ω) + B·ω)/K.
+//  ~190k steps (two per carrier edge plus the ripple), a few seconds.
+// ─────────────────────────────────────────────────────────────────────────────
+
+.save(main.omega, main.i_a, main.x, main.duty);
+.tran(0, 0.3, 2u);
+.solver(bdf2);
+.zcd;
+
+from <electromechanical/parts> import PMDC24V_100W;
+from <mechanical> import Inertia, CoulombFriction;
+from <power/inverter/switched> import SwitchCell;
+from <power/modulation/pwm> import SpwmBipolar;
+
+// Duty 0.5, stepping to 0.8 at 150 ms, and as a ±1 comparator reference.
+digital module DutyProfile<>(output double d, output double ref)[]
+{
+    d = 0.5;
+    if (time >= 150m) { d = 0.8; }
+    ref = 2.0 * d - 1.0;
+}
+
+module main<>()[]
+{
+    wire vdc, x;
+    wire shaft;                 // V(shaft) = ωm in rad/s, current = torque in N·m
+
+    state double duty = 0, ref = 0, s = 0, s_unused = 0, off = 0;
+    state double omega = 0, i_a = 0, theta = 0, torque_em = 0;
+
+    voltage_source vbus<24>() [vdc, gnd];
+
+    module profile = DutyProfile<>(duty, ref)[];
+    module pwm     = SpwmBipolar<20k>(ref, s, s_unused)[];
+
+    module hi = SwitchCell<>(s)[vdc, x];      // the chopper switch
+    module lo = SwitchCell<>(off)[x, gnd];    // gate held off: just its diode
+
+    module motor = PMDC24V_100W<>(omega, i_a, theta, torque_em)[x, gnd, shaft];
+
+    module load_j = Inertia<40u>()[shaft];
+    module load_f = CoulombFriction<0.2, 1>()[shaft];
+}

@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-48 -32 96 60" data-title="Induction machine"
+     fill="none" stroke="#000" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+  <style>.fill{fill:#000}.bold{stroke-width:3.2}.dash{stroke-dasharray:3 2.5}[data-pin]{fill:#d00;stroke:none}[data-logic]{fill:#c90;stroke:none}</style>
+  <!-- The three-phase motor of default.svg with an AC tilde under the M
+       (asynchronous machine, squirrel cage: the rotor has no terminals). -->
+  <circle cx="0" cy="0" r="20" class="bold"/>
+  <path d="M-16 -32 V-12 M0 -32 V-20 M16 -32 V-12"/>
+  <path d="M-8 3 V-9 L0 0 L8 -9 V3"/>
+  <path d="M-7 10 C-4.5 6 -2.5 6 0 10 C2.5 14 4.5 14 7 10"/>
+  <circle data-pin="va" data-alias="a u" data-dir="up" cx="-16" cy="-32" r="2"/>
+  <circle data-pin="vb" data-alias="b v" data-dir="up" cx="0" cy="-32" r="2"/>
+  <circle data-pin="vc" data-alias="c w" data-dir="up" cx="16" cy="-32" r="2"/>
+  <!-- The shaft leaves the right side: a short double-line stub, then the
+       lead to the mechanical pin (V = speed in rad/s, I = torque in N·m). -->
+  <path d="M20 -3 H27 V3 H20" class="bold"/>
+  <path d="M27 0 H32"/>
+  <circle data-pin="shaft" data-alias="rotor mech" data-dir="right" cx="32" cy="0" r="2"/>
+  <path d="M0 20 V24 M-48 24 H48" data-if-pin="omega_m_out i_alpha_out i_beta_out psi_r_alpha_out psi_r_beta_out torque_out"/>
+  <circle data-logic="omega_m_out" data-alias="omega speed" data-flow="out" data-dir="down" cx="-48" cy="24" r="2"/>
+  <circle data-logic="i_alpha_out" data-alias="i_alpha ialpha" data-flow="out" data-dir="down" cx="-32" cy="24" r="2"/>
+  <circle data-logic="i_beta_out" data-alias="i_beta ibeta" data-flow="out" data-dir="down" cx="-16" cy="24" r="2"/>
+  <circle data-logic="psi_r_alpha_out" data-alias="psi_r_alpha" data-flow="out" data-dir="down" cx="16" cy="24" r="2"/>
+  <circle data-logic="psi_r_beta_out" data-alias="psi_r_beta" data-flow="out" data-dir="down" cx="32" cy="24" r="2"/>
+  <circle data-logic="torque_out" data-alias="torque t_em te" data-flow="out" data-dir="down" cx="48" cy="24" r="2"/>
+</svg>

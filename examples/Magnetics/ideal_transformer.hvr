@@ -1,0 +1,33 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  HVR Testbench — ideal transformer at DC (<magnetics> IdealTransformer)
+//  Validates: voltage ratio, current ratio and reflected impedance
+// ─────────────────────────────────────────────────────────────────────────────
+//
+//    10 V ── 2 Ohm ── b ──●┐ 1 : 0.5 ┌●── s ── 1 Ohm ── gnd
+//                         )         (
+//                  gnd ───┘         └─── gnd
+//
+//  The 1 Ohm load reflects to the primary as 1 / n^2 = 4 Ohm, so
+//  V(b) = 10 * 4 / 6 = 6.6667 V, V(s) = n V(b) = 3.3333 V, the load current
+//  is 3.3333 A (I(main.x.es) = -3.3333 A: it leaves the secondary's dotted
+//  end) and the supply delivers 1.6667 A (I(main.vin) = -1.6667 A).
+//
+//  ── Expected result ─────────────────────────────────────────────────────────
+//
+//  Exactly those numbers, flat from the first step, with or without .op —
+//  an ideal transformer has no inductance and passes DC.
+
+.tran(0, 1m, 10u);
+.solver(ndf2);
+.save(main.b, main.s, I(main.x.es), I(main.vin));
+
+import <magnetics> as mag;
+
+module main<>() []
+{
+    wire a, b, s;
+    voltage_source vin<10>() [a, gnd];
+    R<2>() [a, b];
+    module x = mag.IdealTransformer<0.5>() [b, gnd, s, gnd];
+    R<1>() [s, gnd];
+}

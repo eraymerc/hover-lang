@@ -1,0 +1,114 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  HVR Testbench — Open-Loop V/f Drive of an Induction Motor with a Fan Load
+//  Validates: a V/f reference (frequency ramp, voltage ∝ frequency with
+//             boost) into the averaged three-phase bridge of
+//             <power/inverter/averaged> on a 600 V bus, the
+//             <electromechanical/parts> IM1k5W_4P_400V card, and the
+//             <mechanical> FanLoad (torque ∝ speed²)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+//  The classic scalar drive: ramp the stator frequency from 0 to 50 Hz in
+//  0.5 s and keep V/f constant (230 V rms at 50 Hz, with a 10 V boost at
+//  zero frequency for the stator resistance), so the motor follows the
+//  rotating field with a few per cent slip instead of drawing the
+//  direct-on-line inrush.
+//
+//      VfRef ── duties ──► AveragedBridge3Ph ──a,b,c──► IM ──shaft── FanLoad
+//                             600 V bus                        10 N·m at
+//                                                              150 rad/s
+//
+//  The bridge is the averaged ("level A") model: each pole is d·Vdc, the
+//  local average of the PWM, with the DC current power-balanced. The duties
+//  carry a 1/6 third harmonic, so the 325 V peak phase voltage needs only
+//  m = 1.084 of the 600 V bus (linear up to 2/√3 = 1.155).
+//
+//  To see the PWM, replace the bridge line with the commented ideal-switch
+//  version below (a 5 kHz min-max carrier modulator into
+//  <power/inverter/ideal>, .zcd on, 5 µs ceiling): ~630k steps, ~20 s.
+//  With <power/inverter/switched> (1 µs dead time via <power/modulation/
+//  deadtime>) it is ~740k steps, ~40 s.
+//
+//  .op is used and harmless here: at t = 0 the frequency and the angle are
+//  zero, the references are 0 and ±10 V·sin(120°)/300 V of duty, so the
+//  bias point is the motor at rest with a small DC current.
+//
+//  ── Expected result ─────────────────────────────────────────────────────────
+//
+//  The speed follows the ramp a few rad/s behind and settles at 50 Hz on
+//  149.91 rad/s (0.7–0.8 s mean) with T_em = 10.08 N·m, 3.09 A rms, the bus
+//  delivering 1709 W of which the fan takes 1497 W. The equivalent circuit at
+//  50 Hz for a load of 10·(ω/150)² + B·ω gives 149.904 rad/s, 10.077 N·m,
+//  3.089 A. The ideal-switch bridge gives 149.906 rad/s and 1711.7 W (the
+//  extra ~2.5 W is the copper loss of the current ripple), the switched one
+//  with dead time 149.754 rad/s (dead time costs about 3 V of fundamental).
+//  ~16k steps, under a second.
+// ─────────────────────────────────────────────────────────────────────────────
+
+.save(main.omega, main.torque_em, main.f, main.i_alpha, I(main.vbus));
+.tran(0, 0.8, 50u);
+.solver(bdf2);
+.op;
+
+from <math> import sin;
+from <electromechanical/parts> import IM1k5W_4P_400V;
+from <mechanical> import FanLoad;
+from <power/inverter/averaged> import AveragedBridge3Ph;
+// For the PWM variants:
+// from <power/inverter/ideal> import IdealThreePhaseBridge;
+// from <power/modulation/pwm> import Spwm3MinMax;
+
+// Open-loop V/f reference. f ramps 0 → f_final over t_ramp; the phase
+// amplitude is V = V_boost + (V_rated − V_boost)·f/f_rated, normalised to
+// the pole voltage Vdc/2. Outputs duties (0..1, with 1/6 third harmonic) for
+// the averaged bridge and ±1 references for a carrier modulator. It is an
+// analog module so that idt() can integrate the angle θ = 2π∫f dt.
+analog module VfRef<double f_final, double t_ramp, double V_rated,
+                    double f_rated, double V_boost, double Vdc>
+    (output double d_a, output double d_b, output double d_c,
+     output double r_a, output double r_b, output double r_c,
+     output double f_out)[]
+{
+    double f = f_final;
+    if (time < t_ramp) { f = f_final * time / t_ramp; }
+    double th = 2.0 * 3.14159265358979 * idt(f);
+    double m = (V_boost + (V_rated - V_boost) * f / f_rated) / (0.5 * Vdc);
+    double ra = m * sin(th);
+    double rb = m * sin(th - 2.09439510239320);
+    double rc = m * sin(th + 2.09439510239320);
+    double z = m * sin(3.0 * th) / 6.0;
+    r_a = ra;
+    r_b = rb;
+    r_c = rc;
+    d_a = 0.5 + 0.5 * (ra + z);
+    d_b = 0.5 + 0.5 * (rb + z);
+    d_c = 0.5 + 0.5 * (rc + z);
+    f_out = f;
+}
+
+module main<>()[]
+{
+    wire dc_p, a, b, c;
+    wire shaft;                 // V(shaft) = ωm in rad/s, current = torque in N·m
+
+    state double d_a = 0, d_b = 0, d_c = 0, r_a = 0, r_b = 0, r_c = 0, f = 0;
+    state double s_a = 0, s_b = 0, s_c = 0;
+    state double omega = 0, i_alpha = 0, i_beta = 0;
+    state double psi_ra = 0, psi_rb = 0, torque_em = 0;
+
+    voltage_source vbus<600>() [dc_p, gnd];
+
+    //                    f_final t_ramp V_rated f_rated V_boost Vdc
+    module ref = VfRef<50, 0.5, 325.27, 50, 10, 600>
+                     (d_a, d_b, d_c, r_a, r_b, r_c, f)[];
+
+    module inverter = AveragedBridge3Ph<>(d_a, d_b, d_c)[dc_p, gnd, a, b, c];
+    // PWM instead (add .zcd; and set the .tran ceiling to 5u):
+    // module pwm = Spwm3MinMax<5k>(r_a, r_b, r_c, s_a, s_b, s_c)[];
+    // module inverter = IdealThreePhaseBridge<>(s_a, s_b, s_c)[dc_p, gnd, a, b, c];
+
+    module motor = IM1k5W_4P_400V<>(omega, i_alpha, i_beta, psi_ra, psi_rb, torque_em)
+                       [a, b, c, shaft];
+
+    // Fan: 10 N·m at 150 rad/s, ∝ ω².
+    module fan = FanLoad<10, 150>()[shaft];
+}

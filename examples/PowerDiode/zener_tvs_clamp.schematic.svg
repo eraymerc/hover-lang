@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="16 56 928 288" class="hv-schematic" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11">
+  <!-- A: shunt regulator -->
+  <g transform="translate(64,192)"><path d="M0 -32 V-16 M0 16 V32"/><circle cx="0" cy="0" r="16" class="bold"/><path d="M-3.5 -7 H3.5 M0 -10.5 V-3.5"/><path d="M-3.5 7 H3.5"/></g>
+  <text x="88" y="184">rip: Ripple</text>
+  <text x="88" y="198" class="dim" font-size="10">24 V, 2 V p-p</text>
+  <text x="88" y="212" class="dim" font-size="10">100 Hz</text>
+  <path d="M64 160 V96 H128"/>
+  <text x="96" y="88" text-anchor="middle" class="net">zin</text>
+  <g transform="translate(160,96) rotate(90)"><path d="M0 -32 V-20.8 M0 20.8 V32"/><rect x="-8.8" y="-20.8" width="17.6" height="41.6" class="bold"/></g>
+  <text x="160" y="80" text-anchor="middle">560 Ω</text>
+  <path d="M192 96 H416 V176 M288 96 V112"/>
+  <text x="240" y="88" text-anchor="middle" class="net">za</text>
+  <circle class="dot" cx="288" cy="96" r="2.4"/>
+  <path d="M288 112 V128 M288 160 V176"/>
+  <circle cx="288" cy="144" r="16" class="bold"/>
+  <text x="288" y="148" text-anchor="middle">A</text>
+  <text x="264" y="140" text-anchor="end">az</text>
+  <text x="264" y="154" text-anchor="end" class="dim" font-size="10">0 V</text>
+  <path d="M288 176 V208"/>
+  <polygon points="288,182 284.5,189 291.5,189" class="fill"/>
+  <text x="296" y="194" class="net" font-size="10">I(az)</text>
+  <text x="280" y="202" text-anchor="end" class="net">zk</text>
+  <g transform="translate(288,240) rotate(180)"><path d="M0 -32 V-12 M0 12 V32"/><polygon points="-12,-12 12,-12 0,7.2" class="fill"/><rect x="-12" y="7.2" width="24" height="3.2" class="fill"/><path d="M-12 8.8 L-16 4.8 M12 8.8 L16 12.8"/></g>
+  <text x="308" y="236">DZ</text>
+  <text x="308" y="250" class="dim" font-size="10">ZENER12V1W</text>
+  <g transform="translate(416,208)"><path d="M0 -32 V-20.8 M0 20.8 V32"/><rect x="-8.8" y="-20.8" width="17.6" height="41.6" class="bold"/></g>
+  <text x="432" y="212">1 kΩ</text>
+  <path d="M416 240 V320 H64 V224 M288 272 V320"/>
+  <circle class="dot" cx="288" cy="320" r="2.4"/>
+  <circle class="dot" cx="176" cy="320" r="2.4"/>
+  <path d="M176 320 V328 M168 328 H184 M171 331 H181 M174 334 H178"/>
+  <!-- B: surge clamp -->
+  <rect x="480" y="168" width="112" height="48"/>
+  <text x="536" y="183" text-anchor="middle">sg: Surge</text>
+  <text x="536" y="196" text-anchor="middle" class="dim" font-size="10">12 V, +60 V 50 µs</text>
+  <text x="536" y="209" text-anchor="middle" class="dim" font-size="10">at 1 ms</text>
+  <path d="M592 192 H617" class="dash"/>
+  <polygon points="624,192 617,188.5 617,195.5" class="fill"/>
+  <text x="608" y="160" text-anchor="middle" class="net" font-size="10">vsurge</text>
+  <g transform="translate(640,192)"><path d="M0 -32 V-16 M0 16 V32"/><circle cx="0" cy="0" r="16" class="bold"/><path d="M-3.5 -7 H3.5 M0 -10.5 V-3.5"/><path d="M-3.5 7 H3.5"/></g>
+  <path d="M640 160 V96 H704"/>
+  <text x="672" y="88" text-anchor="middle" class="net">tin</text>
+  <g transform="translate(736,96) rotate(90)"><path d="M0 -32 V-20.8 M0 20.8 V32"/><rect x="-8.8" y="-20.8" width="17.6" height="41.6" class="bold"/></g>
+  <text x="736" y="80" text-anchor="middle">2 Ω</text>
+  <path d="M768 96 H832 V112"/>
+  <text x="800" y="88" text-anchor="middle" class="net">tvs</text>
+  <path d="M832 112 V128 M832 160 V176"/>
+  <circle cx="832" cy="144" r="16" class="bold"/>
+  <text x="832" y="148" text-anchor="middle">A</text>
+  <text x="856" y="140">at</text>
+  <text x="856" y="154" class="dim" font-size="10">0 V</text>
+  <path d="M832 176 V208"/>
+  <polygon points="832,182 828.5,189 835.5,189" class="fill"/>
+  <text x="824" y="194" text-anchor="end" class="net" font-size="10">I(at)</text>
+  <text x="840" y="202" class="net">tk</text>
+  <g transform="translate(832,240) rotate(180)"><path d="M0 -32 V-12 M0 12 V32"/><polygon points="-12,-12 12,-12 0,7.2" class="fill"/><rect x="-12" y="7.2" width="24" height="3.2" class="fill"/><path d="M-12 8.8 L-16 4.8 M12 8.8 L16 12.8"/></g>
+  <text x="852" y="236">DT</text>
+  <text x="852" y="250" class="dim" font-size="10">TVS15V600W</text>
+  <path d="M640 224 V320 H832 V272"/>
+  <circle class="dot" cx="736" cy="320" r="2.4"/>
+  <path d="M736 320 V328 M728 328 H744 M731 331 H741 M734 334 H738"/>
+</svg>

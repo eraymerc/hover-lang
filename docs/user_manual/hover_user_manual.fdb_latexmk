@@ -1,6 +1,6 @@
 # Fdb version 4
-["pdflatex"] 1794611573.87946 "/home/eray/Desktop/projeler/hover_programming_language/hover-main/docs/user_manual/hover_user_manual.tex" "hover_user_manual.pdf" "hover_user_manual" 1794611576.48044 0
-  "/home/eray/Desktop/projeler/hover_programming_language/hover-main/docs/user_manual/hover_user_manual.tex" 1794610655.66473 100066 4725da0d3d06c10aeaab216bff0af4c9 ""
+["pdflatex"] 1794616301.06727 "/home/eray/Desktop/projeler/hover_programming_language/hover-main/docs/user_manual/hover_user_manual.tex" "hover_user_manual.pdf" "hover_user_manual" 1794616307.57876 0
+  "/home/eray/Desktop/projeler/hover_programming_language/hover-main/docs/user_manual/hover_user_manual.tex" 1794616296.5664 104558 2a0305357a1172cdf9f68092105c5b27 ""
   "/usr/share/texmf-dist/fonts/enc/dvips/lm/lm-ec.enc" 1775415801 2375 baa924870cfb487815765f9094cf3728 ""
   "/usr/share/texmf-dist/fonts/enc/dvips/lm/lm-mathex.enc" 1775415801 3486 c7eadf5dcc57b3b2d11736679f6636ba ""
   "/usr/share/texmf-dist/fonts/enc/dvips/lm/lm-mathit.enc" 1775415801 2405 5dcf2c1b967ee25cc46c58cd52244aed ""
@@ -130,10 +130,10 @@
   "/var/lib/texmf/fonts/map/pdftex/updmap/pdftex.map" 1793565228 5458663 ef87184871e6d82476bab66d6b0475b6 ""
   "/var/lib/texmf/web2c/pdftex/pdflatex.fmt" 1793565178 4118826 68b70d913075f36caebad0eceed4f214 ""
   "figures/hover_logo_4b.png" 1786070309.82933 97447 f223579eb3c1a4f0718ea015e8dd8dbe ""
-  "hover_user_manual.aux" 1794611576.34218 11732 c08d83d96370bc98b806df88eec91b69 "pdflatex"
-  "hover_user_manual.out" 1794611576.34418 13661 c1105b22261156bc6e6283beb3e5763d "pdflatex"
-  "hover_user_manual.tex" 1794610655.66473 100066 4725da0d3d06c10aeaab216bff0af4c9 ""
-  "hover_user_manual.toc" 1794611576.34518 7402 aa697268d2dfc66c367068cd49865a09 "pdflatex"
+  "hover_user_manual.aux" 1794616307.22979 11966 8fdbed1365cc5d479275be9035d69d05 "pdflatex"
+  "hover_user_manual.out" 1794616307.23453 13894 e82d27e24c60cc5f62a64a40eac5a9c6 "pdflatex"
+  "hover_user_manual.tex" 1794616296.5664 104558 2a0305357a1172cdf9f68092105c5b27 ""
+  "hover_user_manual.toc" 1794616307.23605 7507 d5ab7dee07af07978fb17918241e6741 "pdflatex"
   (generated)
   "hover_user_manual.aux"
   "hover_user_manual.log"

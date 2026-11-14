@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-16 -32 32 64" data-title="Saturable inductor"
+     fill="none" stroke="#000" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+  <style>.fill{fill:#000}.bold{stroke-width:3.2}.dash{stroke-dasharray:3 2.5}[data-pin]{fill:#d00;stroke:none}</style>
+  <!-- An inductor on a core (the bar beside it), the core struck through: it saturates. -->
+  <path d="M0 -32 V-21.12 M0 21.12 V32"/>
+  <path d="M0 -21.12 a5.28 5.28 0 0 1 0 10.56 a5.28 5.28 0 0 1 0 10.56 a5.28 5.28 0 0 1 0 10.56 a5.28 5.28 0 0 1 0 10.56" class="bold"/>
+  <path d="M10 -22 V22" class="bold"/>
+  <path d="M4 14 L16 -14"/>
+  <circle data-pin="p" data-alias="n+ + a 1 pos" data-dir="up" cx="0" cy="-32" r="2"/>
+  <circle data-pin="n" data-alias="n- - b 2 neg" data-dir="down" cx="0" cy="32" r="2"/>
+</svg>

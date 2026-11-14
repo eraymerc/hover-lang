@@ -1,0 +1,74 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  HVR Testbench — SCR Latching, Holding Current and Forward Breakover
+//  Validates: <semiconductors/thyristor> static thyristor behaviour on the
+//             SCR400V0A8 card — latching on a short gate pulse, staying on
+//             with the gate open, dropping out below IH, and breaking over
+//             at VBO without any gate drive
+// ─────────────────────────────────────────────────────────────────────────────
+//
+//  Two independent circuits:
+//
+//  A  12 V through 1 kOhm (11 mA when on). A 1 mA, 20 us gate current pulse at
+//     200 us, from a current source — so the gate is OPEN afterwards, as the
+//     data sheet's IH is specified (a gate driver that pulls the gate to the
+//     cathode through a resistor parallels the internal RGK and raises IH).
+//     From 1 ms the supply ramps down to 0 V over 20 ms.
+//  B  No gate drive at all. A supply ramps 0 -> 600 V over 6 ms through
+//     10 kOhm.
+//
+//  ── Expected result ─────────────────────────────────────────────────────────
+//
+//  A: latched during the pulse (I(aa) 11.25 mA, V(a) = 0.75 V) and still
+//     latched after it ends; the anode current then follows the ramp down
+//     until it reaches IH = 1.59 mA (t = 16.39 ms), where the loop gain falls
+//     below one and the SCR drops out — V(a) jumps back to the supply.
+//  B: blocks (0.8 uA) until the supply reaches VBO = 500 V at t = 5 ms. J2
+//     avalanches and clamps the anode at 501.2 V while the avalanche current
+//     rises — that current enters p2 exactly like a gate current — and at
+//     ~2.2 mA (the breakover current: enough to forward-bias J3 against RGK)
+//     the SCR turns itself on, at t = 5.25 ms; I(ab) jumps to
+//     (V - VT)/10 kOhm = 53 mA and follows the ramp.
+//
+//  Convergence (HOVER_TRACE_STEP=1, ndf2): 4518 accepted steps, 1.8 Newton
+//  iterations per step (max 11), no rejections or trust-region retries.
+
+.save(main.a, main.b, I(main.aa), I(main.ab));
+.tran(0, 22m, 5u);
+.solver(ndf2);
+
+import <parts/thyristor>;
+
+// v0 until t0, then ramping at `rate` (V/s), clipped at 0 and at vmax.
+analog module Ramp<double v0, double rate, double t0, double vmax>() [wire p, wire n] {
+    double v = v0;
+    if (time > t0) { v = v0 + rate * (time - t0); }
+    if (v < 0.0)  { v = 0.0; }
+    if (v > vmax) { v = vmax; }
+    voltage_source<>(v)[p, n];
+}
+
+digital module Pulse<double t0, double w, double amp>(output double v) []
+{
+    v = 0.0;
+    if (time >= t0 && time < t0 + w) { v = amp; }
+}
+
+module main<>() []
+{
+    wire sa, a, ak, ga, sb, b, bk, gb;
+    state double ig = 0;
+
+    // A: latch, hold, drop out
+    module supA = Ramp<12.0, -600.0, 1m, 12.0>()[sa, gnd];
+    R<1k>()[sa, a];
+    voltage_source aa<0>()[a, ak];
+    module gp = Pulse<200u, 20u, 1m>(ig)[];
+    current_source<>(ig)[gnd, ga];
+    module XA = thyristor.SCR400V0A8<>()[ga, ak, gnd];
+
+    // B: breakover, gate open
+    module supB = Ramp<0.0, 100k, 0.0, 600.0>()[sb, gnd];
+    R<10k>()[sb, b];
+    voltage_source ab<0>()[b, bk];
+    module XB = thyristor.SCR400V0A8<>()[gb, bk, gnd];
+}

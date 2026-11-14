@@ -41,5 +41,8 @@ void         hvr_rt_free_result(HVRLogResult *r);
 // the clock to zero while leaving every charged node exactly where it was.
 // The solver strategies re-seed their own multistep history (BDF2/NDF2's
 // x_prev1/x_prev2) from solver->last_solution at the top of each run(), so
-// zeroing here is sufficient to reach a genuine cold start.
+// zeroing here is sufficient to reach a genuine cold start. It also clears
+// the run state a fresh load starts without (breakpoint tables, the AD
+// linearisation, nr_prev()'s installed iterate), so reset + re-run repeats the
+// first run bit for bit.
 void         hvr_rt_reset_analog(VM *vm);

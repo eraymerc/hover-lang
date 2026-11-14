@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="16 24 752 336" class="hv-schematic" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11">
+  <!-- rails -->
+  <path d="M48 48 H704"/>
+  <path d="M48 336 H704"/>
+  <text x="608" y="40" text-anchor="middle" class="net">dc</text>
+  <!-- ac: Mains -->
+  <g transform="translate(160,224)"><path d="M0 -32 V-16 M0 16 V32"/><circle cx="0" cy="0" r="16" class="bold"/><path d="M-3.5 -7 H3.5 M0 -10.5 V-3.5"/><path d="M-3.5 7 H3.5"/></g>
+  <text x="136" y="220" text-anchor="end">230 V rms</text>
+  <text x="136" y="234" text-anchor="end">50 Hz</text>
+  <path d="M160 192 V160 H256"/>
+  <text x="200" y="152" text-anchor="middle" class="net">line</text>
+  <polygon points="248,160 241,156.5 241,163.5" class="fill"/>
+  <text x="216" y="180" text-anchor="middle" class="net" font-size="10">I(T1.w1)</text>
+  <path d="M160 256 V336"/>
+  <circle class="dot" cx="160" cy="336" r="2.4"/>
+  <!-- T1: Transformer -->
+  <path d="M256 160 H288 V170.88 M288 213.12 V224 H256"/>
+  <path d="M288 170.88 a5.28 5.28 0 0 1 0 10.56 a5.28 5.28 0 0 1 0 10.56 a5.28 5.28 0 0 1 0 10.56 a5.28 5.28 0 0 1 0 10.56" class="bold"/>
+  <circle class="dot" cx="279" cy="175.88" r="2.4"/>
+  <path d="M352 160 H320 V170.88 M320 213.12 V224 H352"/>
+  <path d="M320 170.88 a5.28 5.28 0 0 0 0 10.56 a5.28 5.28 0 0 0 0 10.56 a5.28 5.28 0 0 0 0 10.56 a5.28 5.28 0 0 0 0 10.56" class="bold"/>
+  <circle class="dot" cx="329" cy="175.88" r="2.4"/>
+  <path d="M300.8 168 V216 M307.2 168 V216" class="bold"/>
+  <text x="304" y="72" text-anchor="middle">T1: Transformer</text>
+  <text x="304" y="86" text-anchor="middle" class="dim" font-size="10">n 0.058 · Lm 20 H · Llp 0.1 H</text>
+  <text x="304" y="100" text-anchor="middle" class="dim" font-size="10">Lls 0.35 mH · Rp 70 Ω · Rs 0.35 Ω</text>
+  <path d="M256 224 V336"/>
+  <circle class="dot" cx="256" cy="336" r="2.4"/>
+  <path d="M352 160 H384 V112 H48"/>
+  <polygon points="360,160 367,156.5 367,163.5" class="fill"/>
+  <text x="392" y="180" text-anchor="middle" class="net" font-size="10">I(T1.w2)</text>
+  <text x="144" y="104" text-anchor="middle" class="net">s1</text>
+  <circle class="dot" cx="48" cy="112" r="2.4"/>
+  <path d="M352 224 H448"/>
+  <text x="400" y="216" text-anchor="middle" class="net">s2</text>
+  <circle class="dot" cx="448" cy="224" r="2.4"/>
+  <!-- bridge -->
+  <g transform="translate(48,80) rotate(180)"><path d="M0 -32 V-12 M0 12 V32"/><polygon points="-12,-12 12,-12 0,7.2" class="fill"/><rect x="-12" y="7.2" width="24" height="4.8" class="fill"/></g>
+  <path d="M48 112 V256"/>
+  <g transform="translate(48,288) rotate(180)"><path d="M0 -32 V-12 M0 12 V32"/><polygon points="-12,-12 12,-12 0,7.2" class="fill"/><rect x="-12" y="7.2" width="24" height="4.8" class="fill"/></g>
+  <path d="M48 320 V336"/>
+  <text x="66" y="76">D1</text>
+  <text x="66" y="90">1N4007</text>
+  <text x="66" y="284">D3</text>
+  <text x="66" y="298">1N4007</text>
+  <g transform="translate(448,112) rotate(180)"><path d="M0 -32 V-12 M0 12 V32"/><polygon points="-12,-12 12,-12 0,7.2" class="fill"/><rect x="-12" y="7.2" width="24" height="4.8" class="fill"/></g>
+  <path d="M448 80 V48 M448 144 V256"/>
+  <g transform="translate(448,288) rotate(180)"><path d="M0 -32 V-12 M0 12 V32"/><polygon points="-12,-12 12,-12 0,7.2" class="fill"/><rect x="-12" y="7.2" width="24" height="4.8" class="fill"/></g>
+  <path d="M448 320 V336"/>
+  <text x="466" y="108">D2</text>
+  <text x="466" y="122">1N4007</text>
+  <text x="466" y="284">D4</text>
+  <text x="466" y="298">1N4007</text>
+  <circle class="dot" cx="448" cy="48" r="2.4"/>
+  <circle class="dot" cx="448" cy="336" r="2.4"/>
+  <!-- reservoir and load -->
+  <path d="M544 48 V160 M544 224 V336"/>
+  <g transform="translate(544,192)"><path d="M0 -32 V-17.52 M0 -2.48 V6 M0 22 V32"/><rect x="-12" y="-17.52" width="24" height="4.8" class="fill"/><rect x="-12" y="-7.28" width="24" height="4.8" class="fill"/><rect x="-4.4" y="6" width="8.8" height="16" class="bold"/></g>
+  <text x="564" y="182">C1</text>
+  <text x="564" y="196">4700 µF</text>
+  <text x="564" y="210" class="dim" font-size="10">ESR 40 mΩ</text>
+  <circle class="dot" cx="544" cy="48" r="2.4"/>
+  <circle class="dot" cx="544" cy="336" r="2.4"/>
+  <path d="M704 48 V160 M704 224 V336"/>
+  <g transform="translate(704,192)"><path d="M0 -32 V-20.8 M0 20.8 V32"/><rect x="-8.8" y="-20.8" width="17.6" height="41.6" class="bold"/></g>
+  <text x="720" y="196">15 Ω</text>
+  <path d="M352 336 V344 M344 344 H360 M347 347 H357 M350 350 H354"/>
+  <circle class="dot" cx="352" cy="336" r="2.4"/>
+</svg>

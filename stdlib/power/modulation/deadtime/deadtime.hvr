@@ -36,26 +36,32 @@
 //  ── How the edges land exactly ─────────────────────────────────────────────
 //
 //  A digital module runs once at the start of each solver step and remembers
-//  the time it last turned each gate off. The turn-on instant, t_off + t_dead,
-//  therefore falls in the middle of some later step, and the solver's zero-
-//  crossing detection (.zcd) finds it: .zcd re-runs the logic at points inside
-//  the step and bisects the instant at which a logic value the circuit uses
-//  jumps, so in the switched_h_bridge benchmark every dead time comes out as t_dead to
-//  within 1e-6 of a step. Two requirements follow:
+//  the time it last turned each gate off. The turn-on test below,
+//  `time - t_off >= t_dead`, compares `time` with a threshold that is fixed
+//  once the gate has turned off, so the variable-step solvers treat
+//  t_off + t_dead as a time breakpoint: a step ends exactly there and the next
+//  one starts with the gate on (manual, "Time Breakpoints"). The dead time is
+//  t_dead to the last bit, with or without `.zcd;`. (Until 2026-11-14 the
+//  turn-on was located by .zcd's bisection, which cost about a third more
+//  steps on the switched_h_bridge benchmark.)
 //
-//    - turn on `.zcd;` in the deck;
+//  What still needs care is the COMMAND s, which this module does not make:
 //
-//    - keep the .tran max step shorter than the shortest command pulse that
-//      matters. .zcd compares the drive at a step's two ends and middle, so a
-//      pulse that begins and ends inside one step leaves no trace (measured: a
-//      200 ns notch in s is missed entirely at a 1 us max step and handled
-//      exactly at 50 ns). Carrier PWM at 20 kHz with a 1 us max step is fine:
-//      its shortest pulse at m = 0.8 is 5 us.
+//    - if s comes from a carrier comparison (sine against triangle) its edges
+//      are not times the compiler can know, and `.zcd;` is what places them —
+//      turn it on, as <power/modulation/pwm> says;
+//
+//    - .zcd compares the drive at a step's two ends and middle, so a pulse of
+//      such an s that begins and ends inside one step leaves no trace
+//      (measured: a 200 ns notch is missed entirely at a 1 us max step and
+//      handled exactly at 50 ns). Keep the .tran max step shorter than the
+//      shortest command pulse that matters. Carrier PWM at 20 kHz with a 1 us
+//      max step is fine: its shortest pulse at m = 0.8 is 5 us.
 //
 //  A deck that runs its modulator on a .clock instead should bind this module
 //  to the same clock only if t_dead is a whole number of ticks; otherwise
-//  leave it unclocked, so that it sees every step and .zcd can place the
-//  turn-on between ticks.
+//  leave it unclocked: comparisons inside a clocked module are not time
+//  breakpoints, and an unclocked DeadTime places the turn-on between ticks.
 //
 //  Not modelled: propagation delay and its mismatch between the two gates,
 //  minimum pulse width suppression, a driver's own rise/fall times.

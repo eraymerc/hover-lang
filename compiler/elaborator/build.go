@@ -88,7 +88,9 @@ func (e *Elaborator) Elaborate() (*ElaboratedProgram, error) {
 	//    never walks.
 	e.resolveSenseElements()
 	e.checkElementNameCollisions()
+	e.checkLogicPortBindings()
 	e.checkSourceControls()
+	e.checkFloatingIslands()
 
 	// 4. Within each phase, writers before readers (order.go).
 	e.output.Logic = orderLogicByDataflow(e.output.Logic)
@@ -99,6 +101,10 @@ func (e *Elaborator) Elaborate() (*ElaboratedProgram, error) {
 
 	return e.output, nil
 }
+
+// Warnings returns the diagnostics Elaborate found that do not stop
+// compilation, in the order found.
+func (e *Elaborator) Warnings() []string { return e.warnings }
 
 // declaredClocks collects the clock names declared by `.clock(name, ...)`
 // directives. A malformed one is left for codegen to report.

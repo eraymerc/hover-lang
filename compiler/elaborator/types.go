@@ -165,6 +165,15 @@ type Elaborator struct {
 	output *ElaboratedProgram
 	errors []string
 
+	// warnings are diagnostics that do not stop compilation (islands.go);
+	// main.go prints them after a successful Elaborate.
+	warnings []string
+
+	// instModule maps an instance prefix ("main", "main.xfmr") to the module
+	// declaration it was flattened from, so a post-flatten diagnostic can say
+	// which module and file an element came from (islands.go).
+	instModule map[string]*ast.ModuleDeclStatement
+
 	// expanding tracks which module declarations are currently being
 	// flattened, by their resolved (possibly alias-qualified) name — e.g.
 	// "A" or "Motor.PMSM". flattenModule pushes onto this before recursing
@@ -188,6 +197,12 @@ type Elaborator struct {
 	// checked where its line number is known. The period itself is codegen's
 	// business (see codegen/directives.go).
 	declaredClocks map[string]bool
+
+	// logicBindings records every () argument bound to a module instance's
+	// logic port, and instLogicPorts the logic port names of each instance
+	// (by its flattened prefix), for checkLogicPortBindings (ports.go).
+	logicBindings  []logicBinding
+	instLogicPorts map[string]map[string]bool
 
 	// elementIndex maps a flattened element name ("main.motor.vsense") to its
 	// index in output.Physicals. EVERY physical is registered here, user-named
@@ -258,6 +273,7 @@ func newElaborator() *Elaborator {
 		structFile:   make(map[*ast.StructDeclStatement]string),
 		expanding:    make(map[*ast.ModuleDeclStatement]bool),
 		elementIndex: make(map[string]int),
+		instModule:   make(map[string]*ast.ModuleDeclStatement),
 		output: &ElaboratedProgram{
 			Physicals:  []PhysicalObject{},
 			Logic:      []LogicObject{},

@@ -412,6 +412,9 @@ func main() {
 		fmt.Printf("[Elaborator] Error: %v\n", err)
 		os.Exit(1)
 	}
+	for _, w := range elab.Warnings() {
+		fmt.Printf("[Elaborator] Warning: %s\n", w)
+	}
 	fmt.Printf("[Elaborator] OK — %d logic blocks, %d physicals\n",
 		len(flatProg.Logic), len(flatProg.Physicals))
 

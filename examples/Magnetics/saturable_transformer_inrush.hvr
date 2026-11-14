@@ -1,0 +1,49 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  HVR Testbench — magnetising inrush of a loaded transformer (<magnetics>
+//  SaturableTransformer)
+//  Validates: saturable magnetising branch inside the T-model, with leakage,
+//             winding resistances and a resistive load
+// ─────────────────────────────────────────────────────────────────────────────
+//
+//  325 V peak 50 Hz switched on at a zero crossing; n = 0.06, Lm0 = 10 H,
+//  Lmsat = 10 mH, lam_s = 1.2 Wb-turns, Llp = 20 mH, Lls = 72 uH,
+//  Rp = 2 Ohm, Rs = 10 mOhm, 7.2 Ohm load. The load current (~2.7 A peak on
+//  the secondary, 0.16 A reflected) rides on a primary inrush of 24 A; while
+//  the core is saturated the secondary voltage collapses, visibly, in V(s).
+//
+//  The solver tolerance is tightened to 1e-6: in saturation a flux error is
+//  multiplied by L0/Lsat = 1000 on its way to the current, and flux
+//  integrates the Newton tolerance (stdlib/magnetics/saturable.hvr).
+//
+//  ── Expected result ─────────────────────────────────────────────────────────
+//
+//  First primary peak 24.29 A. Against the reference ODE (the T-model's two
+//  winding equations with the same tanh curve, scipy Radau, rtol 1e-11):
+//  24.2915 A vs 24.2936 A, primary current within 8.5e-5 of the peak and
+//  the core flux within 9e-5 Wb throughout. At a
+//  5 us step ceiling: 24.29354 A, flux within 5e-7 Wb. ~2220 accepted steps,
+//  2.8 Newton iterations per step (ndf2). With the default reltol the
+//  saturated peaks of the fifth cycle are ~1 % off.
+
+.tran(0, 100m, 50u);
+.solver(ndf2, 1e-6);
+.save(main.a, main.s, I(main.x.w1), I(main.x.w2));
+
+import <magnetics> as mag;
+from <math> import sin;
+
+analog module Mains<double Vpk, double f>() [wire p]
+{
+    double v = Vpk * sin(2.0 * 3.141592653589793 * f * time);
+    voltage_source<>(v) [p, gnd];
+}
+
+module main<>() []
+{
+    wire a, s;
+    module src = Mains<325.0, 50.0>() [a];
+    module x = mag.SaturableTransformer<0.06, 10.0, 10m, 1.2,
+                                        Llp = 20m, Lls = 72u,
+                                        Rp = 2.0, Rs = 0.01>() [a, gnd, s, gnd];
+    R<7.2>() [s, gnd];
+}

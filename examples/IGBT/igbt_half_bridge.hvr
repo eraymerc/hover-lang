@@ -1,0 +1,94 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  HVR Testbench — IGBT Half-Bridge, 400 V Bus, 20 kHz PWM, R-L Load
+//  Validates: <semiconductors/igbt> IGBTD in a hard-switched bridge leg —
+//             dead time from <power/modulation/deadtime>, freewheeling
+//             through the co-packaged diodes, conduction drops, and the
+//             average output against the switching-function calculation
+// ─────────────────────────────────────────────────────────────────────────────
+//
+//      bus 400 V ──┤ QH (IGBTD600V30A)
+//                  ├── sw ──[2 mH]──[10 Ohm]── mid (200 V)
+//      gnd ────────┤ QL (IGBTD600V30A)
+//
+//  Duty D = 0.75 at 20 kHz, 1 us dead time, gates +15 V / -5 V through 10 Ohm
+//  from isolated drivers (the high side's is referenced to sw). The load
+//  current is always positive (sw -> mid), so in every dead time and in every
+//  low-side interval it freewheels through QL's DIODE — the low-side IGBT is
+//  gated on but carries nothing, which is the normal state of a bridge leg
+//  whose current does not reverse.
+//
+//  ── Expected result ─────────────────────────────────────────────────────────
+//
+//  Per period T = 50 us the high side conducts for D T - t_dead = 36.5 us
+//  (DeadTime delays every turn-on by t_dead; with the current positive, the
+//  dead time after the high side turns off changes nothing, the low diode
+//  takes over either way), and sw sits at Vbus - VCE(sat) = 400 - 1.10 V
+//  there (~9 A, from the card's output characteristic) and at -VF = -1.06 V
+//  for the other 13.5 us:
+//
+//      V(sw)avg = 0.73 * 398.90 - 0.27 * 1.06 = 290.91 V
+//      I(LL)avg = (V(sw)avg - 200) / 10       = 9.091 A
+//
+//  Measured over 1.5-2 ms (ndf2): V(sw)avg = 290.85 V (0.02 % low: the
+//  switching transitions themselves — turn-on delay, Miller plateau, tail),
+//  I(LL)avg = 9.083 A (the L/R = 200 us transient is not quite finished at
+//  1.5 ms). The dead time costs t_dead f_sw Vbus = 8.0 V: with t_dead = 0
+//  the same calculation gives 298.9 V.
+//
+//  Convergence (HOVER_TRACE_STEP=1, 2 ms, 80 switching edges): ndf2 12.5 k
+//  accepted steps, 4.8 Newton iterations per step (max 11), no Newton
+//  rejections, ~100 kcl-vetoes and 5 trust-region retries in the whole run;
+//  bdf2 14.6 k steps, 4.8 per step. With and without .op the averages agree
+//  to 5 digits. About 330 steps and 1600 iterations per PWM period, most of
+//  them truncation-error-limited steps through the two edges.
+
+.save(main.sw, I(main.LL), I(main.vbus), main.gh, main.gl);
+.tran(0, 2m, 1u);
+.solver(ndf2);
+
+import <parts/igbt>;
+import <power/modulation/deadtime> as dt;
+from <math> import fmod;
+
+// One command per period: high for duty * T. fmod(time, T) against a
+// constant is a recognised time breakpoint, so each edge lands exactly.
+digital module Pwm<double f_sw, double duty>(output double s) []
+{
+    s = 0.0;
+    if (fmod(time, 1.0 / f_sw) < duty / f_sw) { s = 1.0; }
+}
+
+// DeadTime's 0/1 gate commands -> driver output voltages.
+digital module GateLevels<double v_on, double v_off>
+(input double g_hi, input double g_lo, output double v_hi, output double v_lo) []
+{
+    v_hi = v_off;
+    v_lo = v_off;
+    if (g_hi > 0.5) { v_hi = v_on; }
+    if (g_lo > 0.5) { v_lo = v_on; }
+}
+
+module main<>() []
+{
+    wire bus, sw, mid, x, gh, gl, dh, dl;
+    state double s = 0, g_hi = 0, g_lo = 0, v_hi = 0, v_lo = 0;
+
+    voltage_source vbus<400>()[bus, gnd];
+    voltage_source<200>()[mid, gnd];
+
+    module pwm  = Pwm<20k, 0.75>(s)[];
+    module dead = dt.DeadTime<1u>(s, g_hi, g_lo)[];
+    module lev  = GateLevels<15.0, -5.0>(g_hi, g_lo, v_hi, v_lo)[];
+
+    // isolated gate drivers, each referenced to its own device's emitter
+    voltage_source<>(v_hi)[dh, sw];
+    voltage_source<>(v_lo)[dl, gnd];
+    R<10>()[dh, gh];
+    R<10>()[dl, gl];
+
+    module QH = igbt.IGBTD600V30A<>()[gh, bus, sw];
+    module QL = igbt.IGBTD600V30A<>()[gl, sw, gnd];
+
+    L LL<2m>()[sw, x];
+    R<10>()[x, mid];
+}

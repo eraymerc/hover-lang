@@ -301,7 +301,9 @@ the shortest pulse that matters:
 \begin{itemize}
   \item crossings of a nonlinear function of time with a level ---
         \code{sin(w*time) > 0.5}, a triangle carrier against a reference
-        (sine-triangle PWM), \code{time * f > n};
+        (sine-triangle PWM), \code{time * f > n}, and also a scaled or
+        negated time (\code{2.0 * time > t1}, \code{c - time < 0},
+        \code{-time > -t1});
   \item a time expression held in a variable before it is compared
         (\code{double ph = time * f; ... ph - floor(ph) < d}), or passed into
         a function parameter;
@@ -342,13 +344,23 @@ digital module Pulse<double t0, double w, double amp>(output double i) []
 structural and analog modules and in functions they call, where \(S\) is
 
 \begin{itemize}
-  \item \code{time}, \code{time + c}, \code{c + time} or \code{time - c};
+  \item \code{time}, \code{time + c}, \code{c + time} or \code{time - c}, and
+        any chain of such offsets around one \code{time}, added and subtracted
+        in turn: \code{time - a - b}, \code{(time - a) - b},
+        \code{time + a - b}, \code{a + time - b}, \code{c + (time - a)}
+        (up to eight terms). The chain is evaluated term by term exactly as
+        written --- \code{(time - a) - b} is not rounded like
+        \code{time - (a + b)}, and the landing is on the former;
   \item a sawtooth of one of those: \code{fmod(u, T)}, \code{u \% T} or
         \code{u - floor(u / T) * T} --- pulse trains such as
         \code{fmod(time, T) < w} flip at \(kT\) and \(kT + w\);
 \end{itemize}
 
-and the threshold \(X\), \code{c} and \code{T} do not change within a step:
+\noindent Not recognised: \code{time} scaled or negated --- \code{2.0 * time},
+\code{-time}, \code{c - time} --- and any other function of it; those are
+left to \code{.zcd} (previous section).
+
+The threshold \(X\), \code{c} and \code{T} must not change within a step:
 literals, parameters, inputs, \code{state} variables of logic (so a dead-time
 module's \code{time - t\_off >= t\_dead}, with \code{t\_off} a \code{state}
 set to \code{time} at turn-off, is exact), and extern math functions of these.
@@ -365,19 +377,50 @@ after it. The next step's logic pass therefore sees the new value. On the step
 that ends on a breakpoint, analog code is shown the instant just before it
 (the last instant of the old value); the step that starts there sees the new
 one. A step that starts on a breakpoint restarts the integrator's history with
-a short step, as after a \code{.zcd} event.
+a short step, as after a \code{.zcd} event --- if the flip changed something
+the circuit sees: a source the logic drives, or a logic value analog code
+reads (as for a clock tick). A comparison in analog code always restarts it.
+A flip that only changes a \code{.save}d flag, or a branch that writes the
+value already there, is landed but leaves the history alone.
 
-\textbf{Limits.} A flip less than \(10^{-9}\) of the maximum step after a step's
-start is not landed --- the next sample sees it --- and flips closer together
-than that are landed together, on the last of them; so no run can be driven to
-a vanishing step. A threshold inside the very first step of a run without
+\textbf{Tracking thresholds.} A \code{state} threshold counts as fixed for
+the step, which is what makes a one-shot exact (\code{if (trig) \{ t\_on =
+time; \} out = time - t\_on < w;} lands on \code{t\_on + w}). A threshold
+the code reassigns on two consecutive steps --- \code{t\_ok = time;} every
+step, a retriggerable timer while its trigger is held --- is tracking
+\code{time} rather than marking a corner, and is not landed until it has held
+still for a step; the comparison's value is unaffected.
+
+\textbf{Limits.} Let \(h_{\min}\) be \(10^{-9}\) of the maximum step. Every
+landed step is at least \(h_{\min}\) long, so no run can be driven to a
+vanishing step: a flip less than \(h_{\min}\) after a step's start ends that
+step \(h_{\min}\) after its start instead (the next sample sees the new value
+at most \(h_{\min}\) late, so a pulse narrower than \(h_{\min}\) that starts
+at a step's start is simulated \(h_{\min}\) wide), and flips closer together
+than \(h_{\min}\) are landed together, on the last of them --- so a pulse
+narrower than \(h_{\min}\) whose two edges both lie ahead of a step's start
+is landed on its end and not seen at all. Keep pulses wider than
+\(h_{\min}\). A periodic comparison whose period
+\(|T|\) is not above \(h_{\min}\) would pin every step to \(h_{\min}\): its
+flips are not landed --- it is evaluated, and so only sampled, at the steps
+the solver takes anyway --- and the run prints one warning for it,
+
+\begin{lstlisting}
+[VM] WARNING: a periodic `time` comparison (period 1.000e-11 s, ...) repeats
+faster than the shortest step a breakpoint can be landed on ...
+Lower .tran's maximum step below 1.000e-02 s to resolve it.
+\end{lstlisting}
+
+\noindent which is the fix: a smaller maximum step lowers \(h_{\min}\). A threshold inside the very first step of a run without
 \code{.op} (the bias step, at most a tenth of the maximum step) is not landed: that
 step integrates the logic as it stands at \(t = 0\). To find the breakpoints in logic,
 the step's logic pass runs before the step size is chosen rather than after
 --- logic cannot tell, since it reads \(t_n\) and the solution at \(t_n\)
-either way. Fixed-step solvers keep
-their grid --- the step the deck chose is its sampling --- and see no
-breakpoints. Decks without a recognised comparison run exactly as before.
+either way. The fixed-step solvers (\code{euler\_fixed},
+\code{trapezoidal\_fixed}, \code{gauss\_siedel}) do not use breakpoints:
+they keep their grid --- the step the deck chose is its sampling --- and a
+comparison there is simply evaluated at each step. Decks without a recognised
+comparison run exactly as before.
 
 \subsection{.op — DC Operating Point}
 
@@ -1534,6 +1577,39 @@ R<1k>()[out, gnd];              // 1 kOhm to ground
 C<100n>()[node, gnd];           // 100 nF
 L<10u>()[a, b];                 // 10 uH
 \end{lstlisting}
+
+\subsection{Nodes with No DC Path to Ground}
+\label{sec:floating}
+
+Every node needs a conductive path to \code{gnd}. A group of nodes joined to
+each other but not to ground has no defined common-mode voltage, and the
+circuit matrix is singular at DC. The compiler finds such groups and warns
+(compilation continues), one warning per group:
+
+\begin{lstlisting}
+[Elaborator] Warning: nodes with no DC path to gnd: main.s1, main.s2
+  Line 11: R 'main.R_3' is on this island.
+  ...
+  Likely an isolated transformer side: 'main.x' (Transformer) couples these
+  nodes to the rest of the circuit magnetically, not conductively.
+  Fix: connect one of these nodes to gnd, directly or through a large
+  resistor, e.g. R<1Meg>() [s1, gnd];
+\end{lstlisting}
+
+\noindent A path is an \code{R}, an \code{L}, a voltage source (fixed or
+driven), or the output of a \code{VCVS}/\code{CCVS}. A \code{C} is not (open
+at DC: the node between two series capacitors floats), nor is a fixed current
+source, a source driven by digital or structural logic, a \code{CCCS}, or a
+\code{VCCS} unless its control pair is its own output pair. A current source
+driven by \textit{analog} code counts as a path, because that is how junctions
+and switches are modelled (their conductance lives in the Jacobian); the
+compiler cannot see whether its expression really depends on its terminals, so
+a floating node held only by such a source goes unreported. Typical causes: the
+secondary of a \code{<magnetics>} transformer or coupled inductor (its windings
+are coupled by equations, not by a conductor), a node reached only through
+capacitors, and a forgotten \code{gnd}. The fix is the one SPICE users know:
+ground one node of the group, or tie it to ground through a large resistor
+(1\,M$\Omega$) where a hard ground would change the circuit.
 
 %% ── 11. Built-in Intrinsics ─────────────────────────────────────────────────
 \section{Built-in Intrinsics}

@@ -1,0 +1,76 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  HVR Testbench — TRIAC Phase-Control Dimmer, 230 V / 50 Hz, 100 W Lamp
+//  Validates: <semiconductors/thyristor> TRIAC firing in quadrants I and III
+//             from 50 us gate pulses, drop-out at the holding current before
+//             each voltage zero, and the load RMS against the firing angle
+// ─────────────────────────────────────────────────────────────────────────────
+//
+//      l1 ──[529 Ohm lamp]── mt2 ──┤ TRIAC600V8A ├── mt1 = gnd (neutral)
+//                                  gate ──[100 Ohm]── driver (ref. MT1)
+//
+//  At alpha = 90 deg of each half-cycle the driver gives a 10 V, 50 us pulse
+//  through 100 Ohm (~95 mA): positive in the positive half-cycle (quadrant
+//  I), negative in the negative one (quadrant III), as a DIAC trigger
+//  would. The pulses are `time` comparisons, so they are time breakpoints and
+//  land exactly whatever the step.
+//
+//  ── Expected result ─────────────────────────────────────────────────────────
+//
+//  Ideal AC phase control, resistive load:
+//      Vrms = Vs sqrt(1 - alpha/pi + sin(2 alpha)/(2 pi)) = 230 / sqrt 2
+//           = 162.635 V                                  (alpha = 90 deg)
+//
+//  Measured over 60-100 ms (ndf2):
+//      Vrms(lamp) = 529 Ohm * I(aload)rms = 161.996 V    (ideal - 0.39 %)
+//      conduction: on at 90.00 deg and 270.00 deg; off at 176.41 deg and
+//                  356.43 deg, i.e. 3.6 deg before each voltage zero,
+//                  where the lamp current has fallen to ~38 mA (the card's
+//                  IH; 20.8 V of mains)
+//      on-state: 0.76 V at 0.6 A
+//  The 0.39 % is the triac's on-state drop plus that early drop-out.
+//
+//  Convergence (HOVER_TRACE_STEP=1, 100 ms, ndf2): 3562 accepted steps,
+//  6.2 Newton iterations per step. Each firing costs 580-730 iterations over
+//  110-125 steps; each drop-out at IH 970-1260 over ~70 steps, including one
+//  to four 100-iteration plain-Newton failures rescued by trust-region
+//  retries — the open item of this model, as in scr_phase_bridge.hvr.
+//  (With TT = 10 us instead of the card's 2 us the drop-outs cost 300-430,
+//  at the price of a 7 us turn-on delay and a 21 us rise.)
+
+.save(main.l1, main.mt2, main.g, I(main.aload));
+.tran(0, 100m, 50u);
+.solver(ndf2);
+
+import <parts/thyristor>;
+from <math> import sin, fmod;
+
+analog module Mains<double vrms, double f>() [wire p, wire n] {
+    double v = vrms * 1.41421356237 * sin(2.0 * 3.14159265358979 * f * time);
+    voltage_source<>(v)[p, n];
+}
+
+// +amp at alpha in the positive half-cycle, -amp at alpha in the negative.
+digital module Firing<double f, double alpha_deg, double w, double amp>(output double vg) []
+{
+    double T  = 1.0 / f;
+    double ta = alpha_deg / 360.0 * T;
+    vg = 0.0;
+    if (fmod(time, T) >= ta && fmod(time, T) < ta + w) { vg = amp; }
+    if (fmod(time, T) >= ta + 0.5 * T && fmod(time, T) < ta + 0.5 * T + w) { vg = 0.0 - amp; }
+}
+
+module main<>() []
+{
+    wire l1, x, mt2, gs, g;
+    state double vg = 0;
+
+    module ac = Mains<230.0, 50.0>()[l1, gnd];
+    R<529>()[l1, x];                              // 100 W at 230 V
+    voltage_source aload<0>()[x, mt2];
+
+    module fire = Firing<50.0, 90.0, 50u, 10.0>(vg)[];
+    voltage_source<>(vg)[gs, gnd];
+    R<100>()[gs, g];
+
+    module Q = thyristor.TRIAC600V8A<>()[g, mt2, gnd];
+}

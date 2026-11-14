@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="16 32 688 512" class="hv-schematic" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11">
+  <!-- rails -->
+  <path d="M64 64 H608"/>
+  <text x="256" y="56" text-anchor="middle" class="net">bus</text>
+  <path d="M64 512 H448"/>
+  <!-- vbus 400 V -->
+  <g transform="translate(64,288)"><path d="M0 -32 V-16 M0 16 V32"/><circle cx="0" cy="0" r="16" class="bold"/><path d="M-3.5 -7 H3.5 M0 -10.5 V-3.5"/><path d="M-3.5 7 H3.5"/></g>
+  <path d="M64 256 V64 M64 320 V512"/>
+  <text x="88" y="284">vbus</text>
+  <text x="88" y="298" class="dim" font-size="10">400 V</text>
+  <circle class="dot" cx="448" cy="64" r="2.4"/>
+  <!-- ad: ammeter in QH's collector -->
+  <path d="M448 64 V80"/>
+  <path d="M448 80 V96 M448 128 V144"/>
+  <circle cx="448" cy="112" r="16" class="bold"/>
+  <text x="448" y="116" text-anchor="middle">A</text>
+  <text x="424" y="108" text-anchor="end">ad</text>
+  <text x="424" y="122" text-anchor="end" class="dim" font-size="10">0 V</text>
+  <path d="M448 144 V176"/>
+  <polygon points="448,164 444.5,157 451.5,157" class="fill"/>
+  <text x="440" y="166" text-anchor="end" class="net" font-size="10">I(ad)</text>
+  <text x="456" y="162" class="net">top</text>
+  <!-- QH: IGBTD600V30A, held off (gate tied to emitter through 10 Ω) -->
+  <g transform="translate(448,208)"><circle cx="-9.6" cy="0" r="20.8" class="bold"/><path d="M-48 0 H-22.4 M-22.4 -12 V12"/><rect x="-17.6" y="-13.6" width="4" height="27.2" class="fill"/><path d="M-13.6 -4 L0 -17.6 V-32 M-13.6 4 L0 17.6 V32"/><polygon points="-2.72,14.88 -5.6,8 -9.6,12" class="fill"/><path d="M0 -24 H24 V-7.2 M0 24 H24 V7.2"/><polygon points="16,7.2 32,7.2 24,-4.8" class="fill"/><rect x="16" y="-7.2" width="16" height="2.4" class="fill"/></g>
+  <text x="488" y="196">QH</text>
+  <text x="488" y="210">IGBTD600V30A</text>
+  <text x="488" y="224" class="dim" font-size="10">held off</text>
+  <path d="M448 240 V304"/>
+  <path d="M400 208 H352 V224 M352 288 V304 H448"/>
+  <text x="376" y="200" text-anchor="middle" class="net">gh</text>
+  <g transform="translate(352,256)"><path d="M0 -32 V-20.8 M0 20.8 V32"/><rect x="-8.8" y="-20.8" width="17.6" height="41.6" class="bold"/></g>
+  <text x="336" y="260" text-anchor="end">10 Ω</text>
+  <circle class="dot" cx="448" cy="304" r="2.4"/>
+  <text x="456" y="298" class="net">sw</text>
+  <!-- LL 200 µH, bus -> sw -->
+  <circle class="dot" cx="608" cy="64" r="2.4"/>
+  <path d="M608 64 V144 M608 208 V304 H448"/>
+  <g transform="translate(608,176)"><path d="M0 -32 V-21.12 M0 21.12 V32"/><path d="M0 -21.12 a5.28 5.28 0 0 1 0 10.56 a5.28 5.28 0 0 1 0 10.56 a5.28 5.28 0 0 1 0 10.56 a5.28 5.28 0 0 1 0 10.56" class="bold"/></g>
+  <text x="624" y="172">LL</text>
+  <text x="624" y="186" class="dim" font-size="10">200 µH</text>
+  <polygon points="608,132 604.5,125 611.5,125" class="fill"/>
+  <text x="616" y="124" class="net" font-size="10">I(LL)</text>
+  <!-- ac: ammeter in QL's collector -->
+  <path d="M448 304 V320"/>
+  <path d="M448 320 V336 M448 368 V384"/>
+  <circle cx="448" cy="352" r="16" class="bold"/>
+  <text x="448" y="356" text-anchor="middle">A</text>
+  <text x="424" y="348" text-anchor="end">ac</text>
+  <text x="424" y="362" text-anchor="end" class="dim" font-size="10">0 V</text>
+  <path d="M448 384 V416"/>
+  <polygon points="448,404 444.5,397 451.5,397" class="fill"/>
+  <text x="440" y="406" text-anchor="end" class="net" font-size="10">I(ac)</text>
+  <text x="456" y="402" class="net">swc</text>
+  <!-- QL: IGBTD600V30A, device under test -->
+  <g transform="translate(448,448)"><circle cx="-9.6" cy="0" r="20.8" class="bold"/><path d="M-48 0 H-22.4 M-22.4 -12 V12"/><rect x="-17.6" y="-13.6" width="4" height="27.2" class="fill"/><path d="M-13.6 -4 L0 -17.6 V-32 M-13.6 4 L0 17.6 V32"/><polygon points="-2.72,14.88 -5.6,8 -9.6,12" class="fill"/><path d="M0 -24 H24 V-7.2 M0 24 H24 V7.2"/><polygon points="16,7.2 32,7.2 24,-4.8" class="fill"/><rect x="16" y="-7.2" width="16" height="2.4" class="fill"/></g>
+  <text x="488" y="436">QL</text>
+  <text x="488" y="450">IGBTD600V30A</text>
+  <text x="488" y="464" class="dim" font-size="10">under test</text>
+  <path d="M448 480 V512"/>
+  <circle class="dot" cx="448" cy="512" r="2.4"/>
+  <path d="M400 448 H368"/>
+  <text x="384" y="440" text-anchor="middle" class="net">gl</text>
+  <g transform="translate(336,448) rotate(90)"><path d="M0 -32 V-20.8 M0 20.8 V32"/><rect x="-8.8" y="-20.8" width="17.6" height="41.6" class="bold"/></g>
+  <text x="336" y="432" text-anchor="middle">10 Ω</text>
+  <path d="M304 448 H256"/>
+  <text x="280" y="440" text-anchor="middle" class="net">gld</text>
+  <g transform="translate(256,480)"><path d="M0 -32 V-16 M0 16 V32"/><circle cx="0" cy="0" r="16" class="bold"/><path d="M-3.5 -7 H3.5 M0 -10.5 V-3.5"/><path d="M-3.5 7 H3.5"/></g>
+  <circle class="dot" cx="256" cy="512" r="2.4"/>
+  <circle class="dot" cx="160" cy="512" r="2.4"/>
+  <path d="M160 512 V520 M152 520 H168 M155 523 H165 M158 526 H162"/>
+  <!-- seq: DoublePulse -> vg -->
+  <rect x="80" y="360" width="144" height="56"/>
+  <text x="152" y="379" text-anchor="middle">seq: DoublePulse</text>
+  <text x="152" y="392" text-anchor="middle" class="dim" font-size="10">15 V: 0-10, 15-17 µs</text>
+  <text x="152" y="405" text-anchor="middle" class="dim" font-size="10">0 V otherwise</text>
+  <path d="M152 416 V480 H233" class="dash"/>
+  <polygon points="240,480 233,476.5 233,483.5" class="fill"/>
+  <text x="200" y="474" text-anchor="middle" class="net" font-size="10">vg</text>
+</svg>

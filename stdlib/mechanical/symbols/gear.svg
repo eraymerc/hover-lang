@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-32 -24 64 48" data-title="Gear"
+     fill="none" stroke="#000" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+  <style>.fill{fill:#000}.bold{stroke-width:3.2}.dash{stroke-dasharray:3 2.5}[data-pin]{fill:#d00;stroke:none}</style>
+  <!-- Two meshing wheels: a small driving one and a larger driven one. -->
+  <circle cx="-12" cy="-6" r="8" class="bold"/>
+  <circle cx="8" cy="4" r="14" class="bold"/>
+  <path d="M-32 0 H-24 V-6 H-20 M22 4 H26 V0 H32"/>
+  <circle cx="-12" cy="-6" r="1.6" class="fill"/>
+  <circle cx="8" cy="4" r="1.6" class="fill"/>
+  <circle data-pin="shaft_a" data-alias="a in input" data-dir="left" cx="-32" cy="0" r="2"/>
+  <circle data-pin="shaft_b" data-alias="b out output" data-dir="right" cx="32" cy="0" r="2"/>
+</svg>

@@ -1,0 +1,43 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  HVR Testbench — linear transformer, T-model (<magnetics> Transformer)
+//  Validates: magnetising inductance, leakage, winding resistances, load
+//             regulation, against ngspice's coupled inductors
+// ─────────────────────────────────────────────────────────────────────────────
+//
+//  325 V peak (230 V rms) 50 Hz on the primary, a 7.2 Ohm load on the
+//  secondary. n = 0.06 (19.5 V peak open-circuit), Lm = 10 H, Llp = 20 mH,
+//  Lls = 72 uH (= n^2 Llp), Rp = 10 Ohm, Rs = 40 mOhm.
+//
+//  The source starts at its zero crossing with the core unmagnetised, so the
+//  magnetising current carries a DC offset that decays with Lm/Rp = 1 s —
+//  visible in I(main.x.w1) for the whole run, as it would be on the bench.
+//
+//  ── Expected result ─────────────────────────────────────────────────────────
+//
+//    V(s)          19.2574 V peak  (ngspice, L1/L2/K twin: 19.25739 V;
+//                                   open circuit would be 19.5 V)
+//    I(main.x.w1)  0.19127 A peak at -32.66 deg (ngspice 0.191271 A)
+//  Whole waveforms within 1.8e-4 of ngspice. ~4010 accepted steps, 2 Newton
+//  iterations each, on ndf2, bdf2 and trapezoidal, with or without .op.
+
+.tran(0, 200m, 50u);
+.solver(ndf2);
+.save(main.a, main.s, I(main.x.w1), I(main.x.w2));
+
+import <magnetics> as mag;
+from <math> import sin;
+
+analog module Mains<double Vpk, double f>() [wire p]
+{
+    double v = Vpk * sin(2.0 * 3.141592653589793 * f * time);
+    voltage_source<>(v) [p, gnd];
+}
+
+module main<>() []
+{
+    wire a, s;
+    module src = Mains<325.0, 50.0>() [a];
+    module x = mag.Transformer<0.06, 10.0, Llp = 20m, Lls = 72u,
+                               Rp = 10.0, Rs = 0.04>() [a, gnd, s, gnd];
+    R<7.2>() [s, gnd];
+}

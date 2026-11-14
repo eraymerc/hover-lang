@@ -1,0 +1,89 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  HVR Testbench — Direct-on-Line Start of a Squirrel-Cage Induction Motor
+//  Validates: the <electromechanical> InductionMachine on a stiff 400 V /
+//             50 Hz three-phase supply, the <mechanical> Inertia and
+//             TorqueStep loads on its shaft port
+// ─────────────────────────────────────────────────────────────────────────────
+//
+//  A typical 1.5 kW, 4-pole, 400 V (star) motor — the parameter set of the
+//  <electromechanical/parts> card IM1k5W_4P_400V, written out here so the
+//  parameters are visible — is switched straight onto the mains at t = 0,
+//  with a load inertia of 16.5e-3 kg·m² on its shaft (total J = 0.02 kg·m²).
+//  It runs up unloaded; at 0.6 s a 10 N·m load torque (about rated) steps on.
+//
+//      400 V, 50 Hz ──► InductionMachine ──shaft──┬── Inertia 16.5e-3
+//      (three grounded                            └── TorqueStep 0 → 10 N·m
+//       sine sources)                                  at 0.6 s
+//
+//  The shaft is a circuit node: V(shaft) is the speed in rad/s and a current
+//  is a torque in N·m (the convention of every machine in <electromechanical>,
+//  see pmsm.hvr). Loads are parts from shaft to ground.
+//
+//  No .op: this is a start from rest. .op would solve a DC bias point, in
+//  which the sine sources are frozen at their t = 0 values and the windings
+//  carry DC — not the machine at rest (see induction.hvr, "Operating point").
+//
+//  ── Expected result ─────────────────────────────────────────────────────────
+//
+//  Checked against an independent integration of the same fifth-order model
+//  (scipy DOP853, rtol 1e-11) and against the steady-state equivalent
+//  circuit:
+//
+//    peak inrush, phase a     23.71 A at 8.1 ms   (reference 23.715 A)
+//    95 % of synchronous      157.08·0.95 rad/s reached at 0.1986 s
+//    speed before the load    157.02 rad/s (slip 0.04 %: friction only)
+//    final speed, 10 N·m      149.894 rad/s, slip 4.57 %; the equivalent
+//                             circuit gives 149.893 rad/s for 10 N·m + B·ω
+//
+//  Speed matches the reference to 6 mrad/s and the phase current to 2 mA
+//  over the whole run (bdf2 at 20 µs). Power balance: the energy from the
+//  supply equals the copper losses, the friction and load energy and the
+//  change of magnetic and kinetic energy to 8e-6 of the 1.58 kJ supplied.
+//
+//  Plot main.omega (speed) and main.torque_em (electromagnetic torque; the
+//  start shows the pulsating torque of the decaying DC flux, then the
+//  run-up along the torque–slip curve), and I(main.sup.vsa) for the phase-a
+//  current (negative of the current into the motor: a source delivering
+//  power reads negative). ~50k steps, about a second.
+// ─────────────────────────────────────────────────────────────────────────────
+
+.save(main.omega, main.torque_em, I(main.sup.vsa));
+.tran(0, 1.0, 20u);
+.solver(bdf2);
+
+from <math> import sin;
+from <electromechanical> import InductionMachine;
+from <mechanical> import Inertia, TorqueStep;
+
+// Balanced three-phase supply, star-connected and grounded: peak phase
+// voltage Vpk at f Hz, positive sequence a → b → c.
+analog module ThreePhaseSupply<double Vpk, double f>()[wire a, wire b, wire c]
+{
+    double th = 2.0 * 3.14159265358979 * f * time;
+    double xa = Vpk * sin(th);
+    double xb = Vpk * sin(th - 2.09439510239320);
+    double xc = Vpk * sin(th + 2.09439510239320);
+    voltage_source vsa<>(xa) [a, gnd];
+    voltage_source vsb<>(xb) [b, gnd];
+    voltage_source vsc<>(xc) [c, gnd];
+}
+
+module main<>()[]
+{
+    wire a, b, c;
+    wire shaft;                 // V(shaft) = ωm in rad/s, current = torque in N·m
+
+    state double omega = 0, i_alpha = 0, i_beta = 0;
+    state double psi_ra = 0, psi_rb = 0, torque_em = 0;
+
+    // 230 V rms phase (400 V line-to-line): 325.27 V peak.
+    module sup = ThreePhaseSupply<325.27, 50>()[a, b, c];
+
+    //                          Rs   Lls  Rr   Llr  Lm    p  J     B
+    module motor = InductionMachine<4.4, 25m, 3.6, 25m, 0.45, 2, 3.5m, 0.6m>
+                       (omega, i_alpha, i_beta, psi_ra, psi_rb, torque_em)
+                       [a, b, c, shaft];
+
+    module load_j = Inertia<16.5m>()[shaft];
+    module load_t = TorqueStep<0, 10, 0.6>()[shaft];
+}

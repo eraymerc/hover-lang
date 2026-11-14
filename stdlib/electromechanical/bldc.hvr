@@ -1,0 +1,191 @@
+// cos for the back-EMF shape, sin for the Hall sensors.
+from <math> import sin, cos;
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  BLDC — brushless DC machine: three-phase, trapezoidal back-EMF, Hall
+//  sensors, shaft port
+//
+//      va ──┐                              ┌─────────────────────┐
+//      vb ──┤ star, isolated neutral       │ C<J>   B·ω    T_em  │── shaft
+//      vc ──┘                              └─────────────────────┘
+//                hall_a, hall_b, hall_c (logic, 0/1)
+//
+//  The same machine as SPMSM — surface magnets, one synchronous inductance,
+//  the same parameters, ports, shaft and θe — except that the magnet flux
+//  is distributed so that each phase's back-EMF is trapezoidal rather than
+//  sinusoidal:
+//
+//      v_k − v_N = Rs·i_k + Ls·di_k/dt + e_k,          k = a, b, c
+//      e_k  = p·ωm·flux_m·F(θe + 90° − k·120°)
+//      T_em = (e_a·i_a + e_b·i_b + e_c·i_c)/ωm = p·flux_m·Σ F_k·i_k
+//
+//  Ls is the per-phase inductance L − M (self minus mutual) and v_N the
+//  isolated star point. θe has PMSM's meaning — the electrical angle of the
+//  magnet's d axis ahead of phase a, θe = θ0 + ∫p·ωm dt — so the EMF of
+//  phase a is centred on the q axis, 90° ahead of the magnet, exactly where
+//  a PMSM's sinusoidal EMF −ωe·flux_m·sin θe has its positive peak.
+//
+//  The shape function. The ideal trapezoid is flat (±1) for 120° and ramps
+//  linearly over 60°, and its corners are kinks the Newton Jacobian would
+//  step across. It is replaced by
+//
+//      F(x) = S(2·cos x) / S(2),     S(u) = u / (1 + u^16)^(1/16)
+//
+//  2·cos x passes ±1 exactly 60° either side of the peak, so the plateau is
+//  the ideal 120° wide; S is a smooth unit clamp (S(u) ≈ u for |u| < 0.8,
+//  ≈ ±1 for |u| > 1.3), so F is infinitely differentiable. Against the ideal
+//  trapezoid: F = 0.958 at the plateau corners (ideal 1), flat to 1e-4 for
+//  |2·cos x| ≥ 1.5 (the middle 83° of each plateau), and the ramp is a
+//  slightly curved 2·cos x instead of a straight line; zero crossings are
+//  exact. flux_m is the plateau value: the flat-top phase EMF is
+//  p·ωm·flux_m, i.e. Ke (V·s/rad, peak phase) = p·flux_m, and the
+//  line-to-line EMF across two conducting phases is 2·p·ωm·flux_m.
+//
+//  The zero-sequence part of the trapezoid (its triplen harmonics) drives no
+//  current through an isolated neutral and makes no torque; it only moves
+//  v_N. The model is written, as PMSM, in the αβ frame (the inductor
+//  currents are iα, iβ; Rs is written into the voltage sources so Rs = 0 is
+//  allowed), which drops that part exactly — the phase currents, the torque,
+//  and the voltage of an unenergised (floating) phase all come out as in
+//  the abc equations above.
+//
+//  Six-step (120°) commutation. With the torque ripple-free ideal, the phase
+//  conducting positive current is the one on its positive plateau and the
+//  negative one the one on its negative plateau. Locked in a sector with
+//  i_x = −i_y = i the torque is 2·p·flux_m·i, and at no load on a bus Vdc
+//  the speed is ωm = Vdc / (2·p·flux_m) (less the switch and resistive
+//  drops). The Hall sensors are placed so that their edges are the
+//  commutation instants:
+//
+//      hall_a = 1  while  sin(θe + 150°) > 0
+//      hall_b = 1  while  sin(θe +  30°) > 0
+//      hall_c = 1  while  sin(θe −  90°) > 0
+//
+//      θe (deg)      hall a b c    drive (+ high side, − low side)
+//      −150 … −90      1 0 1          a+  b−
+//       −90 … −30      1 0 0          a+  c−
+//       −30 …  30      1 1 0          b+  c−
+//        30 …  90      0 1 0          b+  a−
+//        90 … 150      0 1 1          c+  a−
+//       150 … 210      0 0 1          c+  b−
+//
+//  which is the usual Hall sequence 101 → 100 → 110 → 010 → 011 → 001 for
+//  positive rotation. Reverse rotation: swap + and − in the table. The Hall
+//  outputs are logic values computed from the solved angle; a digital
+//  commutation module reads them at the start of each step (sample and hold),
+//  and `.zcd;` ends a step on each Hall edge.
+//
+//  Terminals and shaft: as PMSM — each terminal a current source to ground
+//  (no phase completely open: a floating phase needs its switches' Roff or
+//  diodes, as any real bridge has), V(shaft) = ωm, current = torque, J and B
+//  inside, loads from shaft to ground. Run under a Newton solver.
+//
+//  Parameters
+//      Rs      phase resistance, Ohm (0 allowed); half the line-to-line value
+//      Ls      phase inductance L − M, H (> 0); half the line-to-line value
+//      flux_m  plateau flux constant, Wb: flat-top phase EMF = p·ωm·flux_m.
+//              From a line-to-line constant Ke_LL (V per rad/s, flat top):
+//              flux_m = Ke_LL/(2·p). From a torque constant Kt (N·m/A,
+//              six-step, two phases conducting): flux_m = Kt/(2·p).
+//      p       number of pole PAIRS
+//      J       rotor inertia, kg·m² (0 allowed — see pmsm.hvr)
+//      B       rotor viscous friction, N·m·s/rad (0 allowed)
+//      theta0  initial electrical rotor angle θe(0), rad
+//
+//  Outputs (logic)
+//      omega_m_out  mechanical speed ωm, rad/s
+//      hall_a_out, hall_b_out, hall_c_out   Hall states, 0.0 or 1.0
+//      theta_e_out  electrical angle θe, rad (unwrapped)
+//      torque_out   electromagnetic torque T_em, N·m (before friction)
+//
+//  Not modelled: the rounding of a real machine's EMF beyond the smooth
+//  corners above (fit flux_m to the plateau), cogging torque, saturation,
+//  iron loss, Hall sensor misalignment and delay, any zero-sequence path.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Smooth trapezoid, peak 1 with a 120° plateau centred on x = 0.
+func double bldc_trapezoid(double x) {
+    double u  = 2.0 * cos(x);
+    double s  = u / ((1.0 + u**16.0)**(1.0 / 16.0));
+    double s2 = 2.0 / ((1.0 + 2.0**16.0)**(1.0 / 16.0));
+    return s / s2;
+}
+
+analog module BLDC<double Rs, double Ls, double flux_m, double p,
+                   double J, double B, double theta0>
+    (output double omega_m_out, output double hall_a_out,
+     output double hall_b_out, output double hall_c_out,
+     output double theta_e_out, output double torque_out)
+    [wire va, wire vb, wire vc, wire shaft]
+{
+    wire x1, y1;
+
+    // ── Mechanics, on the shaft node (as PMSM) ──────────────────────────────
+    C<J>()                   [shaft, gnd];
+    VCCS<B>()                [shaft, gnd, shaft, gnd];
+
+    double omega_m = V(shaft);
+    double omega_e = p * omega_m;
+
+    // ── Electrical angle: θe = θ0 + ∫ p·ωm dt ───────────────────────────────
+    double theta_e = theta0 + idt(omega_e);
+
+    // ── Back-EMF shape per phase, then αβ (full Clarke: the shape has a
+    //    zero-sequence part, which is dropped) ──────────────────────────────
+    double f_a = bldc_trapezoid(theta_e + 1.57079632679490);
+    double f_b = bldc_trapezoid(theta_e + 1.57079632679490 - 2.09439510239320);
+    double f_c = bldc_trapezoid(theta_e + 1.57079632679490 + 2.09439510239320);
+    double f_alpha = (2.0 * f_a - f_b - f_c) / 3.0;
+    double f_beta  = (f_b - f_c) / (3.0**0.5);
+
+    // ── Terminal voltages → αβ (amplitude-invariant, as PMSM) ───────────────
+    double v_n = (V(va) + V(vb) + V(vc)) / 3.0;
+    double van = V(va) - v_n;
+    double vbn = V(vb) - v_n;
+    double v_alpha = van;
+    double v_beta  = (van + 2.0 * vbn) / (3.0**0.5);
+
+    // ── αβ windings ─────────────────────────────────────────────────────────
+    double i_alpha = I(La_coil);
+    double i_beta  = I(Lb_coil);
+
+    double e_alpha = omega_e * flux_m * f_alpha;
+    double e_beta  = omega_e * flux_m * f_beta;
+
+    double v_La = v_alpha - Rs * i_alpha - e_alpha;
+    double v_Lb = v_beta  - Rs * i_beta  - e_beta;
+    voltage_source<>(v_La) [x1, gnd];
+    L La_coil<Ls>()        [x1, gnd];
+    voltage_source<>(v_Lb) [y1, gnd];
+    L Lb_coil<Ls>()        [y1, gnd];
+
+    // ── αβ currents → terminals ─────────────────────────────────────────────
+    double i_a = i_alpha;
+    double i_b = -0.5 * i_alpha + ((3.0**0.5) / 2.0) * i_beta;
+    double i_c = -0.5 * i_alpha - ((3.0**0.5) / 2.0) * i_beta;
+
+    // Motor convention: positive current flows into the terminal.
+    current_source<>(i_a) [va, gnd];
+    current_source<>(i_b) [vb, gnd];
+    current_source<>(i_c) [vc, gnd];
+
+    // ── Electromagnetic torque, into the shaft ──────────────────────────────
+    // Σ e_k·i_k / ωm; with Σ i_k = 0 that is 1.5·(fα·iα + fβ·iβ)·p·flux_m.
+    double torque = 1.5 * p * flux_m * (f_alpha * i_alpha + f_beta * i_beta);
+    current_source<>(torque) [gnd, shaft];
+
+    // ── Hall sensors: edges on the commutation instants (table above) ──────
+    double h_a = 0.0;
+    double h_b = 0.0;
+    double h_c = 0.0;
+    if (sin(theta_e + 2.61799387799149) > 0.0) { h_a = 1.0; }
+    if (sin(theta_e + 0.52359877559830) > 0.0) { h_b = 1.0; }
+    if (sin(theta_e - 1.57079632679490) > 0.0) { h_c = 1.0; }
+
+    omega_m_out = omega_m;
+    hall_a_out  = h_a;
+    hall_b_out  = h_b;
+    hall_c_out  = h_c;
+    theta_e_out = theta_e;
+    torque_out  = torque;
+}

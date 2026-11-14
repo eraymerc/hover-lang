@@ -1,0 +1,142 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  Transformers — ideal, linear T-model, centre-tapped secondary
+//
+//  The turns ratio is always n = Ns / Np, secondary over primary: an ideal
+//  transformer gives v2 = n v1 and i2 = -i1 / n. A 230 V : 12 V part has
+//  n = 12/230 = 0.0522 (rated) — though a real one is wound for more than 12 V
+//  open-circuit, see below.
+//
+//  Terminals follow <magnetics> CoupledInductors: dots on p1 and p2, winding
+//  currents I(<instance>.w1), I(<instance>.w2) positive into the p terminal.
+//  The windings are galvanically isolated: give each side a DC reference
+//  (ground one end, or a large resistor to ground) — see coupled.hvr.
+//
+//  ── IdealTransformer ───────────────────────────────────────────────────────
+//
+//      p1 ──●┐    ┌●── p2        v2 = n v1          (VCVS es)
+//            ) || (              i1 = -n I(es)      (CCCS, sensing es)
+//      n1 ───┘    └─── n2
+//
+//  No inductance at all, so it transforms DC too: 10 V behind 2 Ohm into
+//  n = 0.5 and a 1 Ohm load gives 6.6667 V / 3.3333 V, the textbook
+//  reflected-impedance answer, with or without .op. That is the defining
+//  property of the ideal part, not a model limitation — a real transformer
+//  passes no DC, and Transformer below is the one to use when that matters.
+//
+//  ── Transformer — the linear T-model ───────────────────────────────────────
+//
+//      p1 ─ Rp ─ Llp ─┬─────●┐    ┌●─── Lls ─ Rs ─ p2
+//                     Lm     ) 1:n (
+//      n1 ────────────┴──────┘    └──────────────── n2
+//
+//  Lm, Llp and Rp are primary-side values; Lls and Rs are the secondary's own
+//  (in secondary henries and ohms, not referred). It is written directly in
+//  flux form, one branch per winding, with the primary-referred magnetising
+//  current im = i1 + n i2:
+//
+//      v1 = Rp i1 + d/dt (Llp i1 + Lm im)
+//      v2 = Rs i2 + d/dt (Lls i2 + n Lm im)
+//
+//  which is exactly the T circuit above and also exactly CoupledInductors with
+//  L1 = Llp + Lm, L2 = Lls + n^2 Lm, M = n Lm. The T form is kept rather than
+//  converting to L1, L2, k because with a large Lm the flux is the sum of two
+//  terms of very different size, and Lm im is computed from the small
+//  difference current directly instead of from L1 i1 + M i2.
+//
+//  Llp = Lls = 0 (the default) is perfect coupling, k = 1, and is fine; Rp =
+//  Rs = 0 is fine. Lm must be > 0 — an infinite Lm is IdealTransformer.
+//  Reading data-sheet values:
+//    - Rp, Rs: the winding resistances (DC, as measured).
+//    - Lm: open-circuit test — rated voltage over magnetising current, divided
+//      by omega (a 230 V winding drawing 30 mA at 50 Hz is about 24 H).
+//    - Llp, Lls: short-circuit test — the total leakage referred to the
+//      primary, Llp + Lls/n^2, is usually split equally (Lls = n^2 Llp).
+//    - n: the OPEN-CIRCUIT ratio. Small transformers are wound so that the
+//      rated voltage appears at rated load; a "230 V : 12 V, 20 VA" part is
+//      typically 13-14 V open-circuit.
+//
+//  ── CenterTapTransformer ───────────────────────────────────────────────────
+//
+//  The T-model with the secondary in two equal halves, s1-ct and ct-s2, in
+//  series aiding (s1 and ct are the dotted ends). n is the ratio of EACH HALF
+//  to the primary, so "230 V : 2 x 12 V" has n = 12/230; Lls and Rs are per
+//  half. The halves are perfectly coupled to each other except through their
+//  own Lls.
+//
+//  ── Common to the three ────────────────────────────────────────────────────
+//
+//  At DC and in .op the inductive models are shorts through their winding
+//  resistance (see coupled.hvr on .op with an AC source that is not zero at
+//  t = 0: a mains transformer deck should not carry `.op;` unless its source
+//  starts at a zero crossing). Core loss is not modelled; to first order it is
+//  a resistor across the primary terminals. Saturation: <magnetics>
+//  SaturableTransformer. Use ndf2 or bdf2 (coupled.hvr explains trapezoidal).
+//
+//  ── Verified ───────────────────────────────────────────────────────────────
+//
+//  Transformer n = 0.06, Lm = 10 H, Llp = 20 mH, Lls = 72 uH, Rp = 10 Ohm,
+//  Rs = 0.04 Ohm, 325 V 50 Hz into 7.2 Ohm, against an ngspice twin (K with
+//  the equivalent L1, L2, k = 0.998): secondary 19.25739 V vs 19.25739 V,
+//  primary current 0.191271 A vs 0.191271 A, whole waveforms within 1.8e-4
+//  (ndf2, bdf2, trapezoidal; with and without .op).
+//  Transformer with Llp = Lls = 0 into a 1N4007 bridge equals IdealTransformer
+//  into the same bridge to 1e-5 (15.76082 V vs 15.76098 V DC).
+//  Mains transformer + 1N4007 bridge + 4700 uF, against ngspice with the same
+//  diode card: 14.018 V vs 14.008 V DC, 1.294 V vs 1.293 V ripple, secondary
+//  16.712 V vs 16.714 V peak (examples/Magnetics/mains_rectifier.hvr).
+//  CenterTapTransformer in a two-diode full-wave rectifier, against ngspice
+//  (three K elements): 14.942 V vs 14.938 V DC, primary 110.09 mA vs
+//  110.00 mA rms.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Ideal transformer: v2 = n v1, i1 = -n i2. Works at DC.
+//   n   turns ratio Ns/Np (any sign; negative swaps the secondary's dot)
+module IdealTransformer<double n>() [wire p1, wire n1, wire p2, wire n2]
+{
+    VCVS es<n>()  [p2, n2, p1, n1];
+    CCCS<n>()     [n1, p1, es];
+}
+
+// Linear transformer, T-model.
+//   n          turns ratio Ns/Np (open-circuit voltage ratio)
+//   Lm         magnetising inductance, primary side, H (> 0)
+//   Llp, Lls   primary / secondary leakage inductance, H     0
+//   Rp, Rs     primary / secondary winding resistance, Ohm   0
+analog module Transformer<double n, double Lm,
+                          double Llp = 0, double Lls = 0,
+                          double Rp = 0,  double Rs = 0>()
+    [wire p1, wire n1, wire p2, wire n2]
+{
+    double i1 = I(w1);
+    double i2 = I(w2);
+    double im = i1 + n * i2;
+    double v1 = Rp * i1 + ddt(Llp * i1 + Lm * im);
+    double v2 = Rs * i2 + ddt(Lls * i2 + n * Lm * im);
+    voltage_source w1<>(v1) [p1, n1];
+    voltage_source w2<>(v2) [p2, n2];
+}
+
+// Transformer with a centre-tapped secondary, T-model.
+//   n          turns ratio of EACH secondary half to the primary
+//   Lm         magnetising inductance, primary side, H (> 0)
+//   Llp        primary leakage inductance, H                 0
+//   Lls        leakage inductance of each secondary half, H  0
+//   Rp         primary winding resistance, Ohm               0
+//   Rs         resistance of each secondary half, Ohm        0
+// Winding currents: I(.w1) primary, I(.w2) half s1-ct, I(.w3) half ct-s2.
+analog module CenterTapTransformer<double n, double Lm,
+                                   double Llp = 0, double Lls = 0,
+                                   double Rp = 0,  double Rs = 0>()
+    [wire p1, wire n1, wire s1, wire ct, wire s2]
+{
+    double i1 = I(w1);
+    double i2 = I(w2);
+    double i3 = I(w3);
+    double im = i1 + n * (i2 + i3);
+    double v1 = Rp * i1 + ddt(Llp * i1 + Lm * im);
+    double v2 = Rs * i2 + ddt(Lls * i2 + n * Lm * im);
+    double v3 = Rs * i3 + ddt(Lls * i3 + n * Lm * im);
+    voltage_source w1<>(v1) [p1, n1];
+    voltage_source w2<>(v2) [s1, ct];
+    voltage_source w3<>(v3) [ct, s2];
+}

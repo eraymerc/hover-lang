@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.29 (TeX Live 2026/Arch Linux) (preloaded format=pdflatex 2026.11.1)  14 NOV 2026 02:12
+This is pdfTeX, Version 3.141592653-2.6-1.40.29 (TeX Live 2026/Arch Linux) (preloaded format=pdflatex 2026.11.1)  14 NOV 2026 03:31
 entering extended mode
  restricted \write18 enabled.
  file:line:error style messages enabled.
@@ -527,7 +527,7 @@ Package microtype Info: No adjustment of character kerning.
  (/usr/share/texmf-dist/tex/latex/microtype/mt-cmr.cfg
 File: mt-cmr.cfg 2013/05/19 v2.2 microtype config. file: Computer Modern Roman (RS)
 )
-<figures/hover_logo_4b.png, id=337, 1003.75pt x 917.4275pt>
+<figures/hover_logo_4b.png, id=341, 1003.75pt x 917.4275pt>
 File: figures/hover_logo_4b.png Graphic file (type png)
 <use figures/hover_logo_4b.png>
 Package pdftex.def Info: figures/hover_logo_4b.png  used on input line 107.
@@ -597,58 +597,58 @@ l.262
 pdfTeX warning (ext4): destination with the same identifier (name{page.3}) has been already used, duplicate ignored
 <to be read again> 
                    \relax 
-l.332 \begin{lstlisting}
-                         [3{/usr/share/texmf-dist/fonts/enc/dvips/lm/lm-mathsy.enc}] [4] [5] [6] [7] [8] [9] [10] [11] [12] [13] [14] [15] [16] [17] [18] [19] (/usr/share/texmf-dist/tex/latex/listings/lstlang1.sty
+l.333 
+       [3{/usr/share/texmf-dist/fonts/enc/dvips/lm/lm-mathsy.enc}] [4] [5] [6] [7] [8] [9] [10] [11] [12] [13] [14] [15] [16] [17] [18] [19] [20] (/usr/share/texmf-dist/tex/latex/listings/lstlang1.sty
 File: lstlang1.sty 2025/11/14 1.11b listings language file
 ) (/usr/share/texmf-dist/tex/latex/listings/lstlang1.sty
 File: lstlang1.sty 2025/11/14 1.11b listings language file
 ) (/usr/share/texmf-dist/tex/latex/listings/lstmisc.sty
 File: lstmisc.sty 2025/11/14 1.11b (Carsten Heinz)
-) [20] [21]
-Overfull \hbox (7.03627pt too wide) in paragraph at lines 1406--1412
+) [21] [22]
+Overfull \hbox (7.03627pt too wide) in paragraph at lines 1449--1455
 []\T1/lmr/m/n/10.95 (-20) Names scope to the mod-ule in-stance, ex-actly the way wires do. A mod-ule con-tain-ing \T1/lmtt/m/n/10 voltage_source
  []
 
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `\leavevmode@ifvmode' on input line 1446.
+(hyperref)                removing `\leavevmode@ifvmode' on input line 1489.
 
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
 (hyperref)                \kern 1.82538pt
-(hyperref)                removed on input line 1446.
+(hyperref)                removed on input line 1489.
 
-[22] [23] [24{/usr/share/texmf-dist/fonts/enc/dvips/lm/lm-mathex.enc}] [25] [26] [27]
-Overfull \hbox (30.65997pt too wide) in paragraph at lines 1828--1832
+[23] [24] [25] [26{/usr/share/texmf-dist/fonts/enc/dvips/lm/lm-mathex.enc}] [27] [28] [29]
+Overfull \hbox (30.65997pt too wide) in paragraph at lines 1904--1908
 []\T1/lmr/m/n/10.95 (-20) At a so-lu-tion the lim-iter is idle, \T1/lmtt/m/n/10 vd \T1/lmr/m/n/10.95 (-20) equals \T1/lmtt/m/n/10 v\T1/lmr/m/n/10.95 (-20) , and \T1/lmtt/m/n/10 id \T1/lmr/m/n/10.95 (-20) is the diode equa-tion ex-actly. \T1/lmtt/m/n/10 <optoelectronics/leds>\T1/lmr/m/n/10.95 (-20) '
  []
 
-[28] [29] [30]
-Overfull \hbox (55.67216pt too wide) in paragraph at lines 1981--1985
+[30] [31]
+Overfull \hbox (55.67216pt too wide) in paragraph at lines 2057--2061
 \T1/lmr/m/n/10.95 (-20) the li-brary ex-ports \T1/lmtt/m/n/10 HVR_set_param_gain\T1/lmr/m/n/10.95 (-20) , \T1/lmtt/m/n/10 HVR_set_input_vin\T1/lmr/m/n/10.95 (-20) , \T1/lmtt/m/n/10 HVR_set_input_taps\T1/lmr/m/n/10.95 (-20) , \T1/lmtt/m/n/10 HVR_get_output_main_vout\T1/lmr/m/n/10.95 (-20) ,
  []
 
-[31] [32] [33] [34] [35] (./hover_user_manual.aux)
+[32] [33] [34] [35] [36] [37] (./hover_user_manual.aux)
  ***********
 LaTeX2e <2025-11-01>
 L3 programming layer <2026-01-19>
  ***********
 Package rerunfilecheck Info: File `hover_user_manual.out' has not changed.
-(rerunfilecheck)             Checksum: C1105B22261156BC6E6283BEB3E5763D;13661.
+(rerunfilecheck)             Checksum: E82D27E24C60CC5F62A64A40EAC5A9C6;13894.
  ) 
 Here is how much of TeX's memory you used:
- 16823 strings out of 468318
- 255981 string characters out of 5442623
- 1193024 words of memory out of 5000000
- 44621 multiletter control sequences out of 15000+600000
- 709225 words of font info for 195 fonts, out of 8000000 for 9000
+ 16937 strings out of 468318
+ 257207 string characters out of 5442623
+ 1177088 words of memory out of 5000000
+ 44718 multiletter control sequences out of 15000+600000
+ 709308 words of font info for 196 fonts, out of 8000000 for 9000
  645 hyphenation exceptions out of 8191
  75i,13n,79p,1289b,2015s stack positions out of 10000i,1000n,20000p,200000b,200000s
 </usr/share/texmf-dist/fonts/type1/public/lm/lmbx10.pfb></usr/share/texmf-dist/fonts/type1/public/lm/lmbx12.pfb></usr/share/texmf-dist/fonts/type1/public/lm/lmbxi10.pfb></usr/share/texmf-dist/fonts/type1/public/lm/lmex10.pfb></usr/share/texmf-dist/fonts/type1/public/lm/lmmi10.pfb></usr/share/texmf-dist/fonts/type1/public/lm/lmmi8.pfb></usr/share/texmf-dist/fonts/type1/public/lm/lmr10.pfb></usr/share/texmf-dist/fonts/type1/public/lm/lmr12.pfb></usr/share/texmf-dist/fonts/type1/public/lm/lmr6.pfb></usr/share/texmf-dist/fonts/type1/public/lm/lmr8.pfb></usr/share/texmf-dist/fonts/type1/public/lm/lmri10.pfb></usr/share/texmf-dist/fonts/type1/public/lm/lmsy10.pfb></usr/share/texmf-dist/fonts/type1/public/lm/lmsy8.pfb></usr/share/texmf-dist/fonts/type1/public/lm/lmtk10.pfb></usr/share/texmf-dist/fonts/type1/public/lm/lmtt10.pfb></usr/share/texmf-dist/fonts/type1/public/lm/lmtti10.pfb>
-Output written on hover_user_manual.pdf (38 pages, 682764 bytes).
+Output written on hover_user_manual.pdf (40 pages, 691662 bytes).
 PDF statistics:
- 1314 PDF objects out of 1440 (max. 8388607)
- 1224 compressed objects within 13 object streams
- 608 named destinations out of 1000 (max. 500000)
- 45214 words of extra memory for PDF output out of 51595 (max. 10000000)
+ 1342 PDF objects out of 1440 (max. 8388607)
+ 1250 compressed objects within 13 object streams
+ 623 named destinations out of 1000 (max. 500000)
+ 45222 words of extra memory for PDF output out of 51595 (max. 10000000)
 

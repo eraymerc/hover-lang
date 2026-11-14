@@ -1,0 +1,36 @@
+import <semiconductors/thyristor> as dev;
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  TRIAC600V8A — generic 600 V / 8 A (RMS) triac, TYPICAL values
+//
+//  NOT a manufacturer part: round, typical figures for the standard-gate
+//  TO-220 triac of mains dimmers and AC switches, on the TRIAC of
+//  <semiconductors/thyristor> (two anti-parallel SCR sections, |IG| fed to
+//  both). See examples/Thyristor/triac_dimmer.hvr.
+//
+//  ── What the values give (measured on this card, Vt = 0.026 V) ─────────────
+//
+//    IGT  ~16 mA, VGT 0.51 V (12 V, 33 Ohm load; gate current ramp), the
+//         same in all four quadrants (no quadrant-IV insensitivity)
+//    IH   ~28 mA (gate open; supply ramped down). On 230 V mains into a
+//         529 Ohm lamp the current drops out at 176.3 deg of each half-cycle,
+//         ~38 mA, 3.7 deg before the voltage zero
+//    VT   0.76 V at 0.6 A, 1.15 V at 11 A (the peak of 8 A RMS)
+//    VBO  700 V in both directions
+//
+//  ── Fit ─────────────────────────────────────────────────────────────────────
+//
+//    IS = 1e-12, BFP = 1, BFN = 10, RGK = 33, RG = 1, RS = 10m, TT = 2u,
+//    CJ = 500p, VJ = 0.7, MJ = 0.4 — the SCR800V25A section, scaled down in
+//    area (higher RS, lower CJ).
+// ─────────────────────────────────────────────────────────────────────────────
+
+analog module TRIAC600V8A<>()[wire gate, wire mt2, wire mt1] {
+    module x = dev.TRIAC<1e-12, 1.0, 10.0,           // IS, BFP, BFN
+                         33.0, 1.0, 10m,             // RGK, RG, RS
+                         2u,                         // TT
+                         500p, 0.7, 0.4,             // CJ, VJ, MJ
+                         700.0, 700.0,               // VBO, VRB
+                         0.026>()                    // VT
+                        [gate, mt2, mt1];
+}

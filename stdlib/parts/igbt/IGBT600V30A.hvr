@@ -1,0 +1,60 @@
+import <semiconductors/igbt> as dev;
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  IGBT600V30A — generic 600 V / 30 A IGBT, TYPICAL values (no diode)
+//
+//  NOT a manufacturer part. There is no published model behind these numbers;
+//  they are round, typical figures for a 600-650 V, 30 A class trench /
+//  field-stop IGBT in a TO-247 package, chosen so the model's datasheet-style
+//  outputs land in the range such parts are sold with. Use it to study
+//  topologies, not to reproduce a specific data sheet. For the co-packaged
+//  freewheeling diode version see IGBTD600V30A.hvr.
+//
+//  ── What the values give (measured on this card, Vt = 0.026 V) ─────────────
+//
+//    VGE(th)          5.5 V                         (VTH)
+//    knee             ~0.7 V: 1 A at VCE = 0.70 V, VGE = 15 V
+//    VCE(sat)         1.97 V at 30 A, 1.13 V at 10 A, VGE = 15 V
+//                     (typical sheets: 1.5-2.1 V at rated current)
+//    gfs              16 S at 30 A                  ((1 + BF) KP (VGE - VTH))
+//    IC in active     13.7 A at VGE = 8 V, 115 A at VGE = 15 V, VCE = 6 V
+//                     (the latter is the short-circuit current, typ. 4-6x
+//                     rated)
+//    tail             alpha = BF/(1 + BF) = 1/3 of IC, tau = BF*TF = 200 ns
+//                     (examples/IGBT/igbt_double_pulse.hvr: 20 A turned off at
+//                     400 V leaves a 6.3 A tail decaying with tau = 200 ns)
+//    Cies / Coes / Cres at VCE = 25 V:  1.60 nF / 0.12 nF / 0.049 nF
+//                     (from the formulas in <semiconductors/igbt>)
+//    J1 reverse breakdown at 30 V
+//
+//  ── Fit ─────────────────────────────────────────────────────────────────────
+//
+//    VTH = 5.5    mid-range of the usual 4.5-6.5 V window
+//    KP  = 3.0    with BF sets the saturation current (1+BF) KP/2 (VGE-VTH)^2
+//    LAMBDA = 0.002
+//    BF  = 0.5    PNP gain; alpha_pnp ~ 0.33 is typical of field-stop parts
+//    IS  = 1n, N = 1.3   J1 knee: ~0.75 V at 10 A of hole current
+//    TF  = 400n   drift transit time -> 200 ns tail time constant
+//    RC  = 5m     ohmic resistance of each ohmic section (on-state slope
+//                 ~2.7 RC; 5 mOhm is the floor the model header asks for)
+//    RG  = 2      internal gate resistance
+//    BVR = 30     reverse blocking of a field-stop part (tens of volts)
+//    CGE = 1.55n, CGC = 350p, CCE = 500p, VJ = 0.5, MJ = 0.5
+//                 Cres(25 V) = 350p/sqrt(51) = 49 pF,
+//                 Coes(25 V) = 49p + 500p/sqrt(51) = 119 pF,
+//                 Cies(25 V) = 1.55n + 49p = 1.60 nF
+//
+//  ── Not modelled ────────────────────────────────────────────────────────────
+//
+//  No avalanche (blocks any voltage), no latch-up, no temperature: a 25 C
+//  device. See <semiconductors/igbt> for the model's limits.
+// ─────────────────────────────────────────────────────────────────────────────
+
+analog module IGBT600V30A<>()[wire gate, wire collector, wire emitter] {
+    module q = dev.IGBT<5.5, 3.0, 0.002,               // VTH, KP, LAMBDA
+                        0.5, 1n, 1.3, 400n,            // BF, IS, N, TF
+                        5m, 2.0, 30.0,                 // RC, RG, BVR
+                        1.55n, 350p, 500p, 0.5, 0.5,   // CGE, CGC, CCE, VJ, MJ
+                        0.026>()                       // VT
+                       [gate, collector, emitter];
+}

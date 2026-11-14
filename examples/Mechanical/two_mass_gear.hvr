@@ -1,0 +1,58 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  HVR Testbench — Motor, Gearbox and Flexible Shaft (Two-Mass System)
+//  Validates: the <mechanical> Gear, FlexibleShaft, Inertia and
+//             ViscousFriction parts between a DC motor and its load
+// ─────────────────────────────────────────────────────────────────────────────
+//
+//      24 V ── PMDC24V_100W ──m── Gear 5:1 ──g── FlexibleShaft ──ld── load
+//                (J, B)                          K = 20 N·m/rad        J = 5e-3
+//                                                D = 1e-3              B = 5e-3
+//
+//  Every shaft is a node: V = speed in rad/s, current = torque in N·m.
+//  The gear makes ω(g) = ω(m)/5 and hands 5× the torque on, so the load's
+//  5e-3 kg·m² looks like 5e-3/25 = 2e-4 kg·m² to the motor — ten times the
+//  motor's own rotor. The shaft between gear and load is a torsion spring
+//  (an inductor of 1/K henry: its current is the twisting torque) with a
+//  little damping: a two-mass system, motor+gear on one side, load on the
+//  other, whose torsional mode the start excites.
+//
+//  The supply is a plain 24 V source and there is no .op, so the run starts
+//  with everything at rest and the motor switched on.
+//
+//  ── Expected result ─────────────────────────────────────────────────────────
+//
+//  The circuit is linear, so the exact answer is a matrix exponential of the
+//  four states (ia, ω motor, spring torque, ω load); the simulation follows
+//  it to a few mrad/s at the 20 µs ceiling below. Starting, the spring
+//  torque peaks at 7.51 N·m at 15.7 ms (the load is accelerated through the
+//  spring) and the torsional mode shows as one overshoot at 28.0 Hz: the
+//  two-mass formula √(K·(Ja + Jb)/(Ja·Jb))/2π, with Ja = 25·J_rotor the
+//  motor side seen through the gear, gives 33.4 Hz undamped, and the
+//  motor's back-EMF damps it heavily (damping ratio 0.67). Final state:
+//  ω motor 328.767 rad/s, ω load 65.753 rad/s (= ω motor / 5 exactly),
+//  spring torque 0.32877 N·m = B_load·ω load, armature current 0.9863 A.
+//  ~50k steps.
+// ─────────────────────────────────────────────────────────────────────────────
+
+.save(main.m, main.g, main.ld, I(main.coupling.spring), main.i_a);
+.tran(0, 1.0, 20u);
+.solver(bdf2);
+
+from <electromechanical/parts> import PMDC24V_100W;
+from <mechanical> import Gear, FlexibleShaft, Inertia, ViscousFriction;
+
+module main<>()[]
+{
+    wire vdc;
+    wire m, g, ld;              // motor shaft, gear output, load shaft
+
+    state double omega = 0, i_a = 0, theta = 0, torque_em = 0;
+
+    voltage_source supply<24>() [vdc, gnd];
+
+    module motor    = PMDC24V_100W<>(omega, i_a, theta, torque_em)[vdc, gnd, m];
+    module gearbox  = Gear<5>()[m, g];
+    module coupling = FlexibleShaft<20, 1m>()[g, ld];
+    module load_j   = Inertia<5m>()[ld];
+    module load_b   = ViscousFriction<5m>()[ld];
+}

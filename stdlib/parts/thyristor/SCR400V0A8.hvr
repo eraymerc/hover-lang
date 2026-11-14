@@ -1,0 +1,44 @@
+import <semiconductors/thyristor> as dev;
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  SCR400V0A8 — generic 400 V / 0.8 A sensitive-gate SCR, TYPICAL values
+//
+//  NOT a manufacturer part: round, typical figures for the small TO-92
+//  sensitive-gate thyristor class (the kind driven straight from a logic
+//  output or an RC timer), fitted on the two-transistor SCR of
+//  <semiconductors/thyristor>. Use it for topology studies.
+//
+//  ── What the values give (measured on this card, Vt = 0.026 V) ─────────────
+//
+//    IGT  ~0.17 mA, VGT 0.64 V    (12 V, 1 kOhm load; gate current ramp)
+//    IH   ~1.5 mA                 (gate open; supply ramped down)
+//    VT   1.20 V at 1 A
+//    VBO  500 V forward breakover, VRB 500 V reverse breakdown
+//
+//  ── Fit ─────────────────────────────────────────────────────────────────────
+//
+//    IS = 2e-14           sets VGT at IGT (0.64 V)
+//    BFP = 0.167, BFN = 20  alpha_p = 0.14: IH/IGT ~ 10, typical of this class
+//    RGK = 3.3k           the built-in cathode short: IGT ~ VGT/RGK
+//    RG = 10, RS = 0.1    gate spreading / ohmic sections (on-state ~0.2 Ohm)
+//    TT = 1u              stored charge: turn-on delay, recovery, turn-off
+//    CJ = 100p, VJ = 0.7, MJ = 0.4   J2 capacitance: ~14 pF at 100 V, which
+//                         with RGK gives the low dv/dt rating (~10-15 V/us)
+//                         these parts have — an external gate-cathode
+//                         resistor raises it, exactly as on the data sheet
+//
+//  The gate circuit is part of the holding current: any resistance from the
+//  gate to the cathode outside the device parallels RGK and raises IH (a
+//  500 Ohm gate driver that pulls to 0 V raises it about eightfold). Data
+//  sheets quote IH with the gate open, and so does the figure above.
+// ─────────────────────────────────────────────────────────────────────────────
+
+analog module SCR400V0A8<>()[wire gate, wire anode, wire cathode] {
+    module x = dev.SCR<2e-14, 0.167, 20.0,           // IS, BFP, BFN
+                       3.3k, 10.0, 0.1,              // RGK, RG, RS
+                       1u,                           // TT
+                       100p, 0.7, 0.4,               // CJ, VJ, MJ
+                       500.0, 500.0,                 // VBO, VRB
+                       0.026>()                      // VT
+                      [gate, anode, cathode];
+}

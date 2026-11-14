@@ -1,0 +1,74 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  Three-phase transformers — banks of three single-phase T-models
+//
+//  Three <magnetics> Transformer units, one per phase, wired in a vector
+//  group. All parameters are PER WINDING and mean exactly what they mean for
+//  Transformer (n = Ns/Np of one winding pair, Lm, leakages and resistances
+//  of one winding).
+//
+//    TransformerYy   YNyn0   primary star with neutral pn, secondary star
+//                            with neutral sn. Line voltages transform by n, no
+//                            phase shift.
+//    TransformerDy   Dyn11   primary delta, secondary star with neutral sn.
+//                            Winding sa is on the pa-pb limb, so the
+//                            secondary leads the primary by 30 degrees and the
+//                            line-to-line ratio is sqrt(3) n.
+//
+//  ── What a bank is, and is not ─────────────────────────────────────────────
+//
+//  Each phase has its own magnetic circuit, as in three single-phase units.
+//  A three-limb core couples the phases magnetically — zero-sequence flux has
+//  to return through air and the tank, so its zero-sequence magnetising
+//  inductance is far lower than the bank's — and that coupling is not
+//  modelled. For balanced operation the two are the same; with unbalanced
+//  loads they differ by how much zero-sequence flux the core sees, which on a
+//  Dyn is small because the delta carries the zero-sequence current.
+//
+//  ── Terminals ──────────────────────────────────────────────────────────────
+//
+//  Primary pa, pb, pc (and the star point pn of the Yy); secondary sa, sb, sc
+//  and its star point sn. (Not A/a: hoverdeck matches pins to ports ignoring
+//  case.) Ground the secondary star point sn, or tie it somewhere: the
+//  secondary is isolated (coupled.hvr explains why every isolated side needs a
+//  reference). pn of the Yy is normally the supply's neutral; leave it on a
+//  large resistor to ground for an isolated star, never fully unconnected.
+//
+//  Winding currents: I(<instance>.ta.w1) / .w2 for the sa-phase unit, .tb and
+//  .tc for the others.
+//
+//  Use ndf2 or bdf2, and no `.op;` with three sinusoidal sources: two of them
+//  are non-zero at t = 0, and .op takes those values as DC (see coupled.hvr).
+//
+//  ── Verified ───────────────────────────────────────────────────────────────
+//
+//  325 V-peak (230 V rms) balanced supply, star-connected 3 Ohm (Dy) and
+//  4 Ohm (Yy) loads, against the per-unit phasor solution of the T-model:
+//    Dy, n = 0.04, Lm = 20 H, Llp = 30 mH, Lls = 50 uH, Rp = 8, Rs = 0.015:
+//      22.27556 V at +29.4904 deg from V(pa) (analytic 22.27562 V,
+//      +29.4904 deg); sb lags sa by 120.000 deg.
+//    Yy, n = 0.1, same Lm/Llp/Rp, Lls = 0.3 mH, Rs = 0.08:
+//      31.17289 V at -2.5213 deg (analytic 31.17299 V, -2.5211 deg).
+//  ndf2 and bdf2 alike.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// YNyn0 bank.
+module TransformerYy<double n, double Lm,
+                     double Llp = 0, double Lls = 0,
+                     double Rp = 0,  double Rs = 0>()
+    [wire pa, wire pb, wire pc, wire pn, wire sa, wire sb, wire sc, wire sn]
+{
+    module ta = Transformer<n, Lm, Llp, Lls, Rp, Rs>() [pa, pn, sa, sn];
+    module tb = Transformer<n, Lm, Llp, Lls, Rp, Rs>() [pb, pn, sb, sn];
+    module tc = Transformer<n, Lm, Llp, Lls, Rp, Rs>() [pc, pn, sc, sn];
+}
+
+// Dyn11 bank: windings on pa-pb, pb-pc, pc-pa feed sa, sb, sc.
+module TransformerDy<double n, double Lm,
+                     double Llp = 0, double Lls = 0,
+                     double Rp = 0,  double Rs = 0>()
+    [wire pa, wire pb, wire pc, wire sa, wire sb, wire sc, wire sn]
+{
+    module ta = Transformer<n, Lm, Llp, Lls, Rp, Rs>() [pa, pb, sa, sn];
+    module tb = Transformer<n, Lm, Llp, Lls, Rp, Rs>() [pb, pc, sb, sn];
+    module tc = Transformer<n, Lm, Llp, Lls, Rp, Rs>() [pc, pa, sc, sn];
+}

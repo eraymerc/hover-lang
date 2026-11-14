@@ -1,0 +1,281 @@
+import <semiconductors> as dev;
+import <semiconductors/mosfet> as mos;
+import <semiconductors/bjt> as bjt;
+from <math> import pow;
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Insulated-Gate Bipolar Transistor — MOSFET-driven wide-base PNP
+//
+//  What it is
+//  ──────────
+//  An IGBT is a power MOSFET built on a p+ substrate. The substrate is the
+//  collector, and it turns the device's drain side into the emitter junction
+//  of a PNP: the MOS channel's electron current is the base current of a
+//  wide-base PNP whose base is the n- drift region and whose collector is the
+//  p-body under the emitter contact. That is exactly the circuit below, built
+//  from the standard library's own NMOS (Level 1) and PNP (Gummel-Poon):
+//
+//      collector ──[RC]── PNP emitter (J1, the p+/n- junction)
+//                         PNP base = nb = MOS drain (n- drift)
+//                         PNP collector ─────────────┐
+//      gate ──[RG]── gi ── MOS gate                   │
+//      emitter ────────── MOS source (bulk tied) ─────┴── emitter
+//
+//  It is the textbook equivalent circuit of the IGBT (Baliga, "Fundamentals
+//  of Power Semiconductor Devices", ch. 9) minus the parasitic NPN: latch-up
+//  is a failure mode, not an operating mode, and it is deliberately absent.
+//  Every exponential junction in it is a stdlib junction — pnjlim anchored on
+//  nr_prev of its own output, the 60 nVt hold, nodiff, companion form — so
+//  nothing here re-derives junction limiting.
+//
+//  Equations (static, forward conduction)
+//  ──────────────────────────────────────
+//    I_mos = KP/2 (Vge - VTH)^2 (1 + LAMBDA Vds)          active region
+//          = KP (Vov Vds - Vds^2/2) (1 + LAMBDA Vds)      triode
+//    I_C   = (1 + BF) I_mos                                PNP: hole current
+//                                                          is BF x electron
+//    V_CE  = V_J1 + V_ds + ~2.7 RC I_C,  V_J1 ~ N Vt ln(I_C / ((1 + 1/BF) IS))
+//
+//  so the output characteristic has the three features a datasheet shows:
+//    · a knee — nothing flows until J1 is forward biased, V_J1 ~ 0.6-0.9 V;
+//    · an on-resistance above the knee — the MOS triode channel plus RC,
+//      which together make V_CE(sat);
+//    · a flat active region whose level is set by the gate, with forward
+//      transconductance g_fs = (1 + BF) KP (Vge - VTH) — a square law in the
+//      gate overdrive, which is what an IGBT's transfer curve is between
+//      threshold and the high-current roll-off.
+//
+//  Turn-off tail — dynamic, and it falls out of the PNP
+//  ─────────────────────────────────────────────────────
+//  The PNP's forward diffusion charge Q = TF i_f is the excess carrier charge
+//  stored in the drift region. When the gate turns the channel off the base
+//  current is gone, nothing can pull that charge out, and it can only
+//  recombine: dQ/dt = -i_f/BF, i.e.
+//
+//      i_tail(t) = BF/(1 + BF) I_C0 e^(-t / (BF TF))
+//
+//  The tail starts at the hole fraction alpha = BF/(1 + BF) of the conducted
+//  current — the electron (MOS) fraction stops with the channel — and decays
+//  with tau = BF TF. Both are the textbook IGBT tail, and both are measured
+//  in examples/IGBT/igbt_double_pulse.hvr. The same charge also gives the
+//  "dynamic saturation" at turn-on: the PNP needs ~BF TF to fill its base,
+//  and until then V_CE sits above V_CE(sat). TF = 0 removes both.
+//
+//  Capacitances (all optional — 0 disables each)
+//  ─────────────────────────────────────────────
+//    CGE  gate-emitter, constant (gate oxide over source and p-body). The
+//         NMOS's CGSO.
+//    CGC  gate-collector — the Miller capacitance — at Vcg <= 0. It is the
+//         gate oxide in series with the depletion layer in the drift region
+//         under the gate, so above Vcg = 0 it falls as the layer widens:
+//             C = CGC                          Vcg <= 0  (accumulation)
+//             C = CGC / (1 + Vcg/VJ)^MJ        Vcg  > 0  (depletion)
+//         written as the charge, so ddt() integrates it exactly. It is tied
+//         to the drift node nb, which is where the oxide actually sits; nb
+//         rides a junction drop below the collector whenever the device
+//         carries current.
+//    CCE  collector-emitter at 0 V: the depletion capacitance of the
+//         blocking junction J2 (drift to p-body), the PNP's Cjc with the same
+//         VJ, MJ, because it is the same depletion layer.
+//  A datasheet's Cies/Coes/Cres at its test voltage V give
+//      Cres = CGC/(1 + V/VJ)^MJ,  Coes ~ Cres + CCE/(1 + V/VJ)^MJ,
+//      Cies = CGE + Cres.
+//
+//  Parameters (SI units; "0 disables" where noted)
+//  ───────────────────────────────────────────────
+//    VTH     V      gate threshold voltage (the MOS VTO)
+//    KP      A/V^2  MOS transconductance coefficient (lumped, W = L = 1)
+//    LAMBDA  1/V    channel-length modulation; output slope in active region
+//    BF      -      PNP current gain = hole/electron current ratio (0.3-2
+//                   for real devices; alpha = BF/(1+BF) is the tail fraction)
+//    IS      A      PNP emitter-junction (J1) saturation current
+//    N       -      J1 emission coefficient. IS and N set the knee voltage
+//    TF      s      drift-region transit time; tail tau = BF*TF (0 = no tail)
+//    RC      Ohm    ohmic resistance of each ohmic section (collector, MOS
+//                   drain and source access, emitter); on-state ohmic slope
+//                   ~2.7 RC. Keep >= ~5 mOhm: see "Ohmic resistance" below
+//    RG      Ohm    internal gate resistance (> 0)
+//    BVR     V      reverse breakdown of the collector junction J1, i.e. the
+//                   reverse blocking voltage (tens of volts for field-stop
+//                   parts; 0 = no breakdown, see the J1 note in the body)
+//    CGE     F      gate-emitter capacitance                  (0 disables)
+//    CGC     F      gate-collector capacitance at Vcg <= 0    (0 disables)
+//    CCE     F      collector-emitter capacitance at 0 V      (0 disables)
+//    VJ      V      drift depletion built-in voltage scale for CGC/CCE (> 0)
+//    MJ      -      depletion grading exponent for CGC/CCE (0 < MJ < 1)
+//    VT      V      thermal voltage (isothermal model)
+//
+//  Limits — what is not modelled
+//  ─────────────────────────────
+//    · No latch-up (no parasitic NPN), no short-circuit self-heating, no
+//      temperature dependence: a 25 C, isothermal device.
+//    · No forward avalanche: the device blocks any forward voltage. Reverse
+//      voltage is blocked by J1 up to BVR, where J1 breaks down — tens of
+//      volts for punch-through/field-stop parts, which is why IGBTD below
+//      (and every bridge) carries an anti-parallel diode.
+//    · The tail is single-exponential (one lumped stored charge); the
+//      Hefner model's moving-boundary drift region and voltage-dependent
+//      tail are not reproduced.
+//    · High-current transconductance roll-off is not modelled: the square law
+//      continues; NMOS caps the overdrive at 20 V.
+// ─────────────────────────────────────────────────────────────────────────────
+
+analog module IGBT<double VTH, double KP,  double LAMBDA,
+                   double BF,  double IS,  double N,     double TF,
+                   double RC,  double RG,  double BVR,
+                   double CGE, double CGC, double CCE,   double VJ, double MJ,
+                   double VT>()
+    [wire gate, wire collector, wire emitter]
+{
+    // gi: the gate behind RG.  nb: the n- drift region, which is the MOS drain
+    // and the PNP base at once.
+    wire gi, nb;
+
+    R<RG>() [gate, gi];
+
+    // ── Ohmic resistance: RC, in every ohmic section, never 1 mOhm ──────────
+    // The stdlib transistors take their terminal resistances as R<> primitives
+    // and R<0> is rejected, so a section with "no" resistance has to be given
+    // some value. The library's habit is 1 mOhm. Here that value is not
+    // harmless: at 1 kS a resistor at a few hundred volts carries roundoff of
+    // G * V * eps ~ 1e3 * 300 * 2.2e-16 ~ 7e-11 A in its KCL row, while an
+    // off device's internal nodes are held only by GMIN-level currents
+    // (1e-12 S * 300 V ~ 3e-10 A). Two blocking devices in series — a bridge
+    // leg with both switches off — leave their midpoint to be decided by
+    // exactly those currents, and with 1 mOhm sections Newton's update for it
+    // is roundoff: measured on two series-blocking thyristors built the same
+    // way, 18 iterations per step and trust-region rescues at 1 mOhm, 3.5 at
+    // 10 mOhm, 3.0 at 100 mOhm (see <semiconductors/thyristor>). The bound is
+    // G << GMIN/eps ~ 4.5 kS, independent of the voltage.
+    //
+    // So no section here is 1 mOhm: the collector side (the PNP's emitter
+    // resistance), the PNP's collector (the emitter-side p-body), its base
+    // contact to the drift region, and the MOS drain and source access
+    // regions each get RC. Together they make the
+    // on-state ohmic slope roughly RC + 2/3 * 2 RC + 1/3 * RC ~ 2.7 RC (the MOS
+    // carries 1/(1 + BF) of the current, the PNP collector the rest). Keep RC
+    // at or above ~5 mOhm; the part cards quote the resulting VCE(sat).
+
+    // ── MOS channel: Level-1 NMOS, lumped geometry, bulk tied to source ──────
+    // RD/RS are RC, as above. TOX = 0: no Meyer
+    // capacitance; CGE is the overlap CGSO, and the Miller capacitance is
+    // written below against nb with its depletion law instead of the
+    // constant CGDO. The bulk-drain junction is the MOS body diode
+    // (emitter -> nb); it never forward biases in operation (nb sits above the
+    // emitter), and in reverse J1 blocks in series with it.
+    module ch = mos.NMOS<VTH, KP, 0.0, 0.6, LAMBDA,     // VTO, KP, GAMMA, PHI, LAMBDA
+                         1.0, 1.0, 0.0,                 // W, L, LD (lumped)
+                         RC, RC,                        // RD, RS
+                         0.0, CGE, 0.0, 0.0,            // TOX, CGSO, CGDO, CGBO
+                         1.0e-14, 1.0, 0.8,             // IS, N, PB (body diode)
+                         0.0, 0.0, 0.0, 0.5,            // CBD, CBS, CJ, MJ
+                         0.0, 0.33, 0.5, 0.0,           // CJSW, MJSW, FC, TT
+                         0.0, 0.0, 0.0, 0.0,            // AD, ASRC, PD, PSRC
+                         VT>()
+                        [gi, nb, emitter];
+
+    // ── Wide-base PNP: J1 is its emitter junction ───────────────────────────
+    // Gummel-Poon with everything off except what an IGBT needs: IS/N for the
+    // knee, BF for the hole current, TF for the stored charge, and the
+    // blocking junction J2's depletion charge as Cjc. Re, Rc and Rb are RC
+    // (see above; Rb is synthesized from a voltage source inside the PNP,
+    // V = Rb * I, and a 1 mOhm coefficient there makes its branch current the
+    // same roundoff amplifier as a 1 kS conductance). Br = 1, Nr = 1:
+    // the reverse-active PNP only matters for Vce < 0, where J1 blocks anyway.
+    module bp = bjt.PNP<IS, N, 1.0,                     // Is, Nf, Nr
+                        BF, 1.0,                        // Bf, Br
+                        0.0, 0.0,                       // Vaf, Var
+                        0.0, 0.0,                       // Ikf, Ikr
+                        0.0, 1.5,                       // Ise, Ne
+                        0.0, 2.0,                       // Isc, Nc
+                        RC, 0.0, 0.0,                   // Rb, Rbm, Irb
+                        RC, RC,                         // Re, Rc
+                        0.0, 0.75, 0.33,                // Cje, Vje, Mje
+                        CCE, VJ, MJ,                    // Cjc, Vjc, Mjc  (J2)
+                        0.5, TF, 0.0,                   // Fc, Tf, Tr
+                        0.0, VT>()                      // Cjs, Vt
+                       [nb, emitter, collector];
+
+    // ── Miller capacitance: gate oxide over the drift region ────────────────
+    // v = Vcg seen from the drift side, V(nb) - V(gi). Charge of
+    // C(v) = CGC (v <= 0), CGC/(1 + v/VJ)^MJ (v > 0): continuous in charge and
+    // capacitance at v = 0, so a switching edge crossing it sees no step.
+    double v_dg = V(nb) - V(gi);
+    double q_gc = CGC * v_dg;
+    if (v_dg > 0.0) {
+        q_gc = CGC * VJ / (1.0 - MJ) * (pow(1.0 + v_dg / VJ, 1.0 - MJ) - 1.0);
+    }
+    double i_gc = ddt(q_gc);
+    current_source<>(i_gc) [nb, gi];
+
+    // ── J1 reverse breakdown ────────────────────────────────────────────────
+    // A field-stop or punch-through IGBT's collector junction J1 blocks only
+    // a few tens of volts in reverse before it avalanches. That is a property
+    // of the device, and it is also what bounds the drift node nb: with the
+    // channel off, nb sits between two junctions, and whenever the emitter is
+    // driven ABOVE the collector — the idle device of every bridge leg while
+    // its partner's current freewheels through the anti-parallel diode — both
+    // of them are reverse biased and nothing else connects to nb but
+    // capacitance. Without a breakdown the turn-off of the partner switch
+    // capacitively pumps nb a whole bus voltage above the rails (measured in a
+    // 400 V double-pulse test: nb = 800 V, held there by leakage alone) and
+    // that floating node costs Newton 5-8 iterations on every step for as long
+    // as it lasts. With J1 breaking down at BVR the same node sits at
+    // collector + BVR and the steps take 3.
+    //
+    // The breakdown is the stdlib Diode's own Bv term (its own pnjlim on the
+    // breakdown argument), from the collector to nb, with RC as its series
+    // resistance like every other section. It is a breakdown-only junction:
+    // its forward branch is suppressed (Is = IS * 1e-6 with N = 10, so
+    // e^(v/(10 Vt)) stays below 1e4 for the < 2.5 V J1 plus RC drop ever
+    // reaches — under 1e-11 A), and the forward J1 current remains entirely
+    // the PNP's. BVR = 0 disables the breakdown (a reverse-blocking device),
+    // and then nb floats as described.
+    module j1 = dev.Diode<IS * 1.0e-6, 10.0, RC,       // Is, N, Rs
+                          0.0,                         // Ikf
+                          0.0, 2.0,                    // Isr, Nr
+                          BVR, 1m,                     // Bv, Ibv
+                          0.0, 0.75, 0.33, 0.5,        // Cjo, Vj, M, Fc
+                          0.0, VT>()                   // Tt, Vt
+                         [collector, nb];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  IGBTD — IGBT with a co-packaged anti-parallel (freewheeling) diode
+//
+//  The IGBT above plus a stdlib Diode from emitter to collector, as nearly
+//  every bridge-leg IGBT is sold. The diode is the full SPICE Level-1 junction
+//  of <semiconductors>' Diode — its reverse recovery is the TT charge, and it
+//  reproduces ngspice's D model with the same card (measured: peak reverse
+//  current, trr and Qrr within 0.2 %).
+//
+//  Extra parameters (the diode's, SPICE card names with a _D suffix):
+//    IS_D  A    saturation current          N_D   -   emission coefficient
+//    RS_D  Ohm  series resistance (> 0)     TT_D  s   transit time (recovery)
+//    CJO_D F    zero-bias junction cap      VJ_D  V   junction potential
+//    M_D   -    grading coefficient
+//  No breakdown on the diode: the IGBT blocks the same voltage forward and the
+//  pair never sees the diode reversed beyond the bus.
+// ─────────────────────────────────────────────────────────────────────────────
+
+analog module IGBTD<double VTH, double KP,  double LAMBDA,
+                    double BF,  double IS,  double N,     double TF,
+                    double RC,  double RG,  double BVR,
+                    double CGE, double CGC, double CCE,   double VJ, double MJ,
+                    double IS_D, double N_D, double RS_D,
+                    double CJO_D, double VJ_D, double M_D, double TT_D,
+                    double VT>()
+    [wire gate, wire collector, wire emitter]
+{
+    module q = IGBT<VTH, KP, LAMBDA, BF, IS, N, TF, RC, RG, BVR,
+                    CGE, CGC, CCE, VJ, MJ, VT>()
+                   [gate, collector, emitter];
+
+    module d = dev.Diode<IS_D, N_D, RS_D,
+                         0.0,                           // Ikf
+                         0.0, 2.0,                      // Isr, Nr
+                         0.0, 0.0,                      // Bv, Ibv (none)
+                         CJO_D, VJ_D, M_D, 0.5,         // Cjo, Vj, M, Fc
+                         TT_D, VT>()
+                        [emitter, collector];
+}

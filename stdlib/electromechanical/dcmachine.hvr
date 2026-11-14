@@ -1,0 +1,213 @@
+// tanh: the optional smooth saturation of the wound-field machines.
+from <math> import tanh;
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  DC machines — permanent-magnet, separately excited, shunt and series
+//
+//      ap ──Ra──La──( e = K·ωm )── an          armature
+//      fp ──Rf──Lf── fn                         field (wound-field machines)
+//                                               ┌──────────────────────┐
+//                                               │ C<J>   B·ω    T_em   │── shaft
+//                                               └──────────────────────┘
+//  Equations (motor convention: positive armature current flows into ap):
+//
+//      V(ap) − V(an) = Ra·ia + La·dia/dt + K·ωm
+//      T_em          = K·ia
+//
+//  K is the machine constant, the same number for the back-EMF (V·s/rad)
+//  and the torque (N·m/A): in SI units Ke = Kt exactly, because e·ia = T_em·ωm
+//  is the power converted between the electrical and mechanical sides. A
+//  data-sheet speed constant Kv in rpm/V gives K = 60/(2π·Kv); a torque
+//  constant in N·m/A is K directly.
+//
+//  For the wound-field machines K is made by the field current:
+//
+//      V(fp) − V(fn) = Rf·if + dλf/dt,   λf = Lf·g(if)
+//      K(if)         = Laf·g(if)
+//      g(i) = i                          (If_sat = 0, linear: the default)
+//      g(i) = If_sat·tanh(i / If_sat)    (If_sat > 0, smooth saturation)
+//
+//  Laf is the field-to-armature mutual inductance (H): K = Laf·if in the
+//  linear range. The same g() shapes the field's own flux, so the field
+//  inductance falls with saturation (incremental Lf·g'(if)) just as the
+//  EMF constant flattens; g is odd and smooth through zero, so a series
+//  machine at zero current has zero flux, zero EMF and zero torque without
+//  any special case. In saturation K approaches Laf·If_sat: If_sat is the
+//  field current at which the linear K would reach that ceiling (at if =
+//  If_sat the flux is 76 % of the linear value).
+//
+//  Elements. The armature is an ordinary series branch: an inductor (its
+//  branch current IS ia) and a voltage source carrying Ra·ia + K·ωm, so
+//  Ra = 0 is allowed (as Rs in PMSM). The field is one voltage source that
+//  reads its own branch current and carries Rf·if + ddt(λf) — the form
+//  <magnetics>' SaturableInductor uses for a current-dependent flux. The
+//  mechanics are PMSM's exactly: V(shaft) = ωm (rad/s), current = torque
+//  (N·m), J a capacitor, B a self-sensing VCCS (so B = 0 is allowed), the
+//  electromagnetic torque a current source into the shaft node, motoring
+//  torque positive, loads from shaft to ground (see pmsm.hvr and
+//  <mechanical>). Unlike the three-phase machines the terminals are not
+//  current sources: an open armature or field is legal.
+//
+//  Steady state at constant speed, linear field (what the tests check):
+//
+//      PM / separately excited:  ωm = (Va − Ra·T/K) / K,   K = Laf·If
+//      shunt (field across Va):  the same with If = Va/Rf
+//      series (if = ia = i):     T = Laf·i²,  ωm = (V − (Ra + Rf)·i)/(Laf·i)
+//
+//  The series machine's speed rises without limit as the load falls (as a
+//  real one does): never run it without load.
+//
+//  Generating. Driven faster than its no-load speed (K·ωm > Va) the current
+//  reverses, T_em < 0, and power flows into the electrical port.
+//
+//  Not modelled: residual magnetism (so a self-excited shunt or series
+//  generator cannot build up from zero — give the field a separate supply),
+//  armature reaction, commutation and brush drop (add a series resistor or
+//  diode-like element for the brush drop if it matters), iron loss,
+//  compensating and interpoles, temperature.
+//
+//  Modules
+//    DCMachinePM      <Ra, La, K, J, B>                [ap, an, shaft]
+//    DCMachineSepEx   <Ra, La, Rf, Lf, Laf, J, B, If_sat = 0>
+//                                                      [ap, an, fp, fn, shaft]
+//    DCMachineShunt   <same as SepEx>                  [p, n, shaft]
+//    DCMachineSeries  <same as SepEx>                  [p, n, shaft]
+//
+//  Parameters
+//      Ra      armature resistance, Ohm (0 allowed)
+//      La      armature inductance, H (> 0)
+//      K       PM machine constant, V·s/rad = N·m/A
+//      Rf      field resistance, Ohm (> 0 for a field fed from a DC voltage)
+//      Lf      field (self) inductance, unsaturated, H (0 allowed)
+//      Laf     field-armature mutual inductance, H: K = Laf·if
+//      J       rotor inertia, kg·m² (0 allowed, see pmsm.hvr)
+//      B       rotor viscous friction, N·m·s/rad (0 allowed)
+//      If_sat  field saturation current, A (0 = linear, the default)
+//
+//  Outputs (logic)
+//      omega_m_out  mechanical speed ωm, rad/s (= V(shaft))
+//      i_a_out      armature current ia, A (positive into ap)
+//      i_f_out      field current if, A (wound-field machines)
+//      theta_m_out  mechanical shaft angle ∫ωm dt, rad (0 at t = 0,
+//                   unwrapped; an integrator state, as PMSM's θe)
+//      torque_out   electromagnetic torque T_em, N·m (before friction)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ═══════════════════════════════════════════════════════════════
+//  Permanent-magnet DC machine
+// ═══════════════════════════════════════════════════════════════
+
+analog module DCMachinePM<double Ra, double La, double K, double J, double B>
+    (output double omega_m_out, output double i_a_out,
+     output double theta_m_out, output double torque_out)
+    [wire ap, wire an, wire shaft]
+{
+    wire x;
+
+    // ── Mechanics, on the shaft node (as PMSM) ──────────────────────────────
+    C<J>()                   [shaft, gnd];
+    VCCS<B>()                [shaft, gnd, shaft, gnd];
+    double omega_m = V(shaft);
+
+    // ── Armature: ap ── La ── x ──(Ra·ia + K·ωm)── an ──────────────────────
+    double i_a = I(La_coil);
+    double v_x = Ra * i_a + K * omega_m;
+    L La_coil<La>()         [ap, x];
+    voltage_source<>(v_x)   [x, an];
+
+    // ── Electromagnetic torque, into the shaft ──────────────────────────────
+    double torque = K * i_a;
+    current_source<>(torque) [gnd, shaft];
+
+    omega_m_out = omega_m;
+    i_a_out     = i_a;
+    theta_m_out = idt(omega_m);
+    torque_out  = torque;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  Separately excited DC machine (wound field, own terminals)
+// ═══════════════════════════════════════════════════════════════
+
+analog module DCMachineSepEx<double Ra, double La, double Rf, double Lf,
+                             double Laf, double J, double B,
+                             double If_sat = 0>
+    (output double omega_m_out, output double i_a_out, output double i_f_out,
+     output double theta_m_out, output double torque_out)
+    [wire ap, wire an, wire fp, wire fn, wire shaft]
+{
+    wire x;
+
+    // ── Mechanics, on the shaft node (as PMSM) ──────────────────────────────
+    C<J>()                   [shaft, gnd];
+    VCCS<B>()                [shaft, gnd, shaft, gnd];
+    double omega_m = V(shaft);
+
+    // ── Field: fp ──(Rf·if + dλf/dt)── fn, λf = Lf·g(if) ────────────────────
+    double i_f = I(field);
+    double g = i_f;
+    if (If_sat > 0.0) {
+        g = If_sat * tanh(i_f / If_sat);
+    }
+    double v_f = Rf * i_f + ddt(Lf * g);
+    voltage_source field<>(v_f) [fp, fn];
+
+    double k = Laf * g;              // EMF = torque constant, V·s/rad
+
+    // ── Armature: ap ── La ── x ──(Ra·ia + K·ωm)── an ──────────────────────
+    double i_a = I(La_coil);
+    double v_x = Ra * i_a + k * omega_m;
+    L La_coil<La>()         [ap, x];
+    voltage_source<>(v_x)   [x, an];
+
+    // ── Electromagnetic torque, into the shaft ──────────────────────────────
+    double torque = k * i_a;
+    current_source<>(torque) [gnd, shaft];
+
+    omega_m_out = omega_m;
+    i_a_out     = i_a;
+    i_f_out     = i_f;
+    theta_m_out = idt(omega_m);
+    torque_out  = torque;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  Shunt DC machine: field across the armature terminals
+// ═══════════════════════════════════════════════════════════════
+//
+//  Terminal current = ia + if. Fed from a stiff supply this is the
+//  separately excited machine at If = V/Rf (the field current is set by the
+//  supply, not the load); fed through a resistance the field sags with the
+//  terminal voltage. Not self-exciting as a generator (no residual flux).
+
+module DCMachineShunt<double Ra, double La, double Rf, double Lf,
+                      double Laf, double J, double B, double If_sat = 0>
+    (output double omega_m_out, output double i_a_out, output double i_f_out,
+     output double theta_m_out, output double torque_out)
+    [wire p, wire n, wire shaft]
+{
+    module m = DCMachineSepEx<Ra, La, Rf, Lf, Laf, J, B, If_sat>
+                   (omega_m_out, i_a_out, i_f_out, theta_m_out, torque_out)
+                   [p, n, p, n, shaft];
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  Series DC machine: field in series with the armature
+// ═══════════════════════════════════════════════════════════════
+//
+//  p ── field ── (internal node) ── armature ── n, so if = ia: the torque
+//  Laf·g(i)·i grows as i² in the linear range (and about linearly once
+//  saturated), and the speed falls steeply with load. At no load the speed
+//  runs away. Rf here is the series-field resistance (small).
+
+module DCMachineSeries<double Ra, double La, double Rf, double Lf,
+                       double Laf, double J, double B, double If_sat = 0>
+    (output double omega_m_out, output double i_a_out, output double i_f_out,
+     output double theta_m_out, output double torque_out)
+    [wire p, wire n, wire shaft]
+{
+    wire mid;
+    module m = DCMachineSepEx<Ra, La, Rf, Lf, Laf, J, B, If_sat>
+                   (omega_m_out, i_a_out, i_f_out, theta_m_out, torque_out)
+                   [mid, n, p, mid, shaft];
+}

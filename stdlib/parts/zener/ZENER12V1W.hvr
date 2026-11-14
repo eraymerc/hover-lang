@@ -1,0 +1,38 @@
+import <semiconductors/zener> as dev;
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  ZENER12V1W — generic 12 V / 1 W Zener diode (DO-41), TYPICAL values
+//
+//  NOT a specific manufacturer's model. The breakdown numbers are the JEDEC
+//  registration figures of the 1 W 1N47xxA series at 12 V (VZ 12 V at IZT
+//  21 mA, ZZT 9 Ohm, ZZK 700 Ohm at 0.25 mA), which every second-source
+//  data sheet repeats; the forward and capacitance values are typical of the
+//  package class. Built on <semiconductors/zener>, so ZZT and the forward drop
+//  are fitted independently — compare parts/diode/1N4733A.hvr, which has to
+//  carry its breakdown slope in Rs.
+//
+//  ── What the values give (measured on this card) ───────────────────────────
+//
+//    VZ   12.000 V at 21 mA; 11.74 V at 5 mA; 12.33 V at 100 mA
+//    ZZT  9.0 Ohm at 21 mA        (NBV Vt / IZT + RZ = 8.25 + 0.75)
+//    ZZK  695 Ohm at 0.25 mA      (NBV Vt / IZK + RZ)
+//    VF   0.91 V at 200 mA        (data sheets: 1.2 V max)
+//
+//  ── Fit ─────────────────────────────────────────────────────────────────────
+//
+//    IS = 1e-12, N = 1.2, RS = 0.5        forward
+//    CJO = 150p, VJ = 0.75, M = 0.33, TT = 50n
+//    BV = 11.984, IBV = 21m               VZ = BV + RZ IZT = 12.000 V at IZT
+//    NBV = 6.66                           from ZZK: NBV Vt/0.25 mA + RZ = 700
+//    RZ = 0.75                            from ZZT: 6.66 Vt/21 mA + RZ = 9
+//
+//  Isothermal: the +8 mV/K of a 12 V avalanche diode is not modelled.
+// ─────────────────────────────────────────────────────────────────────────────
+
+analog module ZENER12V1W<>()[wire anode, wire cathode] {
+    module d = dev.Zener<1e-12, 1.2, 0.5,              // IS, N, RS
+                         150p, 0.75, 0.33, 50n,        // CJO, VJ, M, TT
+                         11.984, 21m, 6.66, 0.75,      // BV, IBV, NBV, RZ
+                         0.026>()                      // VT
+                        [anode, cathode];
+}

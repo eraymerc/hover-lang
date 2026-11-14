@@ -1,0 +1,41 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  HVR Testbench — three coupled windings (<magnetics> CoupledInductors3)
+//  Validates: three self inductances, three pairwise couplings, winding
+//             resistances, against ngspice with three K elements
+// ─────────────────────────────────────────────────────────────────────────────
+//
+//  L1 = 1 mH (R1 = 0.1 Ohm) driven by 10 V 1 kHz through 1 Ohm;
+//  L2 = 4 mH (R2 = 0.2 Ohm) into 100 Ohm; L3 = 0.25 mH (R3 = 50 mOhm) into
+//  5 Ohm. k12 = 0.95, k13 = 0.9, k23 = 0.85.
+//
+//  ── Expected result ─────────────────────────────────────────────────────────
+//
+//    V(s)   17.2630 V peak at +8.0386 deg   (ngspice 17.26304 V, +8.0387 deg)
+//    V(t)    4.0502 V peak at +6.0489 deg   (ngspice  4.05015 V, +6.0491 deg)
+//  Winding currents within 2e-5 (w1) and 4e-6 (w3) of ngspice over the run.
+//  5014 accepted steps, 2 Newton iterations each (ndf2).
+
+.tran(0, 10m, 2u);
+.solver(ndf2);
+.save(main.b, main.s, main.t, I(main.x.w1), I(main.x.w2), I(main.x.w3));
+
+import <magnetics> as mag;
+from <math> import sin;
+
+analog module Sine<double amp, double f>() [wire p]
+{
+    double v = amp * sin(2.0 * 3.141592653589793 * f * time);
+    voltage_source<>(v) [p, gnd];
+}
+
+module main<>() []
+{
+    wire a, b, s, t;
+    module src = Sine<10.0, 1k>() [a];
+    R<1>() [a, b];
+    module x = mag.CoupledInductors3<1m, 4m, 0.25m, 0.95, 0.9, 0.85,
+                                     R1 = 0.1, R2 = 0.2, R3 = 0.05>()
+                                    [b, gnd, s, gnd, t, gnd];
+    R<100>() [s, gnd];
+    R<5>()   [t, gnd];
+}

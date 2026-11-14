@@ -1,0 +1,49 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  HVR Testbench — centre-tapped transformer, two-diode full-wave rectifier
+//  Validates: <magnetics> CenterTapTransformer (both halves, the tap, the
+//             per-half ratio) with <parts/diode> 1N4007s
+// ─────────────────────────────────────────────────────────────────────────────
+//
+//  The same generic 20 VA transformer as mains_rectifier.hvr, with its
+//  secondary as two 13.3 V halves (n = 0.058 per half, Lls and Rs per half),
+//  centre tap grounded; D1 from s1 and D2 from s2 into 4700 uF and 15 Ohm.
+//  One diode drop per half cycle instead of the bridge's two, so the DC is
+//  about a diode drop higher.
+//
+//  ── Expected result ─────────────────────────────────────────────────────────
+//
+//  Settled, over the last two cycles: V(dc) 14.94 V average, 1.38 V ripple,
+//  primary 110.1 mA rms. ngspice with three K-coupled windings and the same
+//  diode card: 14.938 V, 1.381 V, 110.00 mA. ~9300 accepted steps,
+//  2.8 Newton iterations per step (ndf2; bdf2 and .op agree to 4 digits).
+
+.tran(0, 400m, 50u);
+.solver(ndf2);
+.save(main.line, main.s1, main.s2, main.dc, I(main.T1.w1), I(main.T1.w2), I(main.T1.w3));
+
+import <magnetics> as mag;
+import <passives> as pas;
+import <parts/diode> as dio;
+from <math> import sin;
+
+analog module Mains<double Vrms, double f>() [wire p]
+{
+    double v = Vrms * 1.4142135623730951 * sin(2.0 * 3.141592653589793 * f * time);
+    voltage_source<>(v) [p, gnd];
+}
+
+module main<>() []
+{
+    wire line, s1, s2, dc;
+
+    module ac = Mains<230.0, 50.0>() [line];
+    module T1 = mag.CenterTapTransformer<0.058, 20.0, Llp = 0.1, Lls = 0.35m,
+                                         Rp = 70.0, Rs = 0.35>()
+                                        [line, gnd, s1, gnd, s2];
+
+    module D1 = dio.D1N4007<>() [s1, dc];
+    module D2 = dio.D1N4007<>() [s2, dc];
+
+    module C1 = pas.Capacitor<4700u, ESR = 40m>() [dc, gnd];
+    R<15>() [dc, gnd];
+}

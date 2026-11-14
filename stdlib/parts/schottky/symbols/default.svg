@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-16 -32 32 64" data-title="Schottky diode"
+     fill="none" stroke="#000" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+  <style>.fill{fill:#000}.bold{stroke-width:3.2}.dash{stroke-dasharray:3 2.5}[data-pin]{fill:#d00;stroke:none}</style>
+  <path d="M0 -32 V-12 M0 12 V32"/>
+  <polygon points="-12,-12 12,-12 0,7.2" class="fill"/>
+  <rect x="-12" y="7.2" width="24" height="3.2" class="fill"/>
+  <path d="M-12 8.8 V4 H-8 M12 8.8 V13.6 H8"/>
+  <circle data-pin="anode" data-alias="a + p" data-dir="up" cx="0" cy="-32" r="2"/>
+  <circle data-pin="cathode" data-alias="k c - n" data-dir="down" cx="0" cy="32" r="2"/>
+</svg>

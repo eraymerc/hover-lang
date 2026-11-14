@@ -1,0 +1,61 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  HVR Testbench — Power Diode Reverse Recovery (Inductive Commutation)
+//  Validates: that <semiconductors>' Diode, through its transit-time charge
+//             Tt alone, reproduces SPICE's reverse recovery — which is why
+//             the standard library has no separate "power diode" model
+// ─────────────────────────────────────────────────────────────────────────────
+//
+//      +10 V / -100 V ──[10 Ohm]──[20 uH]── a ──(ammeter)── k ──|>|── gnd
+//      (steps at 10 us)
+//
+//  0.92 A flows forward for 10 us, storing Q = Tt * IF = 0.92 uC. At 10 us the
+//  source steps to -100 V and the inductor ramps the current down at
+//  110 V / 20 uH = 5.5 A/us, through zero and into the diode's REVERSE
+//  direction: the junction stays forward biased until the stored charge is
+//  gone, then snaps off and the current recovers to zero.
+//
+//  The diode is a generic 1 us power rectifier: Is = 1n, N = 1.5, Rs = 10m,
+//  Cjo = 100p, Vj = 0.7, M = 0.4, Tt = 1u.
+//
+//  ── Expected result (ngspice D model, same card, TEMP = TNOM = 28.56 C so
+//  ── that Vt = 0.026 V; .tran with a 5 ns maximum step) ─────────────────────
+//
+//                    IF          Irrm         t(Irrm)     trr (to 10 %)  Qrr
+//      Hover ndf2    0.91859 A   -2.2521 A    10.6804 us  523.9 ns      620.9 nC
+//      Hover bdf2    0.91859 A   -2.2542 A    10.6809 us  523.9 ns      621.9 nC
+//      ngspice       0.91859 A   -2.2592 A    10.6823 us  523.4 ns      622.9 nC
+//
+//  i.e. Irrm within 0.3 %, trr 0.1 %, Qrr 0.3 %. SPICE's Tt recovery is the
+//  abrupt (charge-control) kind; a soft-recovery shape (Lauritzen-Ma) would be
+//  a different model and is not in the library.
+//
+//  Convergence (HOVER_TRACE_STEP=1, ndf2): 3729 accepted steps, 3.2 Newton
+//  iterations per step (max 16), no Newton rejections.
+
+.save(main.a, main.k, I(main.vam));
+.op;
+.tran(0, 30u, 20n);
+.solver(ndf2);
+
+import <semiconductors> as dev;
+
+analog module Step<double v1, double v2, double t0>() [wire p, wire n] {
+    double v = v1;
+    if (time >= t0) { v = v2; }
+    voltage_source<>(v)[p, n];
+}
+
+module main<>() []
+{
+    wire s, x, a, k;
+    module src = Step<10.0, -100.0, 10u>()[s, gnd];
+    R<10>()[s, x];
+    L<20u>()[x, a];
+    voltage_source vam<0>()[a, k];
+    module d = dev.Diode<1n, 1.5, 10m,          // Is, N, Rs
+                         0.0, 0.0, 2.0,         // Ikf, Isr, Nr
+                         0.0, 0.0,              // Bv, Ibv
+                         100p, 0.7, 0.4, 0.5,   // Cjo, Vj, M, Fc
+                         1u, 0.026>()           // Tt, Vt
+                        [k, gnd];
+}

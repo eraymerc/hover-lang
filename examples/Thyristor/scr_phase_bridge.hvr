@@ -1,0 +1,103 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  HVR Testbench — Single-Phase Fully-Controlled SCR Bridge, 230 V / 50 Hz
+//  Validates: <semiconductors/thyristor> SCR latching on 20 us gate pulses,
+//             natural commutation at the current zero, reverse and forward
+//             blocking, and the average output against the firing angle
+// ─────────────────────────────────────────────────────────────────────────────
+//
+//      l1 ──┬── T1 ─▶─┬── dp ──[100 Ohm]── dn ──┬── T3 ─▶─ l1
+//           │         │                         │
+//      l2 ──┴── T2 ─▶─┘                         └── T4 ─▶─ l2 (= gnd, neutral)
+//
+//  T1/T4 are fired at alpha = 60 deg of the positive half-cycle, T2/T3 at
+//  alpha + 180 deg, each by a 10 V / 100 Ohm (~93 mA) pulse 20 us long from a
+//  driver floating on the SCR's own cathode. The 20 us pulse is far shorter
+//  than the 50 us maximum step: its edges are `time` comparisons, i.e. time
+//  breakpoints, so the solver lands on them exactly. Each pair conducts from
+//  alpha until the load current falls below IH just ahead of the voltage zero
+//  (natural commutation — nothing turns the SCRs off but the mains).
+//
+//  ── Expected result ─────────────────────────────────────────────────────────
+//
+//  Ideal bridge, resistive load:  Vavg = (Vm/pi)(1 + cos alpha) = 155.31 V
+//                                 Vrms = Vs sqrt(1 - alpha/pi + sin 2a/2pi)
+//                                      = 206.31 V
+//  The load sees that minus two on-state drops during conduction (the card's
+//  VT is ~1 V at the 3 A peak). Measured over 60-100 ms, ndf2:
+//
+//      Vavg = 100 Ohm * I(aload)avg = 153.953 V   (ideal - 0.87 %)
+//      Vrms = 204.821 V                           (ideal - 0.72 %)
+//      conduction: on at 60.00 deg (+ the ~1.5 us turn-on), off at
+//                  178.97 deg, where (v - 2 VT)/100 Ohm falls to IH
+//
+//  ngspice, same bridge built from the same equivalent circuit (Gummel-Poon
+//  BJTs, breakdown diodes, Vt matched): Vavg = 153.956 V, Vrms = 204.823 V,
+//  off at 178.94 deg — agreement to 2e-5. (ngspice needs the gate pulses
+//  given 100 ns edges; with 1 ns edges it aborts at the first firing,
+//  "timestep too small". Hover's pulses here switch in zero time.)
+//
+//  ── Grounding: tie the neutral directly ─────────────────────────────────────
+//
+//  The neutral is gnd itself. The same bridge with the mains floating and a
+//  0 V source from its neutral to ground (an ammeter in the neutral, the only
+//  change) stops at the first firing, 3.344 ms, "did not converge" with dt
+//  driven to ~1e-19 s (7164 iterations in 50 us); even the blocking interval
+//  before it costs 2.5x the iterations of this deck (732 vs 298 for the
+//  first 3.3 ms). Nothing in the devices differs between the two decks; this
+//  is reported as a solver issue.
+//
+//  Convergence (HOVER_TRACE_STEP=1, 100 ms, ndf2): 2978 accepted steps, 6.5
+//  Newton iterations per step (ngspice on the twin, 5 us max step: 6.6 per
+//  timepoint). Each firing costs 400-700 iterations over 60-70 steps; each
+//  commutation 490-1050 over 30-55 steps, including one or two 100-iteration
+//  plain-Newton failures rescued by trust-region retries — the latch losing
+//  its loop gain at IH is a fold, and Newton has to cross it at a step far
+//  longer than TT. That per-commutation cost is the open item of this model.
+
+.save(main.l1, main.dp, main.dn, I(main.aload));
+.tran(0, 100m, 50u);
+.solver(ndf2);
+
+import <parts/thyristor>;
+from <math> import sin, fmod;
+
+analog module Mains<double vrms, double f>() [wire p, wire n] {
+    double v = vrms * 1.41421356237 * sin(2.0 * 3.14159265358979 * f * time);
+    voltage_source<>(v)[p, n];
+}
+
+// Gate pulses at the firing angle of each half-cycle: pos for T1/T4, neg for
+// T2/T3. fmod(time, T) against constants: every edge is a time breakpoint.
+digital module Firing<double f, double alpha_deg, double w, double amp>
+(output double pos, output double neg) []
+{
+    double T  = 1.0 / f;
+    double ta = alpha_deg / 360.0 * T;
+    pos = 0.0;
+    neg = 0.0;
+    if (fmod(time, T) >= ta && fmod(time, T) < ta + w) { pos = amp; }
+    if (fmod(time, T) >= ta + 0.5 * T && fmod(time, T) < ta + 0.5 * T + w) { neg = amp; }
+}
+
+module main<>() []
+{
+    wire l1, dp, dn, x, g1, g2, g3, g4, s1, s2, s3, s4;
+    state double vgp = 0, vgn = 0;
+
+    module ac   = Mains<230.0, 50.0>()[l1, gnd];
+    module fire = Firing<50.0, 60.0, 20u, 10.0>(vgp, vgn)[];
+
+    module T1 = thyristor.SCR800V25A<>()[g1, l1,  dp];
+    module T2 = thyristor.SCR800V25A<>()[g2, gnd, dp];
+    module T3 = thyristor.SCR800V25A<>()[g3, dn,  l1];
+    module T4 = thyristor.SCR800V25A<>()[g4, dn,  gnd];
+
+    // floating gate drivers, referenced to each SCR's cathode
+    voltage_source<>(vgp)[s1, dp];  R<100>()[s1, g1];
+    voltage_source<>(vgn)[s2, dp];  R<100>()[s2, g2];
+    voltage_source<>(vgn)[s3, l1];  R<100>()[s3, g3];
+    voltage_source<>(vgp)[s4, gnd]; R<100>()[s4, g4];
+
+    R<100>()[dp, x];
+    voltage_source aload<0>()[x, dn];
+}

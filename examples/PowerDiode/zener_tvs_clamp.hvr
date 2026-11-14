@@ -1,0 +1,66 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  HVR Testbench — Zener Shunt Regulator and TVS Surge Clamp
+//  Validates: <semiconductors/zener> — breakdown with its own slope (NBV,
+//             RZ), on the ZENER12V1W and TVS15V600W cards
+// ─────────────────────────────────────────────────────────────────────────────
+//
+//  A  Shunt regulator: 24 V with 2 V of 100 Hz ripple, through 560 Ohm, into
+//     ZENER12V1W in parallel with a 1 kOhm load.
+//  B  Surge clamp: a 12 V rail through 2 Ohm source impedance, with a 50 us,
+//     60 V surge on top of it at 1 ms; TVS15V600W across the protected node.
+//
+//  ── Expected result (hand calculation from the card values) ─────────────────
+//
+//  A: Iz = (Vin - Vz)/560 - Vz/1k. At Vin = 24 V: 21.4 mA - 11.9 mA = 9.5 mA,
+//     and in breakdown Vz = BV + NBV Vt ln(Iz/IBV) + RZ Iz
+//                         = 11.984 + 0.1732 ln(9.5/21) + 0.0071 = 11.854 V.
+//     The 2 V p-p ripple reaches the output divided by (560 + r)/r with
+//     r = Zz || 1k ~ 18 Ohm at 9.5 mA: ~62 mV p-p.
+//     Measured: 11.859 V mean, 63 mV p-p (11.826-11.889 V).
+//  B: during the surge the TVS carries I = (72 - Vc)/2 and
+//     Vc = 17.6 + 0.052 ln(I/1 mA) + 0.255 I, solved: I = 23.892 A,
+//     Vc = 24.217 V (the 600 W class figure is 24.4 V at 24.6 A).
+//     Measured: 24.2166 V, 23.8917 A. At 12 V the TVS leaks 1 nA (its
+//     forward junction's saturation current): it is 5.6 V below breakdown.
+//
+//  Convergence (HOVER_TRACE_STEP=1, ndf2): 2027 accepted steps, 1.3 Newton
+//  iterations per step (max 9), no rejections.
+
+.save(main.za, main.tvs, I(main.az), I(main.at));
+.op;
+.tran(0, 20m, 10u);
+.solver(ndf2);
+
+import <parts/zener>;
+from <math> import sin;
+
+analog module Ripple<double vdc, double vpp, double f>() [wire p, wire n] {
+    double v = vdc + 0.5 * vpp * sin(2.0 * 3.14159265358979 * f * time);
+    voltage_source<>(v)[p, n];
+}
+
+digital module Surge<double v0, double vs, double t0, double w>(output double v) []
+{
+    v = v0;
+    if (time >= t0 && time < t0 + w) { v = v0 + vs; }
+}
+
+module main<>() []
+{
+    wire zin, za, zk, tin, tvs, tk;
+    state double vsurge = 12.0;
+
+    // A: shunt regulator
+    module rip = Ripple<24.0, 2.0, 100.0>()[zin, gnd];
+    R<560>()[zin, za];
+    R<1k>()[za, gnd];
+    voltage_source az<0>()[zk, za];
+    module DZ = zener.ZENER12V1W<>()[gnd, zk];
+
+    // B: surge clamp
+    module sg = Surge<12.0, 60.0, 1m, 50u>(vsurge)[];
+    voltage_source<>(vsurge)[tin, gnd];
+    R<2>()[tin, tvs];
+    voltage_source at<0>()[tk, tvs];
+    module DT = zener.TVS15V600W<>()[gnd, tk];
+}

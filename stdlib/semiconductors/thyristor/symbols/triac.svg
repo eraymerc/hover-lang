@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-16 -32 48 64" data-title="TRIAC"
+     fill="none" stroke="#000" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+  <style>.fill{fill:#000}.bold{stroke-width:3.2}.dash{stroke-dasharray:3 2.5}[data-pin]{fill:#d00;stroke:none}</style>
+  <path d="M0 -32 V-12.8 M0 12.8 V32"/>
+  <rect x="-14.4" y="-12.8" width="28.8" height="2.4" class="fill"/>
+  <rect x="-14.4" y="10.4" width="28.8" height="2.4" class="fill"/>
+  <polygon points="-14.4,-10.4 1.6,-10.4 -6.4,10.4" class="fill"/>
+  <polygon points="-1.6,10.4 14.4,10.4 6.4,-10.4" class="fill"/>
+  <path d="M8 12.8 L19.2 24 H24"/>
+  <circle data-pin="mt2" data-alias="a2 t2 a" data-dir="up" cx="0" cy="-32" r="2"/>
+  <circle data-pin="mt1" data-alias="a1 t1 k" data-dir="down" cx="0" cy="32" r="2"/>
+  <circle data-pin="gate" data-alias="g" data-dir="right" cx="24" cy="24" r="2"/>
+</svg>

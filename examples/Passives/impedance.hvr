@@ -1,0 +1,45 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  HVR Testbench — impedance of the real passives (<passives>), .ac sweep
+//  Validates: Capacitor (ESR, ESL, leakage), Inductor (Rdc, core-loss Rp,
+//             self-capacitance Cp) and Resistor (Ls, Cp) against the closed
+//             form of their equivalent circuits, 10 Hz to 100 MHz
+// ─────────────────────────────────────────────────────────────────────────────
+//
+//  A 1 A AC current source drives each part on its own, so the voltage on its
+//  node IS its impedance: Z(f) = main.zc.re + j main.zc.im, and so on.
+//
+//    zc   100 uF electrolytic, ESR 50 mOhm, ESL 20 nH, 1 MOhm leakage:
+//         capacitive below 112 kHz, |Z| = ESR = 50 mOhm at the series
+//         resonance 1/(2 pi sqrt(ESL C)) = 112.5 kHz, inductive above.
+//    zl   100 uH power inductor, Rdc 0.1 Ohm, Rp 20 kOhm, Cp 10 pF:
+//         0.1 Ohm at DC, rising at 2 pi f L, peaking at about 20 kOhm (Rp) at
+//         the self-resonance 5.03 MHz, capacitive above.
+//    zr   10 mOhm current shunt with 2 nH ESL and 1 pF: 10 mOhm flat until
+//         R / (2 pi Ls) = 796 kHz, then the ESL takes over.
+//
+//  ── Expected result ─────────────────────────────────────────────────────────
+//
+//  Every point equals the closed form of the circuits drawn in
+//  stdlib/passives/passives.hvr to better than 1e-9 relative, provided the
+//  runtime's 1 uOhm in series with every voltage-source branch is included
+//  (runtime/mna/matrices.cpp); without it the shunt reads 10.001 mOhm, 1e-4
+//  high, and the others agree to 2e-5.
+
+.ac(dec, 20, 10, 100Meg);
+.save(main.zc, main.zl, main.zr);
+
+import <passives> as pas;
+
+module main<>() []
+{
+    wire zc, zl, zr;
+
+    current_source<0, ac=1>() [gnd, zc];
+    module c1 = pas.Capacitor<100u, ESR = 50m, ESL = 20n, Rleak = 1Meg>() [zc, gnd];
+
+    current_source<0, ac=1>() [gnd, zl];
+    module l1 = pas.Inductor<100u, Rdc = 0.1, Rp = 20k, Cp = 10p>() [zl, gnd];
+
+    current_source<0, ac=1>() [gnd, zr];
+    module r1 = pas.Resistor<10m, Ls = 2n, Cp = 1p>() [zr, gnd];
+}

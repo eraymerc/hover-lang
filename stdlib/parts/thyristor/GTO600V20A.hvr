@@ -1,0 +1,40 @@
+import <semiconductors/thyristor> as dev;
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  GTO600V20A — generic gate turn-off thyristor, TYPICAL values
+//
+//  NOT a manufacturer part. A GTO is an SCR built so that a negative gate
+//  current can unlatch it: a narrow, highly-doped p2 gate layer (large
+//  alpha_n) and a weak p-n-p section (small alpha_p, from anode shorts and a
+//  short lifetime), so that alpha_n + alpha_p sits just above 1 and the
+//  turn-off gain alpha_n / (alpha_n + alpha_p - 1) is large. That is a
+//  parameterisation of the same two-transistor SCR, not a different model —
+//  <semiconductors/thyristor>'s header derives it.
+//
+//  ── What the values give (measured on this card, Vt = 0.026 V) ─────────────
+//
+//    turn-off: 10 A (300 V, 30 Ohm) is turned off by a 20 us gate pulse of
+//              -1.8 A and not by -1.6 A: turn-off gain ~5.5-6 (estimate from
+//              the alphas: 6.3). Compare SCR800V25A, which needs ~-6 A.
+//    turn-on:  a 1 A, 20 us gate pulse latches it, like any SCR.
+//
+//  ── Fit ─────────────────────────────────────────────────────────────────────
+//
+//    IS = 1e-12, BFP = 0.25 (alpha_p 0.2), BFN = 20 (alpha_n 0.95)
+//    RGK = 100, RG = 0.5, RS = 10m, TT = 1u
+//    CJ = 500p, VJ = 0.7, MJ = 0.4, VBO = VRB = 700 V
+//
+//  Not modelled: the GTO's turn-off tail and its current-filamentation limit
+//  (maximum controllable anode current); the snubber a real GTO needs is the
+//  circuit's business, not the card's.
+// ─────────────────────────────────────────────────────────────────────────────
+
+analog module GTO600V20A<>()[wire gate, wire anode, wire cathode] {
+    module x = dev.SCR<1e-12, 0.25, 20.0,            // IS, BFP, BFN
+                       100.0, 0.5, 10m,              // RGK, RG, RS
+                       1u,                           // TT
+                       500p, 0.7, 0.4,               // CJ, VJ, MJ
+                       700.0, 700.0,                 // VBO, VRB
+                       0.026>()                      // VT
+                      [gate, anode, cathode];
+}

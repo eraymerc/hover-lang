@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-32 -16 64 32" data-title="Flexible shaft"
+     fill="none" stroke="#000" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+  <style>.fill{fill:#000}.bold{stroke-width:3.2}.dash{stroke-dasharray:3 2.5}[data-pin]{fill:#d00;stroke:none}</style>
+  <!-- A torsion spring between two shaft ends, a damper drawn under it. -->
+  <path d="M-32 0 H-20 L-16 -8 L-8 8 L0 -8 L8 8 L16 -8 L20 0 H32"/>
+  <path d="M-20 0 V12 H-6 M6 12 H20 V0" class="dash"/>
+  <path d="M-6 8 V16 M2 8 H-2 M6 8 V16" class="dash"/>
+  <circle data-pin="shaft_a" data-alias="a in input" data-dir="left" cx="-32" cy="0" r="2"/>
+  <circle data-pin="shaft_b" data-alias="b out output" data-dir="right" cx="32" cy="0" r="2"/>
+</svg>

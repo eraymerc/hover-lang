@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="16 56 736 272" class="hv-schematic" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11">
+  <!-- ac: Mains -->
+  <g transform="translate(160,192)"><path d="M0 -32 V-16 M0 16 V32"/><circle cx="0" cy="0" r="16" class="bold"/><path d="M-3.5 -7 H3.5 M0 -10.5 V-3.5"/><path d="M-3.5 7 H3.5"/></g>
+  <text x="136" y="188" text-anchor="end">230 V rms</text>
+  <text x="136" y="202" text-anchor="end">50 Hz</text>
+  <path d="M160 160 V144 H256"/>
+  <text x="200" y="136" text-anchor="middle" class="net">line</text>
+  <polygon points="248,144 241,140.5 241,147.5" class="fill"/>
+  <text x="216" y="164" text-anchor="middle" class="net" font-size="10">I(T1.w1)</text>
+  <path d="M160 224 V304 H704"/>
+  <!-- T1: CenterTapTransformer -->
+  <path d="M256 144 H288 V149.76 M288 234.24 V240 H256"/>
+  <path d="M288 149.76 a5.28 5.28 0 0 1 0 10.56 a5.28 5.28 0 0 1 0 10.56 a5.28 5.28 0 0 1 0 10.56 a5.28 5.28 0 0 1 0 10.56 a5.28 5.28 0 0 1 0 10.56 a5.28 5.28 0 0 1 0 10.56 a5.28 5.28 0 0 1 0 10.56 a5.28 5.28 0 0 1 0 10.56" class="bold"/>
+  <circle class="dot" cx="279" cy="154.76" r="2.4"/>
+  <path d="M352 144 H320 V149.76 M320 234.24 V240 H352 M320 192 H352"/>
+  <path d="M320 149.76 a5.28 5.28 0 0 0 0 10.56 a5.28 5.28 0 0 0 0 10.56 a5.28 5.28 0 0 0 0 10.56 a5.28 5.28 0 0 0 0 10.56 a5.28 5.28 0 0 0 0 10.56 a5.28 5.28 0 0 0 0 10.56 a5.28 5.28 0 0 0 0 10.56 a5.28 5.28 0 0 0 0 10.56" class="bold"/>
+  <circle class="dot" cx="329" cy="154.76" r="2.4"/>
+  <circle class="dot" cx="329" cy="197" r="2.4"/>
+  <path d="M300.8 146 V238 M307.2 146 V238" class="bold"/>
+  <text x="304" y="78" text-anchor="middle">T1: CenterTapTransformer</text>
+  <text x="304" y="92" text-anchor="middle" class="dim" font-size="10">n 0.058 per half · Lm 20 H</text>
+  <text x="304" y="106" text-anchor="middle" class="dim" font-size="10">Llp 0.1 H · Lls 0.35 mH</text>
+  <text x="304" y="120" text-anchor="middle" class="dim" font-size="10">Rp 70 Ω · Rs 0.35 Ω</text>
+  <path d="M256 240 V304"/>
+  <circle class="dot" cx="256" cy="304" r="2.4"/>
+  <path d="M352 192 H368"/>
+  <path d="M368 192 V200 M360 200 H376 M363 203 H373 M366 206 H370"/>
+  <polygon points="356,192 363,188.5 363,195.5" class="fill"/>
+  <text x="382" y="196" class="net" font-size="10">I(T1.w3)</text>
+  <path d="M352 144 H416"/>
+  <polygon points="360,144 367,140.5 367,147.5" class="fill"/>
+  <text x="392" y="136" text-anchor="middle" class="net" font-size="10">I(T1.w2)</text>
+  <text x="392" y="160" text-anchor="middle" class="net">s1</text>
+  <g transform="translate(448,144) rotate(-90)"><path d="M0 -32 V-12 M0 12 V32"/><polygon points="-12,-12 12,-12 0,7.2" class="fill"/><rect x="-12" y="7.2" width="24" height="4.8" class="fill"/></g>
+  <text x="448" y="126" text-anchor="middle">D1 1N4007</text>
+  <path d="M352 240 H416"/>
+  <text x="392" y="232" text-anchor="middle" class="net">s2</text>
+  <g transform="translate(448,240) rotate(-90)"><path d="M0 -32 V-12 M0 12 V32"/><polygon points="-12,-12 12,-12 0,7.2" class="fill"/><rect x="-12" y="7.2" width="24" height="4.8" class="fill"/></g>
+  <text x="448" y="266" text-anchor="middle">D2 1N4007</text>
+  <path d="M480 144 H704 M480 144 V240"/>
+  <circle class="dot" cx="480" cy="144" r="2.4"/>
+  <text x="512" y="136" text-anchor="middle" class="net">dc</text>
+  <!-- reservoir and load -->
+  <path d="M576 144 V160 M576 224 V304"/>
+  <g transform="translate(576,192)"><path d="M0 -32 V-17.52 M0 -2.48 V6 M0 22 V32"/><rect x="-12" y="-17.52" width="24" height="4.8" class="fill"/><rect x="-12" y="-7.28" width="24" height="4.8" class="fill"/><rect x="-4.4" y="6" width="8.8" height="16" class="bold"/></g>
+  <text x="596" y="182">C1</text>
+  <text x="596" y="196">4700 µF</text>
+  <text x="596" y="210" class="dim" font-size="10">ESR 40 mΩ</text>
+  <circle class="dot" cx="576" cy="144" r="2.4"/>
+  <circle class="dot" cx="576" cy="304" r="2.4"/>
+  <path d="M704 144 V160 M704 224 V304"/>
+  <g transform="translate(704,192)"><path d="M0 -32 V-20.8 M0 20.8 V32"/><rect x="-8.8" y="-20.8" width="17.6" height="41.6" class="bold"/></g>
+  <text x="720" y="196">15 Ω</text>
+  <circle class="dot" cx="448" cy="304" r="2.4"/>
+  <path d="M448 304 V312 M440 312 H456 M443 315 H453 M446 318 H450"/>
+</svg>

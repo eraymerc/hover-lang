@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-16 -32 32 64" data-title="Viscous friction"
+     fill="none" stroke="#000" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+  <style>.fill{fill:#000}.bold{stroke-width:3.2}.dash{stroke-dasharray:3 2.5}[data-pin]{fill:#d00;stroke:none}</style>
+  <!-- A dashpot: piston in an open cylinder. -->
+  <path d="M0 -32 V-6 M-8 -6 H8"/>
+  <path d="M-12 -14 V8 H12 V-14" class="bold"/>
+  <path d="M0 8 V24"/>
+  <!-- Mechanical ground (the frame): the part draws its torque from the
+       shaft to it, as a two-terminal element to gnd. -->
+  <path d="M-12 24 H12 M-12 24 L-16 30 M-4 24 L-8 30 M4 24 L0 30 M12 24 L8 30"/>
+  <circle data-pin="shaft" data-alias="mech rotor w n+ p" data-dir="up" cx="0" cy="-32" r="2"/>
+</svg>

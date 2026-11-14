@@ -1,0 +1,106 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 32 912 432" class="hv-schematic" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11">
+  <!-- rails -->
+  <path d="M224 128 H832"/>
+  <text x="792" y="120" text-anchor="middle" class="net">dp</text>
+  <path d="M224 432 H832"/>
+  <text x="792" y="424" text-anchor="middle" class="net">dn</text>
+  <!-- ac: Mains, 230 V rms 50 Hz, l1 to gnd -->
+  <g transform="translate(96,368)"><path d="M0 -32 V-16 M0 16 V32"/><circle cx="0" cy="0" r="16" class="bold"/><path d="M-3.5 -7 H3.5 M0 -10.5 V-3.5"/><path d="M-3.5 7 H3.5"/></g>
+  <text x="72" y="364" text-anchor="end">ac: Mains</text>
+  <text x="72" y="378" text-anchor="end" class="dim" font-size="10">230 V rms</text>
+  <text x="72" y="392" text-anchor="end" class="dim" font-size="10">50 Hz</text>
+  <path d="M96 336 V304 H224"/>
+  <text x="136" y="296" text-anchor="middle" class="net">l1</text>
+  <circle class="dot" cx="224" cy="304" r="2.4"/>
+  <path d="M96 400 V416"/>
+  <path d="M96 416 V424 M88 424 H104 M91 427 H101 M94 430 H98"/>
+  <!-- leg T1/T3, mid = l1 -->
+  <circle class="dot" cx="224" cy="128" r="2.4"/>
+  <path d="M224 128 V184"/>
+  <g transform="translate(224,216) scale(1,-1)"><path d="M0 -32 V-12 M0 12 V32"/><polygon points="-12,-12 12,-12 0,7.2" class="fill"/><rect x="-12" y="7.2" width="24" height="4.8" class="fill"/><path d="M4.8 12 L16.8 24 H32"/></g>
+  <text x="204" y="212" text-anchor="end">T1</text>
+  <text x="204" y="226" text-anchor="end" class="dim" font-size="10">SCR800V25A</text>
+  <path d="M256 192 H288"/>
+  <text x="272" y="184" text-anchor="middle" class="net">g1</text>
+  <g transform="translate(320,192) rotate(90)"><path d="M0 -32 V-20.8 M0 20.8 V32"/><rect x="-8.8" y="-20.8" width="17.6" height="41.6" class="bold"/></g>
+  <text x="320" y="176" text-anchor="middle">100 Ω</text>
+  <path d="M352 192 H384"/>
+  <text x="368" y="208" text-anchor="middle" class="net">s1</text>
+  <g transform="translate(384,160) rotate(180)"><path d="M0 -32 V-16 M0 16 V32"/><circle cx="0" cy="0" r="16" class="bold"/><path d="M-3.5 -7 H3.5 M0 -10.5 V-3.5"/><path d="M-3.5 7 H3.5"/></g>
+  <circle class="dot" cx="384" cy="128" r="2.4"/>
+  <path d="M416 88 V160 H407" class="dash"/>
+  <polygon points="400,160 407,156.5 407,163.5" class="fill"/>
+  <text x="438" y="152" class="net" font-size="10">vgp</text>
+  <g transform="translate(224,368) scale(1,-1)"><path d="M0 -32 V-12 M0 12 V32"/><polygon points="-12,-12 12,-12 0,7.2" class="fill"/><rect x="-12" y="7.2" width="24" height="4.8" class="fill"/><path d="M4.8 12 L16.8 24 H32"/></g>
+  <text x="204" y="364" text-anchor="end">T3</text>
+  <text x="204" y="378" text-anchor="end" class="dim" font-size="10">SCR800V25A</text>
+  <path d="M256 344 H288"/>
+  <text x="272" y="336" text-anchor="middle" class="net">g3</text>
+  <g transform="translate(320,344) rotate(90)"><path d="M0 -32 V-20.8 M0 20.8 V32"/><rect x="-8.8" y="-20.8" width="17.6" height="41.6" class="bold"/></g>
+  <text x="320" y="328" text-anchor="middle">100 Ω</text>
+  <path d="M352 344 H384"/>
+  <text x="368" y="360" text-anchor="middle" class="net">s3</text>
+  <g transform="translate(384,312) rotate(180)"><path d="M0 -32 V-16 M0 16 V32"/><circle cx="0" cy="0" r="16" class="bold"/><path d="M-3.5 -7 H3.5 M0 -10.5 V-3.5"/><path d="M-3.5 7 H3.5"/></g>
+  <path d="M384 280 H224"/>
+  <circle class="dot" cx="224" cy="280" r="2.4"/>
+  <path d="M432 88 V312 H407" class="dash"/>
+  <polygon points="400,312 407,308.5 407,315.5" class="fill"/>
+  <text x="438" y="296" class="net" font-size="10">vgn</text>
+  <path d="M224 248 V336 M224 400 V432"/>
+  <circle class="dot" cx="224" cy="432" r="2.4"/>
+  <!-- leg T2/T4, mid = gnd -->
+  <circle class="dot" cx="544" cy="128" r="2.4"/>
+  <path d="M544 128 V184"/>
+  <g transform="translate(544,216) scale(1,-1)"><path d="M0 -32 V-12 M0 12 V32"/><polygon points="-12,-12 12,-12 0,7.2" class="fill"/><rect x="-12" y="7.2" width="24" height="4.8" class="fill"/><path d="M4.8 12 L16.8 24 H32"/></g>
+  <text x="524" y="212" text-anchor="end">T2</text>
+  <text x="524" y="226" text-anchor="end" class="dim" font-size="10">SCR800V25A</text>
+  <path d="M576 192 H608"/>
+  <text x="592" y="184" text-anchor="middle" class="net">g2</text>
+  <g transform="translate(640,192) rotate(90)"><path d="M0 -32 V-20.8 M0 20.8 V32"/><rect x="-8.8" y="-20.8" width="17.6" height="41.6" class="bold"/></g>
+  <text x="640" y="176" text-anchor="middle">100 Ω</text>
+  <path d="M672 192 H704"/>
+  <text x="688" y="208" text-anchor="middle" class="net">s2</text>
+  <g transform="translate(704,160) rotate(180)"><path d="M0 -32 V-16 M0 16 V32"/><circle cx="0" cy="0" r="16" class="bold"/><path d="M-3.5 -7 H3.5 M0 -10.5 V-3.5"/><path d="M-3.5 7 H3.5"/></g>
+  <circle class="dot" cx="704" cy="128" r="2.4"/>
+  <path d="M736 88 V160 H727" class="dash"/>
+  <polygon points="720,160 727,156.5 727,163.5" class="fill"/>
+  <text x="758" y="152" class="net" font-size="10">vgn</text>
+  <g transform="translate(544,368) scale(1,-1)"><path d="M0 -32 V-12 M0 12 V32"/><polygon points="-12,-12 12,-12 0,7.2" class="fill"/><rect x="-12" y="7.2" width="24" height="4.8" class="fill"/><path d="M4.8 12 L16.8 24 H32"/></g>
+  <text x="524" y="364" text-anchor="end">T4</text>
+  <text x="524" y="378" text-anchor="end" class="dim" font-size="10">SCR800V25A</text>
+  <path d="M576 344 H608"/>
+  <text x="592" y="336" text-anchor="middle" class="net">g4</text>
+  <g transform="translate(640,344) rotate(90)"><path d="M0 -32 V-20.8 M0 20.8 V32"/><rect x="-8.8" y="-20.8" width="17.6" height="41.6" class="bold"/></g>
+  <text x="640" y="328" text-anchor="middle">100 Ω</text>
+  <path d="M672 344 H704"/>
+  <text x="688" y="360" text-anchor="middle" class="net">s4</text>
+  <g transform="translate(704,312) rotate(180)"><path d="M0 -32 V-16 M0 16 V32"/><circle cx="0" cy="0" r="16" class="bold"/><path d="M-3.5 -7 H3.5 M0 -10.5 V-3.5"/><path d="M-3.5 7 H3.5"/></g>
+  <path d="M704 280 H544"/>
+  <circle class="dot" cx="544" cy="280" r="2.4"/>
+  <path d="M752 88 V312 H727" class="dash"/>
+  <polygon points="720,312 727,308.5 727,315.5" class="fill"/>
+  <text x="758" y="296" class="net" font-size="10">vgp</text>
+  <path d="M544 248 V336 M544 400 V432"/>
+  <circle class="dot" cx="544" cy="432" r="2.4"/>
+  <!-- gnd mid of leg 2 -->
+  <path d="M544 304 H512"/>
+  <circle class="dot" cx="544" cy="304" r="2.4"/>
+  <path d="M512 304 V312 M504 312 H520 M507 315 H517 M510 318 H514"/>
+  <!-- fire: Firing -->
+  <rect x="384" y="40" width="384" height="48"/>
+  <text x="576" y="61.5" text-anchor="middle">fire: Firing</text>
+  <text x="576" y="74.5" text-anchor="middle" class="dim" font-size="10">50 Hz · α 60° · 20 µs · 10 V</text>
+  <!-- load: 100 Ω, x, aload -->
+  <circle class="dot" cx="832" cy="128" r="2.4"/>
+  <path d="M832 128 V160 M832 224 V256 M832 320 V432"/>
+  <g transform="translate(832,192)"><path d="M0 -32 V-20.8 M0 20.8 V32"/><rect x="-8.8" y="-20.8" width="17.6" height="41.6" class="bold"/></g>
+  <text x="848" y="196">100 Ω</text>
+  <text x="840" y="244" class="net">x</text>
+  <path d="M832 256 V272 M832 304 V320"/>
+  <circle cx="832" cy="288" r="16" class="bold"/>
+  <text x="832" y="292" text-anchor="middle">A</text>
+  <text x="856" y="284">aload</text>
+  <text x="856" y="298" class="dim" font-size="10">0 V</text>
+  <polygon points="832,252 828.5,245 835.5,245" class="fill"/>
+  <text x="824" y="248" text-anchor="end" class="net" font-size="10">I(aload)</text>
+</svg>

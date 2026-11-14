@@ -1,0 +1,30 @@
+import <semiconductors/zener> as dev;
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  ZENER24V1W — generic 24 V / 1 W Zener diode (DO-41), TYPICAL values
+//
+//  NOT a specific manufacturer's model: the JEDEC 1N47xxA registration
+//  figures at 24 V (VZ 24 V at IZT 10.5 mA, ZZT 25 Ohm, ZZK 750 Ohm at
+//  0.25 mA), with typical forward and capacitance values. See ZENER12V1W.hvr
+//  for how the breakdown parameters are fitted.
+//
+//  ── What the values give (measured on this card) ───────────────────────────
+//
+//    VZ   24.000 V at 10.5 mA
+//    ZZT  25.0 Ohm at 10.5 mA, ZZK 750 Ohm at 0.25 mA
+//    VF   0.91 V at 200 mA
+//
+//  ── Fit ─────────────────────────────────────────────────────────────────────
+//
+//    IS = 1e-12, N = 1.2, RS = 0.5, CJO = 70p, VJ = 0.75, M = 0.33, TT = 50n
+//    BV = 23.923, IBV = 10.5m, NBV = 7.13, RZ = 7.35  (VZ = BV + RZ IZT = 24.000)
+//      (7.13 Vt/0.25 mA + 7.35 = 749 Ohm; 7.13 Vt/10.5 mA + 7.35 = 25.0 Ohm)
+// ─────────────────────────────────────────────────────────────────────────────
+
+analog module ZENER24V1W<>()[wire anode, wire cathode] {
+    module d = dev.Zener<1e-12, 1.2, 0.5,              // IS, N, RS
+                         70p, 0.75, 0.33, 50n,         // CJO, VJ, M, TT
+                         23.923, 10.5m, 7.13, 7.35,    // BV, IBV, NBV, RZ
+                         0.026>()                      // VT
+                        [anode, cathode];
+}

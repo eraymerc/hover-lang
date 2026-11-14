@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-48 -32 96 72" data-title="Three-phase transformer YNyn0"
+     fill="none" stroke="#000" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+  <style>.fill{fill:#000}.bold{stroke-width:3.2}.dash{stroke-dasharray:3 2.5}[data-pin]{fill:#d00;stroke:none}</style>
+  <!-- IEC two-winding symbol: two overlapping circles, a star in each (YNyn0). -->
+  <circle cx="-10" cy="0" r="18" class="bold"/>
+  <circle cx="10" cy="0" r="18" class="bold"/>
+  <path d="M-48 -16 H-18.7 M-48 0 H-28 M-48 16 H-18.7 M-48 32 H-10 V18"/>
+  <path d="M48 -16 H18.7 M48 0 H28 M48 16 H18.7 M48 32 H10 V18"/>
+  <path d="M-16 0 V6 M-16 0 L-21.2 -3 M-16 0 L-10.8 -3"/>
+  <path d="M16 0 V6 M16 0 L10.8 -3 M16 0 L21.2 -3"/>
+  <circle data-pin="pa" data-alias="a1 u1 l1 primary_a" data-dir="left" cx="-48" cy="-16" r="2"/>
+  <circle data-pin="pb" data-alias="b1 v1 l2 primary_b" data-dir="left" cx="-48" cy="0" r="2"/>
+  <circle data-pin="pc" data-alias="c1 w1 l3 primary_c" data-dir="left" cx="-48" cy="16" r="2"/>
+  <circle data-pin="pn" data-alias="n1 primary_n" data-dir="left" cx="-48" cy="32" r="2"/>
+  <circle data-pin="sa" data-alias="a2 u2 secondary_a" data-dir="right" cx="48" cy="-16" r="2"/>
+  <circle data-pin="sb" data-alias="b2 v2 secondary_b" data-dir="right" cx="48" cy="0" r="2"/>
+  <circle data-pin="sc" data-alias="c2 w2 secondary_c" data-dir="right" cx="48" cy="16" r="2"/>
+  <circle data-pin="sn" data-alias="n2 secondary_n" data-dir="right" cx="48" cy="32" r="2"/>
+</svg>

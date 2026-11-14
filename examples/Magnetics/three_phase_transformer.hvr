@@ -1,0 +1,62 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  HVR Testbench — three-phase transformer banks (<magnetics> TransformerDy,
+//  TransformerYy)
+//  Validates: Dyn11 phase shift and line ratio, YNyn0, per-winding T-model
+//             parameters, against the per-unit phasor solution
+// ─────────────────────────────────────────────────────────────────────────────
+//
+//  A balanced 230 V rms (325 V peak) star supply feeds two banks:
+//    tdy  Dyn11, n = 0.04 per winding, 3 Ohm star load: each primary winding
+//         sees the 400 V line voltage, so a secondary phase sees about
+//         0.04 * 563 V = 22.5 V peak, leading V(A) by 30 degrees.
+//    tyy  YNyn0, n = 0.1, 4 Ohm star load: about 32.5 V peak, in phase.
+//  Both with Lm = 20 H, Llp = 30 mH, Rp = 8 Ohm per winding.
+//
+//  No .op: two of the three sources are non-zero at t = 0 and .op would take
+//  those values as DC — 70 A of magnetising current through Rp that then
+//  decays over seconds.
+//
+//  ── Expected result ─────────────────────────────────────────────────────────
+//
+//  Over the last two cycles:
+//    V(a1)  22.2756 V peak, +29.490 deg from V(A)  (phasor solution
+//           22.27562 V, +29.4904 deg); V(b1) lags V(a1) by 120.000 deg
+//    V(a2)  31.1729 V peak, -2.521 deg             (phasor 31.17299 V,
+//           -2.5211 deg)
+//  ~4014 accepted steps, 2 Newton iterations each (ndf2; bdf2 the same).
+
+.tran(0, 200m, 50u);
+.solver(ndf2);
+.save(main.A, main.B, main.C, main.a1, main.b1, main.c1, main.a2, main.b2, main.c2);
+
+import <magnetics> as mag;
+from <math> import sin;
+
+analog module Mains3<double Vpk, double f>() [wire A, wire B, wire C]
+{
+    double w  = 2.0 * 3.141592653589793 * f;
+    double va = Vpk * sin(w * time);
+    double vb = Vpk * sin(w * time - 2.0943951023931953);
+    double vc = Vpk * sin(w * time + 2.0943951023931953);
+    voltage_source<>(va) [A, gnd];
+    voltage_source<>(vb) [B, gnd];
+    voltage_source<>(vc) [C, gnd];
+}
+
+module main<>() []
+{
+    wire A, B, C, a1, b1, c1, a2, b2, c2;
+    module src = Mains3<325.0, 50.0>() [A, B, C];
+
+    module tdy = mag.TransformerDy<0.04, 20.0, Llp = 30m, Lls = 50u,
+                                   Rp = 8.0, Rs = 0.015>() [A, B, C, a1, b1, c1, gnd];
+    R<3.0>() [a1, gnd];
+    R<3.0>() [b1, gnd];
+    R<3.0>() [c1, gnd];
+
+    module tyy = mag.TransformerYy<0.1, 20.0, Llp = 30m, Lls = 0.3m,
+                                   Rp = 8.0, Rs = 0.08>() [A, B, C, gnd, a2, b2, c2, gnd];
+    R<4.0>() [a2, gnd];
+    R<4.0>() [b2, gnd];
+    R<4.0>() [c2, gnd];
+}

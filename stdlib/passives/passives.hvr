@@ -1,0 +1,131 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  Real passives — capacitor, inductor and resistor with their parasitics
+//
+//  The primitives C, L and R are ideal. These wrap them with the few
+//  parasitics that decide how a part behaves in a power circuit, and nothing
+//  else. Every parasitic defaults to the value that removes it, so
+//  Capacitor<10u>() is exactly C<10u>() plus an ammeter:
+//
+//      Capacitor   p ──┬── C ──┬── ESR ── ESL ── n
+//                      └─Rleak─┘
+//
+//      Inductor    p ──┬── Rdc ── L ──┬── n          (I(.br) is the current
+//                      ├────── Rp ────┤               through Rdc and L only)
+//                      └────── Cp ────┘
+//
+//      Resistor    p ──┬── R ── Ls ──┬── n
+//                      └──── Cp ─────┘
+//
+//  ── Why the series parasitics are a branch, not an R or L primitive ───────
+//
+//  ESR, ESL, Rdc and Ls are allowed to be 0, and R<0> is a short the primitive
+//  rejects. So every series path is one voltage_source, named `br`, whose
+//  value is the voltage across that path written in terms of its own branch
+//  current:
+//
+//      v = R * I(br) + ddt(L * I(br))
+//
+//  With all of it 0 this is a 0 V ammeter. It also makes the part's current
+//  readable: I(<instance>.br) in logic or .save, which a bare C or R does not
+//  have. Positive current flows from p through the part to n.
+//
+//  The parallel losses (Rleak, Rp) are 0 = "not fitted", as the diode's Ikf
+//  and Bv are: a conductance 1/R is applied only when R > 0, written as a
+//  current source so that the "absent" case is exactly no current rather than
+//  a very large resistor.
+//
+//  Every Hover voltage_source carries the runtime's 1 uOhm regularisation on
+//  its branch row (runtime/mna/matrices.cpp, stamp_voltage_source), so the
+//  smallest series resistance these models can represent is 1 uOhm, not 0.
+//  It is visible only on milliohm parts: 1e-4 relative on a 10 mOhm shunt.
+//
+//  ── Verified ───────────────────────────────────────────────────────────────
+//
+//  .ac impedance of all three, 10 Hz to 100 MHz, 20 points/decade, against the
+//  closed form of the circuits drawn above (100 uF / 50 mOhm / 20 nH / 1 MOhm;
+//  100 uH / 0.1 Ohm / 20 kOhm / 10 pF, through its self-resonance at 5 MHz;
+//  10 mOhm / 2 nH / 1 pF): within 8e-10 relative once the 1 uOhm above is
+//  included, 1e-4 without it (examples/Passives/impedance.hvr). Step response
+//  of Capacitor and Inductor equal to the same circuit built from primitives
+//  to the CSV's 7 digits on ndf2 and bdf2 (examples/Passives/step_response.hvr).
+//
+//  Use ndf2 or bdf2. Under trapezoidal the ddt() inside `br` drifts from the
+//  L primitive once steps converge in one Newton iteration: on a 1 A, 1 ms
+//  R-L step the difference starts at 6 ms and reaches 1.8e-3 A by 10 ms. That is a runtime limitation shared by every
+//  model that writes a voltage_source from ddt() — trapezoidal's history term
+//  takes the source values of the last Newton evaluation, not of the accepted
+//  point — and not something this file can route around.
+//
+//  Not modelled: dielectric absorption, ESR that varies with frequency or
+//  temperature, DC-bias derating of ceramic capacitors, core saturation
+//  (use <magnetics> SaturableInductor), skin and proximity effect.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Capacitor with equivalent series resistance and inductance and a leakage
+// resistance across the dielectric.
+//
+//   C      capacitance, F (> 0)
+//   ESR    series resistance, Ohm                          0
+//   ESL    series inductance, H                            0
+//   Rleak  leakage resistance across C, Ohm; 0 = none      0
+//
+// The self-resonance is 1/(2 pi sqrt(ESL C)); above it the part is an
+// inductor, which is the reason ESL is here at all.
+analog module Capacitor<double C, double ESR = 0, double ESL = 0, double Rleak = 0>()
+    [wire p, wire n]
+{
+    wire x;
+    C<C>() [p, x];
+
+    double gleak = 0.0;
+    if (Rleak > 0.0) { gleak = 1.0 / Rleak; }
+    double i_leak = gleak * (V(p) - V(x));
+    current_source<>(i_leak) [p, x];
+
+    double i = I(br);
+    double v = ESR * i + ddt(ESL * i);
+    voltage_source br<>(v) [x, n];
+}
+
+// Inductor with winding resistance, a parallel core-loss resistance and the
+// winding's self-capacitance.
+//
+//   L      inductance, H (> 0)
+//   Rdc    winding (DC) resistance, Ohm                    0
+//   Rp     parallel loss resistance, Ohm; 0 = none         0
+//   Cp     self-capacitance, F                             0
+//
+// Rp and Cp sit across the terminals, the usual data-sheet equivalent of a
+// power inductor; Rp is what limits the impedance peak at the
+// self-resonance 1/(2 pi sqrt(L Cp)). Cp > 0 adds that resonance to the
+// circuit, and with it a time scale the step control has to resolve — leave
+// it at 0 unless the frequencies of interest reach it.
+analog module Inductor<double L, double Rdc = 0, double Rp = 0, double Cp = 0>()
+    [wire p, wire n]
+{
+    double i = I(br);
+    double v = Rdc * i + ddt(L * i);
+    voltage_source br<>(v) [p, n];
+
+    double gp = 0.0;
+    if (Rp > 0.0) { gp = 1.0 / Rp; }
+    double i_p = gp * (V(p) - V(n));
+    current_source<>(i_p) [p, n];
+    C<Cp>() [p, n];
+}
+
+// Resistor with series inductance and parallel capacitance — a current shunt
+// (its ESL is the spike on every switching edge) or a high-voltage divider
+// leg (its Cp is the divider's high-frequency ratio).
+//
+//   R      resistance, Ohm (0 allowed)
+//   Ls     series inductance, H                            0
+//   Cp     parallel capacitance, F                         0
+analog module Resistor<double R, double Ls = 0, double Cp = 0>()
+    [wire p, wire n]
+{
+    double i = I(br);
+    double v = R * i + ddt(Ls * i);
+    voltage_source br<>(v) [p, n];
+    C<Cp>() [p, n];
+}

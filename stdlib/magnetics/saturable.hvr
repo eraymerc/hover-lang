@@ -1,0 +1,142 @@
+from <math> import tanh;
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Saturable inductor and saturable transformer — smooth single-valued core
+//
+//  A core that saturates: the flux linkage keeps rising with current, but
+//  past the knee only at the slope of the air path. One smooth curve, no
+//  hysteresis:
+//
+//      lam(i) = Lsat i + (L0 - Lsat) i_k tanh(i / i_k),   i_k = lam_s / (L0 - Lsat)
+//
+//      lam ▲                    ___-----  slope Lsat
+//          │               _.-''
+//    lam_s ┼ - - - - - - .'  - - - - - - -  (the saturated asymptote,
+//          │           /                     Lsat i + lam_s, meets i = 0 here)
+//          │         /  slope L0
+//          │       /
+//          └──────┼───────────────────▶ i
+//                i_k
+//
+//  The differential inductance dlam/di = Lsat + (L0 - Lsat) sech^2(i / i_k)
+//  falls smoothly from L0 at zero current to Lsat in deep saturation.
+//
+//    L0     unsaturated inductance, H              N^2 mu0 mu_r Ae / le
+//    Lsat   saturated (air-core) inductance, H     about N^2 mu0 Ae / le
+//    lam_s  saturation flux linkage, Wb-turns      about N Bsat Ae
+//
+//  L0 > Lsat > 0 is required. Lsat = 0 would be a flux that can never exceed
+//  lam_s, i.e. a winding that cannot carry the volt-seconds a source imposes
+//  on it past saturation — no physical core does that, and the equations
+//  would have no solution.
+//
+//  ── Why the current is the unknown ─────────────────────────────────────────
+//
+//  The winding is a branch, as in <magnetics> CoupledInductors: its current
+//  is an MNA unknown and the branch voltage is R i + ddt(lam(i)). The curve
+//  enters Newton through its slope dlam/di, which is bounded on both sides —
+//  between Lsat and L0 — and never zero, so the branch is a companion
+//  "resistance" (dlam/di)/h that stays positive and finite everywhere. There
+//  is no exponential to overflow and no region of zero derivative, so no
+//  limiter is needed: no nr_prev(), no nodiff(). tanh saturates to +-1 in
+//  floating point without overflow, and its derivative underflows to exactly
+//  0, leaving the Lsat slope — which is the physics.
+//
+//  The opposite choice, flux as the unknown with i = f(lam) through idt(),
+//  puts 1/L(lam) in the Jacobian, which in .op (h -> 1e12 s) is a conductance
+//  of order 1e12/Lsat; the branch form is an inductor at DC exactly as the L
+//  primitive is, a short through R.
+//
+//  Measured on a sharp knee, L0 / Lsat = 1e5 (100 H / 1 mH, lam_s = 1.2 Wb,
+//  1 Ohm, 325 V 50 Hz switched on at a zero crossing): ndf2 and bdf2 accept
+//  every step in 2.1 Newton iterations on average, with 5-6 trust-region
+//  rejections in the whole 100 ms run and no step-size collapse; the first
+//  inrush peak, 232.92 A, is within 4.5e-5 of an independently integrated
+//  reference (scipy Radau, rtol 1e-11).
+//
+//  ── Accuracy in saturation ─────────────────────────────────────────────────
+//
+//  Deep in saturation a small error in flux is a large error in current
+//  (di = dlam / Lsat). The flux is the time integral of the winding voltage,
+//  so the Newton tolerance integrates into it, and it only decays with the
+//  winding's L0/R — seconds, for a mains transformer. With the default
+//  reltol (1e-3) a 100 ms inrush run of the SaturableTransformer below drifted
+//  up to 2e-3 Wb at 5 us steps, which is a 1 % error in the saturated current
+//  peaks; with `.solver(ndf2, 1e-6)` the drift stayed below 5e-7 Wb and the
+//  inrush peak matched the reference to 1e-6. Tighten reltol for inrush
+//  studies.
+//
+//  ── Using it ───────────────────────────────────────────────────────────────
+//
+//  Without .op every core starts demagnetised (lam = 0): switching a
+//  transformer on at a voltage zero crossing drives it to twice its normal
+//  peak flux, which is the inrush case. There is no remanence, so the
+//  worst case (remanent flux in the same direction) is not reproduced.
+//  With .op the core starts at the DC operating point — the current a DC
+//  voltage drives through the winding resistance.
+//
+//  Use ndf2 or bdf2: trapezoidal drifts on this model by 5 % of the inrush
+//  peak within 100 ms, the runtime limitation described in coupled.hvr.
+//
+//  Not modelled: hysteresis, remanence, eddy-current and hysteresis loss,
+//  temperature. Losses to first order: a resistor across the winding.
+//
+//  ── Verified ───────────────────────────────────────────────────────────────
+//
+//  SaturableInductor L0 = 10 H, Lsat = 10 mH, lam_s = 1.2 Wb behind 2 Ohm,
+//  325 V 50 Hz switched on at t = 0, against the reference ODE
+//  L(i) di/dt = v - R i (scipy Radau, rtol 1e-11): inrush peak 55.6306 A vs
+//  55.6351 A at a 50 us step ceiling (1.4e-4 of peak over the whole
+//  waveform), 55.63498 A at 5 us (8.5e-6) — ndf2; bdf2 2.8e-4.
+//  .op at a DC bias then .ac: the small-signal inductance is the curve's slope
+//  at the bias to 1e-6 (at i = 0, i = i_k and i = 83 i_k).
+//  Current-driven (5 A peak, 50 Hz, 40 x i_k), the terminal voltage is
+//  (dlam/di) di/dt of the curve up to the integrator's differencing error,
+//  which converges at second order: 2.7 % of the 15.7 kV peak at a 20 us step
+//  ceiling, 2.3e-4 at 2 us.
+//  SaturableTransformer (n = 0.06, Lm0 = 10 H, Lmsat = 10 mH, lam_s = 1.2 Wb,
+//  Llp = 20 mH, Lls = 72 uH, Rp = 2 Ohm, Rs = 10 mOhm, 7.2 Ohm load) against
+//  the two-current reference ODE: inrush peak 24.29350 A vs 24.29357 A.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Saturable inductor.
+//   L0      unsaturated inductance, H (> Lsat)
+//   Lsat    saturated inductance, H (> 0)
+//   lam_s   saturation flux linkage, Wb-turns (> 0)
+//   R       winding resistance, Ohm                         0
+// Current: I(<instance>.br), positive from p to n.
+analog module SaturableInductor<double L0, double Lsat, double lam_s, double R = 0>()
+    [wire p, wire n]
+{
+    double i_k = lam_s / (L0 - Lsat);
+    double i   = I(br);
+    double lam = Lsat * i + (L0 - Lsat) * i_k * tanh(i / i_k);
+    double v   = R * i + ddt(lam);
+    voltage_source br<>(v) [p, n];
+}
+
+// Transformer with a saturable core: <magnetics> Transformer's T-model with
+// the magnetising inductance replaced by the curve above, in the primary-
+// referred magnetising current im = i1 + n i2.
+//   n          turns ratio Ns/Np
+//   Lm0        unsaturated magnetising inductance, primary side, H (> Lmsat)
+//   Lmsat      saturated magnetising inductance, primary side, H (> 0)
+//   lam_s      saturation flux linkage of the PRIMARY winding, Wb-turns
+//   Llp, Lls   primary / secondary leakage inductance, H     0
+//   Rp, Rs     primary / secondary winding resistance, Ohm   0
+// Leakage flux does not saturate (it is in air).
+analog module SaturableTransformer<double n, double Lm0, double Lmsat, double lam_s,
+                                   double Llp = 0, double Lls = 0,
+                                   double Rp = 0,  double Rs = 0>()
+    [wire p1, wire n1, wire p2, wire n2]
+{
+    double i_k = lam_s / (Lm0 - Lmsat);
+    double i1  = I(w1);
+    double i2  = I(w2);
+    double im  = i1 + n * i2;
+    double lam = Lmsat * im + (Lm0 - Lmsat) * i_k * tanh(im / i_k);
+    double v1  = Rp * i1 + ddt(Llp * i1 + lam);
+    double v2  = Rs * i2 + ddt(Lls * i2 + n * lam);
+    voltage_source w1<>(v1) [p1, n1];
+    voltage_source w2<>(v2) [p2, n2];
+}

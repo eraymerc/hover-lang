@@ -1,0 +1,46 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  HVR Testbench — inrush into a saturable inductor (<magnetics>
+//  SaturableInductor)
+//  Validates: the tanh flux-current curve, deep saturation, recovery, against
+//             an independently integrated reference
+// ─────────────────────────────────────────────────────────────────────────────
+//
+//  325 V peak, 50 Hz, switched on at a zero crossing (t = 0) through 2 Ohm
+//  onto a demagnetised core: L0 = 10 H unsaturated, Lsat = 10 mH saturated,
+//  lam_s = 1.2 Wb-turns. The steady-state peak flux is 325 / (2 pi 50) =
+//  1.03 Wb, just below the knee, so in steady state the core draws a few
+//  tens of mA. Switched on at zero voltage it has to carry the full
+//  volt-seconds of a half cycle from zero flux — 2.07 Wb, far into
+//  saturation — and the current spikes to tens of amps, limited only by
+//  Lsat and the 2 Ohm; the offset decays over many cycles with L/R.
+//
+//  ── Expected result ─────────────────────────────────────────────────────────
+//
+//  First inrush peak 55.63 A at 8.9 ms; peaks decaying to 6.89 A by the
+//  fifth cycle. Reference: L(i) di/dt = v - R i with
+//  L(i) = Lsat + (L0 - Lsat) sech^2(i / i_k), scipy Radau at rtol 1e-11:
+//  55.6351 A first peak, 6.8953 A in the fifth cycle. This deck (50 us step
+//  ceiling): 55.6306 A, 6.8923 A, the whole waveform within 1.4e-4 of the
+//  peak; at a 5 us ceiling 55.63498 A (8.5e-6). ~2007 accepted steps,
+//  2.1 Newton iterations per step, no Newton failures (ndf2; bdf2 the same).
+
+.tran(0, 100m, 50u);
+.solver(ndf2);
+.save(main.a, main.l, I(main.x.br));
+
+import <magnetics> as mag;
+from <math> import sin;
+
+analog module Mains<double Vpk, double f>() [wire p]
+{
+    double v = Vpk * sin(2.0 * 3.141592653589793 * f * time);
+    voltage_source<>(v) [p, gnd];
+}
+
+module main<>() []
+{
+    wire a, l;
+    module src = Mains<325.0, 50.0>() [a];
+    R<2>() [a, l];
+    module x = mag.SaturableInductor<10.0, 10m, 1.2>() [l, gnd];
+}

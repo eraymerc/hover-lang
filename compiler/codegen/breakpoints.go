@@ -23,11 +23,15 @@ import (
 //     S(time)  >  >=  <  <=  X          (either way round)
 //
 // whose threshold X does not move within a step becomes sim.tcmp(form, X, c,
-// T): the same value, computed by the same floating-point operations, plus a
-// report of when its result next flips. The runtime ends a step exactly on
-// that instant (runtime/vm/breakpoints.hpp). S(time) is one of
+// T) (sim.tcmp_chain for a chain of two or more offsets): the same value,
+// computed by the same floating-point operations, plus a report of when its
+// result next flips. The runtime ends a step exactly on that instant
+// (runtime/vm/breakpoints.hpp). S(time) is one of
 //
-//     time,  time + c,  c + time,  time - c
+//     u = time,  time + c,  c + time,  time - c, and chains of them:
+//         time - a - b,  (time - a) - b,  time + a - b,  a + time - b, ...
+//         (left-associated + and - of step-invariant terms around one
+//         `time`, evaluated term by term as written — matchU)
 //     fmod(u, T),  u % T,  u - floor(u / T) * T        u one of the above
 //
 // — a monotone time, or a sawtooth of it (pulse trains: `fmod(time, T) < w`
@@ -45,10 +49,11 @@ import (
 // (`t_off = time; ... time - t_off >= t_dead`), and that threshold is exact.
 //
 // Not recognised (left to .zcd, as before): any other function of time
-// (`sin(w*time) > 0`, `time * f > n`), a time expression held in a variable
-// first (`double ph = time * f; ... ph - floor(ph) < d`) or passed into a
-// function parameter, == and !=, thresholds that vary within a step, and
-// comparisons in clocked modules (they only sample at their ticks anyway).
+// (`sin(w*time) > 0`, `time * f > n`, `-time`, `c - time`), a time
+// expression held in a variable first (`double ph = time * f; ... ph -
+// floor(ph) < d`) or passed into a function parameter, == and !=, thresholds
+// that vary within a step, and comparisons in clocked modules (they only
+// sample at their ticks anyway).
 // ─────────────────────────────────────────────────────────────────────────────
 
 // bpLogicPlaceholder marks the top of phase_structural and phase_digital.
@@ -103,44 +108,66 @@ func (g *generator) externNamed(e ast.Expression, name string, nargs int, logic 
 	return call, true
 }
 
-// timeSide matches S(time). u: 0 time, 1 time + c, 2 time - c; o: 0 none,
-// 1 fmod(u, T), 2 u % T, 3 u - floor(u / T) * T.
+// timeSide matches S(time). u: the offset chain around `time` (below); o: 0
+// none, 1 fmod(u, T), 2 u % T, 3 u - floor(u / T) * T.
 type timeSide struct {
-	u, o int
-	c, p ast.Expression
+	u []chainTerm
+	o int
+	p ast.Expression
 }
 
-func (g *generator) matchU(e ast.Expression, logic elaborator.LogicObject) (int, ast.Expression, bool) {
+// chainTerm is one step-invariant term of an offset chain: u is `time` with
+// the terms added (neg: subtracted) one after another, in the order written.
+type chainTerm struct {
+	c   ast.Expression
+	neg bool
+}
+
+// bpMaxChain bounds the terms of a chain (one sign bit each, runtime side).
+const bpMaxChain = 8
+
+// matchU matches the offset chain u: `time`, and any left-associated chain of
+// + and - of step-invariant terms around that single `time` — time - a - b,
+// (time - a) - b, time + a - b, a + time - b, c + (time - a). Each step is
+// one IEEE addition or subtraction of a constant to the partial result, and
+// the runtime repeats exactly those, in the same order (no folding: (t - a) -
+// b is not t - (a + b) to the ulp). `c + u` is u + c: addition commutes. A
+// constant MINUS the chain (decreasing in time) or a scaled time is not a
+// chain.
+func (g *generator) matchU(e ast.Expression, logic elaborator.LogicObject) ([]chainTerm, bool) {
 	if isBuiltinTime(e, logic) {
-		return 0, nil, true
+		return nil, true
 	}
 	b, ok := e.(*ast.BinaryExpression)
 	if !ok {
-		return 0, nil, false
+		return nil, false
+	}
+	extend := func(u ast.Expression, c ast.Expression, neg bool) ([]chainTerm, bool) {
+		chain, ok := g.matchU(u, logic)
+		if !ok || len(chain) >= bpMaxChain || !g.stepInvariant(c, logic) {
+			return nil, false
+		}
+		return append(chain, chainTerm{c, neg}), true
 	}
 	switch b.Operator {
 	case "+":
-		if isBuiltinTime(b.Left, logic) && g.stepInvariant(b.Right, logic) {
-			return 1, b.Right, true
+		if chain, ok := extend(b.Left, b.Right, false); ok {
+			return chain, true
 		}
-		if isBuiltinTime(b.Right, logic) && g.stepInvariant(b.Left, logic) {
-			return 1, b.Left, true
-		}
+		return extend(b.Right, b.Left, false)
 	case "-":
-		if isBuiltinTime(b.Left, logic) && g.stepInvariant(b.Right, logic) {
-			return 2, b.Right, true
-		}
+		return extend(b.Left, b.Right, true)
 	}
-	return 0, nil, false
+	return nil, false
 }
 
 func (g *generator) matchTimeSide(e ast.Expression, logic elaborator.LogicObject) (timeSide, bool) {
-	if u, c, ok := g.matchU(e, logic); ok {
-		return timeSide{u: u, c: c}, true
+	if u, ok := g.matchU(e, logic); ok {
+		return timeSide{u: u}, true
 	}
 	if call, ok := g.externNamed(e, "fmod", 2, logic); ok {
-		if u, c, ok := g.matchU(call.Arguments[0], logic); ok && g.stepInvariant(call.Arguments[1], logic) {
-			return timeSide{u: u, c: c, o: 1, p: call.Arguments[1]}, true
+		if u, ok := g.matchU(call.Arguments[0], logic); ok && g.stepInvariant(call.Arguments[1], logic) {
+			return timeSide{u: u, o: 1, p: call.Arguments[1]}, true
 		}
 		return timeSide{}, false
 	}
@@ -150,12 +177,12 @@ func (g *generator) matchTimeSide(e ast.Expression, logic elaborator.LogicObject
 	}
 	switch b.Operator {
 	case "%":
-		if u, c, ok := g.matchU(b.Left, logic); ok && g.stepInvariant(b.Right, logic) {
-			return timeSide{u: u, c: c, o: 2, p: b.Right}, true
+		if u, ok := g.matchU(b.Left, logic); ok && g.stepInvariant(b.Right, logic) {
+			return timeSide{u: u, o: 2, p: b.Right}, true
 		}
 	case "-":
 		// u - floor(u / T) * T, the product either way round.
-		u, c, ok := g.matchU(b.Left, logic)
+		u, ok := g.matchU(b.Left, logic)
 		prod, pok := b.Right.(*ast.BinaryExpression)
 		if !ok || !pok || prod.Operator != "*" {
 			break
@@ -170,7 +197,7 @@ func (g *generator) matchTimeSide(e ast.Expression, logic elaborator.LogicObject
 				div.Right.String() != side[1].String() || !g.stepInvariant(div.Right, logic) {
 				continue
 			}
-			return timeSide{u: u, c: c, o: 3, p: div.Right}, true
+			return timeSide{u: u, o: 3, p: div.Right}, true
 		}
 	}
 	return timeSide{}, false
@@ -208,12 +235,46 @@ func (g *generator) emitTimeCompare(n *ast.BinaryExpression, logic elaborator.Lo
 		code, t := g.emitExpr(e, logic)
 		return emitCast(code, t, CDouble)
 	}
-	form := op | ts.u<<2 | ts.o<<4
+	// U (bits 2-3): 0 u = time, 1 time + c, 2 time - c — one constant, as
+	// before chains were recognised — or 3, a longer chain, whose terms and
+	// signs go to sim.tcmp_chain.
+	U := 3
+	switch {
+	case len(ts.u) == 0:
+		U = 0
+	case len(ts.u) == 1 && !ts.u[0].neg:
+		U = 1
+	case len(ts.u) == 1:
+		U = 2
+	}
+	form := op | U<<2 | ts.o<<4
 	g.bpSites++
+	// Bits 6 and up: the comparison's own number, so the runtime can tell a
+	// threshold that keeps moving (breakpoints.hpp, TRACKING THRESHOLDS). A
+	// module body is emitted once per instance, so the number names one
+	// comparison of one instance; a function body is shared by its callers and
+	// gets 0, "not tracked".
+	if g.inFunction == 0 {
+		form |= g.bpSites << 6
+	}
 	if g.inFunction > 0 || logic.Domain != token.ANALOG {
 		g.bpLogicSites++
 	}
-	return fmt.Sprintf("sim.tcmp(%d, %s, %s, %s)", form, asDouble(threshold), asDouble(ts.c), asDouble(ts.p)), true
+	if U != 3 {
+		var c ast.Expression
+		if len(ts.u) == 1 {
+			c = ts.u[0].c
+		}
+		return fmt.Sprintf("sim.tcmp(%d, %s, %s, %s)", form, asDouble(threshold), asDouble(c), asDouble(ts.p)), true
+	}
+	neg, terms := 0, make([]string, len(ts.u))
+	for i, t := range ts.u {
+		if t.neg {
+			neg |= 1 << i
+		}
+		terms[i] = asDouble(t.c)
+	}
+	return fmt.Sprintf("sim.tcmp_chain(%d, %s, %s, %du, %s)", form, asDouble(threshold), asDouble(ts.p), neg, strings.Join(terms, ", ")), true
 }
 
 // stepInvariant: e has one value for the whole of a step (see the header).

@@ -1,0 +1,94 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  HVR Testbench — Six-Step (Hall-Commutated) BLDC Drive
+//  Validates: the <electromechanical> BLDC model's trapezoidal back-EMF and
+//             Hall outputs (through the <electromechanical/parts> BLDC24V_8P
+//             card), a digital commutation table, and the switched
+//             three-phase bridge of <power/inverter/switched>
+// ─────────────────────────────────────────────────────────────────────────────
+//
+//      hall_a,b,c ──► SixStep ──6 gates──► SwitchedThreePhaseBridge ──► BLDC
+//          ▲                                    24 V bus                  │
+//          └──────────────────────────────────────────────────────────── shaft
+//                                                         TorqueStep 0 → 0.1 N·m
+//
+//  The motor reports its three Hall states (0/1). SixStep turns the Hall
+//  code into the two switches that should conduct — the high side of the
+//  phase on its positive EMF plateau, the low side of the one on its
+//  negative plateau; the third phase's switches are both off and its
+//  current dies away through the bridge's diodes after each commutation.
+//  The table is the one in bldc.hvr. No PWM: the motor runs at the full
+//  bus voltage, from standstill, and a 0.1 N·m load steps on at 150 ms.
+//
+//  Commutation timing. The commutation module is digital, so it reads the
+//  Hall states at the start of each step and holds the gates for the step
+//  (sample and hold). The Hall edges themselves are not located by .zcd:
+//  they are logic outputs of an analog module, computed from the solved
+//  rotor angle, and .zcd does not re-evaluate those inside a step (a
+//  current limitation of .zcd). Each commutation is therefore late
+//  by up to one step — at the 10 µs ceiling and 1680 rad/s electrical, at
+//  most 1° electrical. Lower the ceiling if that matters.
+//
+//  ── Expected result ─────────────────────────────────────────────────────────
+//
+//    no load (120–150 ms)     417.8 rad/s; ideal Vdc/(2·p·flux_m) = 419.0
+//                             (friction current and diode commutation)
+//    0.1 N·m (270–300 ms)     374.6 rad/s, 1.72 A from the bus, 41.4 W in,
+//                             37.5 W to the load
+//
+//  Power: the energy into the motor terminals equals copper loss, friction,
+//  load and the change of stored energy to ~1e-3 at a 10 µs ceiling and
+//  1e-4 at 2 µs (the residual is the trapezoid rule over the switched
+//  waveforms; the same model run smoothly balances to 4e-7).
+//  ~42k step attempts, a few seconds.
+// ─────────────────────────────────────────────────────────────────────────────
+
+.save(main.omega, main.torque_em, main.hall_a, main.hall_b, main.hall_c,
+      main.a, I(main.vbus));
+.tran(0, 0.3, 10u);
+.solver(bdf2);
+
+from <electromechanical/parts> import BLDC24V_8P;
+from <power/inverter/switched> import SwitchedThreePhaseBridge;
+from <mechanical> import TorqueStep;
+
+// Six-step commutation: Hall code (a b c) → the two conducting switches.
+digital module SixStep<>(input double ha, input double hb, input double hc,
+    output double g_a_hi, output double g_a_lo, output double g_b_hi,
+    output double g_b_lo, output double g_c_hi, output double g_c_lo)[]
+{
+    double code = 4.0 * ha + 2.0 * hb + hc;
+    g_a_hi = 0.0;
+    g_a_lo = 0.0;
+    g_b_hi = 0.0;
+    g_b_lo = 0.0;
+    g_c_hi = 0.0;
+    g_c_lo = 0.0;
+    if (code > 4.5 && code < 5.5) { g_a_hi = 1.0; g_b_lo = 1.0; }   // 101: a+ b−
+    if (code > 3.5 && code < 4.5) { g_a_hi = 1.0; g_c_lo = 1.0; }   // 100: a+ c−
+    if (code > 5.5 && code < 6.5) { g_b_hi = 1.0; g_c_lo = 1.0; }   // 110: b+ c−
+    if (code > 1.5 && code < 2.5) { g_b_hi = 1.0; g_a_lo = 1.0; }   // 010: b+ a−
+    if (code > 2.5 && code < 3.5) { g_c_hi = 1.0; g_a_lo = 1.0; }   // 011: c+ a−
+    if (code > 0.5 && code < 1.5) { g_c_hi = 1.0; g_b_lo = 1.0; }   // 001: c+ b−
+}
+
+module main<>()[]
+{
+    wire dc_p, a, b, c;
+    wire shaft;                 // V(shaft) = ωm in rad/s, current = torque in N·m
+
+    state double omega = 0, hall_a = 0, hall_b = 0, hall_c = 0;
+    state double theta_e = 0, torque_em = 0;
+    state double g_ah = 0, g_al = 0, g_bh = 0, g_bl = 0, g_ch = 0, g_cl = 0;
+
+    voltage_source vbus<24>() [dc_p, gnd];
+
+    module commutation = SixStep<>(hall_a, hall_b, hall_c,
+                                   g_ah, g_al, g_bh, g_bl, g_ch, g_cl)[];
+    module bridge = SwitchedThreePhaseBridge<>(g_ah, g_al, g_bh, g_bl, g_ch, g_cl)
+                        [dc_p, gnd, a, b, c];
+
+    module motor = BLDC24V_8P<>(omega, hall_a, hall_b, hall_c, theta_e, torque_em)
+                       [a, b, c, shaft];
+
+    module load = TorqueStep<0, 0.1, 150m>()[shaft];
+}

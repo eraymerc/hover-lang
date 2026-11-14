@@ -1,0 +1,93 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  HVR Testbench — IGBT Double-Pulse Test, 400 V / 20 A, Inductive Load
+//  Validates: <semiconductors/igbt> switching — Miller plateau, the bipolar
+//             turn-off TAIL, the co-packaged diode's freewheeling and its
+//             reverse recovery at the second turn-on
+// ─────────────────────────────────────────────────────────────────────────────
+//
+//  The standard switching-loss characterisation circuit. The low-side device
+//  QL is the one under test; the high-side device QH is held off, and its
+//  anti-parallel diode is the freewheel path for the load inductor:
+//
+//      bus (400 V) ──┬───────────┐
+//                    │ QH (off)   LL 200 uH
+//                    │  + diode   │
+//      sw ───────────┴────────────┘
+//                    │ QL  <- gate: 15 V for 10 us, 0 V for 5 us, 15 V for 2 us
+//      gnd ──────────┘
+//
+//  Pulse 1 ramps the inductor to 400 V * 10 us / 200 uH = 20 A. QL turns off
+//  at 10 us with 20 A flowing (the first switching event under test), the
+//  current freewheels through QH's diode for 5 us, and QL turns back on at
+//  15 us into that diode (the second event: diode recovery), then off again
+//  at 17 us with ~24 A.
+//
+//  ── Expected result (measured, ndf2) ────────────────────────────────────────
+//
+//  Turn-off at 10 us, 20 A:
+//    · gate drops to a Miller plateau at ~6.9 V while V(sw) rises; with no
+//      stray inductance in the loop V(sw) reaches 400 V 34 ns after the gate
+//      edge
+//    · the current does NOT fall to zero with the voltage: the MOS (electron)
+//      share stops with the channel, the PNP's stored charge cannot leave
+//      and recombines. I(ac) sits near alpha * 20 A = 6.7 A when the voltage
+//      has arrived and then decays as e^(-t/200 ns): 5.84 A at 10.056 us,
+//      3.00 A at 10.189 us — tau = BF * TF = 0.5 * 400 ns = 200 ns.
+//      That tail current at full bus voltage is the IGBT's turn-off loss.
+//  Freewheel: I(ad) = -I(LL), the diode at ~1.2 V.
+//  Turn-on at 15 us: QH's diode recovers its stored charge TT * IF (1 uC):
+//    I(ac) overshoots to 108 A, i.e. ~88 A of reverse recovery current,
+//    before V(sw) collapses — SPICE TT recovery at zero loop inductance.
+//
+//  No .op, deliberately: a double-pulse test starts from a de-energised
+//  inductor, and .op relaxes LL to DC — a short from the bus through the
+//  conducting QL, 293 A at 400 V (desaturated). Hover's source-stepping
+//  ladder does not converge at 400 V (500 iterations at every rung, as for
+//  any device blocking that voltage, the D1N4007 included) and the transient
+//  then fails within 2 ns, with ndf2 and bdf2 alike. The same IGBT and
+//  inductor from a 20 V .op run cleanly.
+//
+//  Convergence (HOVER_TRACE_STEP=1, ndf2): 1503 accepted steps, 3.3 Newton
+//  iterations per step overall, 350-460 iterations per switching event over
+//  ~80 steps (max 15 in one step; the failed attempts there are truncation-
+//  error rejections, not Newton failures), no trust-region retries.
+
+.save(main.sw, main.gl, I(main.ac), I(main.LL), I(main.ad));
+.tran(0, 25u, 20n);
+.solver(ndf2);
+
+import <parts/igbt>;
+
+// Gate sequence: on for [0, t1), off, on for [t2, t3), off. Each edge is a
+// comparison of `time` with a constant, so every edge is a time breakpoint
+// and lands exactly.
+digital module DoublePulse<double t1, double t2, double t3, double von, double voff>
+(output double vg) []
+{
+    vg = voff;
+    if (time < t1) { vg = von; }
+    if (time >= t2 && time < t3) { vg = von; }
+}
+
+module main<>() []
+{
+    wire bus, sw, swc, gl, gld, gh, top;
+    state double vg = 0;
+
+    voltage_source vbus<400>()[bus, gnd];
+
+    module seq = DoublePulse<10u, 15u, 17u, 15.0, 0.0>(vg)[];
+    voltage_source<>(vg)[gld, gnd];
+    R<10>()[gld, gl];                       // external gate resistor
+
+    // device under test, with an ammeter in its collector
+    voltage_source ac<0>()[sw, swc];
+    module QL = igbt.IGBTD600V30A<>()[gl, swc, gnd];
+
+    // high side held off (gate tied to its emitter): its diode freewheels
+    voltage_source ad<0>()[bus, top];
+    module QH = igbt.IGBTD600V30A<>()[gh, top, sw];
+    R<10>()[gh, sw];
+
+    L LL<200u>()[bus, sw];
+}

@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="16 64 768 192" class="hv-schematic" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11">
+  <!-- zc: 1 A ac into c1 -->
+  <g transform="translate(96,160) rotate(180)"><path d="M0 -32 V-16 M0 16 V32"/><circle cx="0" cy="0" r="16" class="bold"/><path d="M0 -9 V4"/><polygon points="0,10 -4,3 4,3" class="fill"/></g>
+  <text x="72" y="156" text-anchor="end">ac 1 A</text>
+  <text x="72" y="170" text-anchor="end" class="dim" font-size="10">dc 0</text>
+  <g transform="translate(192,160)"><path d="M0 -32 V-17.52 M0 -2.48 V6 M0 22 V32"/><rect x="-12" y="-17.52" width="24" height="4.8" class="fill"/><rect x="-12" y="-7.28" width="24" height="4.8" class="fill"/><rect x="-4.4" y="6" width="8.8" height="16" class="bold"/></g>
+  <path d="M96 128 V96 H192 V128"/>
+  <path d="M96 192 V224 H192 V192"/>
+  <text x="144" y="88" text-anchor="middle" class="net">zc</text>
+  <text x="212" y="136">c1</text>
+  <text x="212" y="150">100 µF</text>
+  <text x="212" y="164" class="dim" font-size="10">ESR 50 mΩ</text>
+  <text x="212" y="178" class="dim" font-size="10">ESL 20 nH</text>
+  <text x="212" y="192" class="dim" font-size="10">Rleak 1 MΩ</text>
+  <circle class="dot" cx="144" cy="224" r="2.4"/>
+  <path d="M144 224 V232 M136 232 H152 M139 235 H149 M142 238 H146"/>
+  <!-- zl: 1 A ac into l1 -->
+  <g transform="translate(352,160) rotate(180)"><path d="M0 -32 V-16 M0 16 V32"/><circle cx="0" cy="0" r="16" class="bold"/><path d="M0 -9 V4"/><polygon points="0,10 -4,3 4,3" class="fill"/></g>
+  <text x="328" y="156" text-anchor="end">ac 1 A</text>
+  <text x="328" y="170" text-anchor="end" class="dim" font-size="10">dc 0</text>
+  <g transform="translate(448,160)"><path d="M0 -32 V-24 M0 4.8 V8 M0 22 V32"/><path d="M0 -24 a4.8 4.8 0 0 1 0 9.6 a4.8 4.8 0 0 1 0 9.6 a4.8 4.8 0 0 1 0 9.6" class="bold"/><rect x="-4.4" y="8" width="8.8" height="14" class="bold"/></g>
+  <path d="M352 128 V96 H448 V128"/>
+  <path d="M352 192 V224 H448 V192"/>
+  <text x="400" y="88" text-anchor="middle" class="net">zl</text>
+  <text x="468" y="136">l1</text>
+  <text x="468" y="150">100 µH</text>
+  <text x="468" y="164" class="dim" font-size="10">Rdc 0.1 Ω</text>
+  <text x="468" y="178" class="dim" font-size="10">Rp 20 kΩ</text>
+  <text x="468" y="192" class="dim" font-size="10">Cp 10 pF</text>
+  <circle class="dot" cx="400" cy="224" r="2.4"/>
+  <path d="M400 224 V232 M392 232 H408 M395 235 H405 M398 238 H402"/>
+  <!-- zr: 1 A ac into r1 -->
+  <g transform="translate(608,160) rotate(180)"><path d="M0 -32 V-16 M0 16 V32"/><circle cx="0" cy="0" r="16" class="bold"/><path d="M0 -9 V4"/><polygon points="0,10 -4,3 4,3" class="fill"/></g>
+  <text x="584" y="156" text-anchor="end">ac 1 A</text>
+  <text x="584" y="170" text-anchor="end" class="dim" font-size="10">dc 0</text>
+  <g transform="translate(704,160)"><path d="M0 -32 V-24 M0 4 V8 M0 22.4 V32"/><rect x="-8.8" y="-24" width="17.6" height="28" class="bold"/><path d="M0 8 a3.6 3.6 0 0 1 0 7.2 a3.6 3.6 0 0 1 0 7.2" class="bold"/></g>
+  <path d="M608 128 V96 H704 V128"/>
+  <path d="M608 192 V224 H704 V192"/>
+  <text x="656" y="88" text-anchor="middle" class="net">zr</text>
+  <text x="724" y="143">r1</text>
+  <text x="724" y="157">10 mΩ</text>
+  <text x="724" y="171" class="dim" font-size="10">Ls 2 nH</text>
+  <text x="724" y="185" class="dim" font-size="10">Cp 1 pF</text>
+  <circle class="dot" cx="656" cy="224" r="2.4"/>
+  <path d="M656 224 V232 M648 232 H664 M651 235 H661 M654 238 H658"/>
+</svg>

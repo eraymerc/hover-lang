@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-16 -32 32 64" data-title="Inductor with winding resistance"
+     fill="none" stroke="#000" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+  <style>.fill{fill:#000}.bold{stroke-width:3.2}.dash{stroke-dasharray:3 2.5}[data-pin]{fill:#d00;stroke:none}</style>
+  <!-- The coil, with a small series resistor below it: the winding (DC) resistance. -->
+  <path d="M0 -32 V-24 M0 4.8 V8 M0 22 V32"/>
+  <path d="M0 -24 a4.8 4.8 0 0 1 0 9.6 a4.8 4.8 0 0 1 0 9.6 a4.8 4.8 0 0 1 0 9.6" class="bold"/>
+  <rect x="-4.4" y="8" width="8.8" height="14" class="bold"/>
+  <circle data-pin="p" data-alias="n+ + a 1 pos" data-dir="up" cx="0" cy="-32" r="2"/>
+  <circle data-pin="n" data-alias="n- - b 2 neg" data-dir="down" cx="0" cy="32" r="2"/>
+</svg>

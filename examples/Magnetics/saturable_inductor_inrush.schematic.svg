@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="16 96 384 168" class="hv-schematic" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11">
+  <g transform="translate(64,176)"><path d="M0 -32 V-16 M0 16 V32"/><circle cx="0" cy="0" r="16" class="bold"/><path d="M-3.5 -7 H3.5 M0 -10.5 V-3.5"/><path d="M-3.5 7 H3.5"/></g>
+  <text x="88" y="172">325 V pk</text>
+  <text x="88" y="186">50 Hz</text>
+  <path d="M64 144 V128 H128"/>
+  <text x="96" y="120" text-anchor="middle" class="net">a</text>
+  <g transform="translate(160,128) rotate(90)"><path d="M0 -32 V-20.8 M0 20.8 V32"/><rect x="-8.8" y="-20.8" width="17.6" height="41.6" class="bold"/></g>
+  <text x="160" y="112" text-anchor="middle">2 Ω</text>
+  <path d="M192 128 H288 V144"/>
+  <text x="224" y="120" text-anchor="middle" class="net">l</text>
+  <polygon points="288,140 284.5,133 291.5,133" class="fill"/>
+  <text x="280" y="146" text-anchor="end" class="net" font-size="10">I(x.br)</text>
+  <!-- x: SaturableInductor -->
+  <g transform="translate(288,176)"><path d="M0 -32 V-21.12 M0 21.12 V32"/><path d="M0 -21.12 a5.28 5.28 0 0 1 0 10.56 a5.28 5.28 0 0 1 0 10.56 a5.28 5.28 0 0 1 0 10.56 a5.28 5.28 0 0 1 0 10.56" class="bold"/><path d="M12 -22 V22" class="bold"/><path d="M8 18 L16 -18"/></g>
+  <text x="316" y="166">x</text>
+  <text x="316" y="180" class="dim" font-size="10">L0 10 H</text>
+  <text x="316" y="194" class="dim" font-size="10">Lsat 10 mH</text>
+  <text x="316" y="208" class="dim" font-size="10">lam_s 1.2</text>
+  <path d="M64 208 V240 H288 V208"/>
+  <circle class="dot" cx="176" cy="240" r="2.4"/>
+  <path d="M176 240 V248 M168 248 H184 M171 251 H181 M174 254 H178"/>
+</svg>

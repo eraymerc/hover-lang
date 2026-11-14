@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-16 -32 32 64" data-title="Resistor with series inductance"
+     fill="none" stroke="#000" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+  <style>.fill{fill:#000}.bold{stroke-width:3.2}.dash{stroke-dasharray:3 2.5}[data-pin]{fill:#d00;stroke:none}</style>
+  <!-- The resistor body, with a small coil below it: the series inductance (ESL). -->
+  <path d="M0 -32 V-24 M0 4 V8 M0 22.4 V32"/>
+  <rect x="-8.8" y="-24" width="17.6" height="28" class="bold"/>
+  <path d="M0 8 a3.6 3.6 0 0 1 0 7.2 a3.6 3.6 0 0 1 0 7.2" class="bold"/>
+  <circle data-pin="p" data-alias="n+ + a 1 pos" data-dir="up" cx="0" cy="-32" r="2"/>
+  <circle data-pin="n" data-alias="n- - b 2 neg" data-dir="down" cx="0" cy="32" r="2"/>
+</svg>

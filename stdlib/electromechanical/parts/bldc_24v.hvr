@@ -1,0 +1,37 @@
+import <electromechanical> as em;
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  BLDC24V_8P — TYPICAL small 24 V, 8-pole brushless DC motor with Hall
+//  sensors
+//
+//  A generic, illustrative parameter set of the ~75 W class (a 42–57 mm
+//  outrunner/inrunner) — NOT the data of any particular manufacturer's
+//  motor.
+//
+//    Rs = 0.35 Ohm (phase; 0.7 Ohm line-to-line)
+//    Ls = 0.4 mH   (phase L − M; 0.8 mH line-to-line)
+//    flux_m = 7.16 mWb, p = 4 (8 poles): Ke_LL = Kt = 2·p·flux_m
+//                                        = 0.0573 V·s/rad = 0.0573 N·m/A
+//    J  = 2.4e-5 kg·m²   B = 1e-5 N·m·s/rad
+//
+//  Six-step on 24 V (ideal switches; examples/BLDC uses real ones):
+//
+//    no-load speed   Vdc/(2·p·flux_m) = 419 rad/s (4000 rpm)
+//    stall           Vdc/(2·Rs) = 34.3 A, 1.96 N·m
+//    at 0.2 N·m      3.49 A, 376 rad/s (3590 rpm), 75 W out
+//
+//  Ports and outputs as BLDC: [va, vb, vc, shaft], Hall outputs 0/1 for
+//  six-step commutation (table in bldc.hvr).
+// ─────────────────────────────────────────────────────────────────────────────
+
+module BLDC24V_8P<>
+    (output double omega_m_out, output double hall_a_out,
+     output double hall_b_out, output double hall_c_out,
+     output double theta_e_out, output double torque_out)
+    [wire va, wire vb, wire vc, wire shaft]
+{
+    module m = em.BLDC<0.35, 0.4m, 7.16m, 4, 24u, 10u, 0>
+                   (omega_m_out, hall_a_out, hall_b_out, hall_c_out,
+                    theta_e_out, torque_out)
+                   [va, vb, vc, shaft];
+}

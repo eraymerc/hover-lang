@@ -1,0 +1,47 @@
+import <electromechanical> as em;
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  IM1k5W_4P_400V — TYPICAL 1.5 kW, 4-pole, 400 V (star), 50 Hz squirrel-cage
+//  induction motor
+//
+//  A generic, illustrative parameter set of the size class of a standard
+//  IEC 90-frame motor — NOT the data of any particular manufacturer's
+//  machine. Use it to try a drive out; fit your own motor's equivalent
+//  circuit for anything quantitative.
+//
+//  Per-phase (star) equivalent circuit, 50 Hz, referred to the stator:
+//
+//    Rs = 4.4 Ohm    Lls = 25 mH (7.85 Ohm)    Lm = 0.45 H (141 Ohm)
+//    Rr = 3.6 Ohm    Llr = 25 mH (7.85 Ohm)    p  = 2 (4 poles)
+//    J  = 3.5e-3 kg·m² (rotor)   B = 0.6e-3 N·m·s/rad (bearings, windage)
+//
+//  What it does on 400 V / 50 Hz (230 V phase), from the equivalent circuit
+//  (the model reproduces these to 5–6 digits):
+//
+//    synchronous speed       1500 rpm (157.08 rad/s)
+//    rated, 1.5 kW shaft     slip 4.58 %, 1431 rpm, 10.0 N·m, 3.09 A,
+//                            power factor 0.80, efficiency 87.6 %
+//    no load                 1.54 A
+//    breakdown torque        22.8 N·m (2.3 × rated) at slip 22.6 %
+//    locked rotor            13.4 A (4.3 × rated), 11.1 N·m (1.1 × rated)
+//
+//  Typical-motor caveats, all from what InductionMachine leaves out: the
+//  efficiency is high because there is no iron or stray loss; the
+//  locked-rotor torque is low (a real cage motor's deep bars give 2–3 ×
+//  rated) because Rr and Llr do not change with slip frequency.
+//
+//  Connect it like any InductionMachine: [va, vb, vc, shaft], star with an
+//  isolated neutral, V(shaft) = speed in rad/s, current = torque in N·m.
+// ─────────────────────────────────────────────────────────────────────────────
+
+module IM1k5W_4P_400V<>
+    (output double omega_m_out, output double i_alpha_out,
+     output double i_beta_out, output double psi_r_alpha_out,
+     output double psi_r_beta_out, output double torque_out)
+    [wire va, wire vb, wire vc, wire shaft]
+{
+    module m = em.InductionMachine<4.4, 25m, 3.6, 25m, 0.45, 2, 3.5m, 0.6m>
+                   (omega_m_out, i_alpha_out, i_beta_out,
+                    psi_r_alpha_out, psi_r_beta_out, torque_out)
+                   [va, vb, vc, shaft];
+}

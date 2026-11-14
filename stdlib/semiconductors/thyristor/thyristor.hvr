@@ -1,0 +1,293 @@
+import <semiconductors> as dev;
+import <semiconductors/bjt> as bjt;
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Thyristors — SCR (with gate turn-off) and TRIAC
+//
+//  The SCR: a regenerative two-transistor model
+//  ────────────────────────────────────────────
+//  A thyristor is a p-n-p-n stack, anode p1 / n1 / p2 / n2 cathode, with the
+//  gate contact on p2. Split along the middle it is two transistors that feed
+//  each other's base (Ebers' two-transistor analogy, 1952):
+//
+//      anode ──────────── PNP Q1 emitter            (J1 = p1-n1)
+//                           Q1 base      = n1 = Q2 collector
+//                           Q1 collector = p2 = Q2 base   (J2 = n1-p2)
+//      gate ──[RG]──────────────────── p2
+//                           Q2 emitter  = cathode          (J3 = p2-n2)
+//      p2 ──[RGK]── cathode                    the cathode emitter shorts
+//
+//  Both transistors are the standard library's Gummel-Poon models, so every
+//  junction carries the stdlib limiting (pnjlim on nr_prev of its own output,
+//  the 60 nVt hold, nodiff, companion form) and real charge storage.
+//
+//  WHY a two-transistor model and not a behavioural switch with a latch
+//  state — measured, on a 230 V / 50 Hz half-wave rectifier (100 Ohm, firing
+//  at 60 deg with a gate pulse) against a behavioural SCR (a junction-diode
+//  body switched by a digital latch: on at VGK >= VGT, off below the on-state
+//  voltage at IH):
+//    · Timing. Analog modules have no `state`, so a behavioural latch lives
+//      in a digital module and samples once per step, at its start. Turn-on
+//      came 2.1-8.6 us late (one post-breakpoint step), and the IH drop-out
+//      at 10.005-10.036 ms instead of 9.946 ms (after the voltage zero
+//      instead of 50 us before it) — exact only with .zcd in the deck, which
+//      tripled the cost (9.3 iterations per step, 2565 KCL vetoes vs 3.2 and
+//      144). The two-transistor model latches and drops out at the solved
+//      instant without .zcd: its average output agreed with an ngspice twin
+//      to 0.035 % (RMS 0.02 %), and the full bridge's to 2e-5.
+//    · Plumbing. The latch has to see the gate and anode currents, but a
+//      structural module cannot forward I() to a digital one each step
+//      (`state double ig = I(vg);` — what the compiler's own error message
+//      suggests — is folded once and stays 0: the latch never fired); the
+//      behavioural model had to sense voltages instead.
+//    · Physics. Holding current, gate trigger current, natural commutation
+//      at the current zero, reverse recovery (the stored charge must be swept
+//      out before J1 and J3 block), dv/dt triggering through J2's
+//      capacitance, forward breakover and turn-off by negative gate current
+//      (GTO action) all fall out of the same equations instead of being
+//      separate rules, each with its own sample-and-hold delay.
+//    · Convergence: the regenerative turn-on is a fold — the off-state
+//      solution ceases to exist when the gate current crosses IGT. The stored
+//      charges (TT) and J2's depletion capacitance turn that fold into a
+//      trajectory the integrator follows. That is why TT and CJ must be > 0
+//      here — they are physical (every thyristor has them) and they are what
+//      makes the turn-on a dynamic event rather than an algebraic jump. The
+//      turn-OFF at IH is the same fold run backwards, and there the
+//      integrator is usually taking steps far longer than TT: Newton needs
+//      one to four 100-iteration attempts (rescued by trust-region retries)
+//      at most drop-outs, 500-1300 iterations per commutation in the 230 V
+//      examples. That cost is the open item of this model; ngspice on the
+//      same circuit spends comparable effort (6.6 iterations per timepoint
+//      against Hover's 6.5) and aborts outright on 1 ns gate edges.
+//
+//  Static behaviour — how the parameters set the data-sheet numbers
+//  ────────────────────────────────────────────────────────────────
+//  With alpha_p = BFP/(1 + BFP) and the cathode short RGK carrying the
+//  gate-cathode drop V_GT ~ Vt ln(I/IS):
+//
+//    gate trigger current   IGT ~ V_GT / RGK  (+ the small base current)
+//    holding current        IH  ~ V_GT / RGK * BFN / ((1 + BFN) alpha_p - 1)
+//    latch condition        (1 + BFN) alpha_p > 1, i.e. alpha_n + alpha_p > 1
+//    on-state voltage       VT  ~ V_J1 + V_CE(sat),Q2 + ~3 RS * I
+//
+//  These are active-region estimates. They land within ~25 % of what the
+//  cards measure, on the high side for IH (SCR400V0A8: 1.9 mA estimated,
+//  1.6 mA measured; SCR800V25A: 47 mA vs 35 mA) — the part cards quote the
+//  measured values. BFP sets IH/IGT: a small alpha_p (wide n1 base) puts the
+//  latch close to its threshold and raises IH relative to IGT. Latching current IL equals IH in
+//  this lumped model (a real device's IL is 2-3x IH because the conducting
+//  area spreads from the gate; that spreading is not modelled).
+//
+//  Turn-off by the gate (GTO action) is in the same equations: pulling a
+//  current -IG out of p2 unlatches the device once IG > IA / beta_off, with
+//  the turn-off gain beta_off = alpha_n / (alpha_n + alpha_p - 1). A
+//  conventional SCR has alpha_n + alpha_p well above 1 and beta_off of 1-2,
+//  i.e. it takes a gate current comparable to the anode current; a GTO is
+//  built (BFP small, RGK large) to keep the sum just above 1. GTO is
+//  therefore a parameterisation of this module, not a separate one — see
+//  stdlib/parts/thyristor/ for an example card.
+//
+//  Breakdown (each optional, 0 disables, built from the stdlib Diode's Bv
+//  term with a forward saturation current six decades below IS so the
+//  forward junctions remain the transistors'):
+//    VBO  forward breakover: J2 avalanches at VBO and its current flows into
+//         p2 — exactly a gate current — so the device turns on by itself.
+//    VRB  reverse breakdown of J1 (the reverse blocking voltage).
+//  The two breakdown diodes also put the stdlib GMIN (1 pS) across J1 and J2,
+//  which the Gummel-Poon transistors do not carry.
+//
+//  Parameters (SI units)
+//  ─────────────────────
+//    IS    A    saturation current of both transistors
+//    BFP   -    forward gain of the p-n-p section (alpha_p = BFP/(1+BFP))
+//    BFN   -    forward gain of the n-p-n section
+//    RGK   Ohm  gate-cathode shunt (cathode emitter shorts), > 0
+//    RG    Ohm  gate spreading resistance, > 0
+//    RS    Ohm  ohmic resistance of each section (anode and cathode
+//               emitters, the inner layers' and the bases' contacts);
+//               on-state slope ~3 RS. Keep >= ~10 mOhm: see "Ohmic
+//               resistance" in the body
+//    TT    s    transit time of both sections, forward and reverse — the
+//               stored charge behind turn-on delay, reverse recovery and
+//               turn-off time (> 0, see above)
+//    CJ    F    J2 depletion capacitance at 0 V (> 0); dv/dt triggering
+//    VJ    V    J2 built-in potential
+//    MJ    -    J2 grading coefficient
+//    VBO   V    forward breakover voltage (0 = none)
+//    VRB   V    reverse breakdown voltage (0 = none)
+//    VT    V    thermal voltage (isothermal)
+//
+//  Not modelled: temperature; plasma spreading (IL = IH, di/dt limit); the
+//  gate-cathode junction's own reverse breakdown (a few volts on a real part:
+//  drive the gate negative only through a resistor).
+// ─────────────────────────────────────────────────────────────────────────────
+
+analog module SCR<double IS,  double BFP, double BFN,
+                  double RGK, double RG,  double RS,
+                  double TT,
+                  double CJ,  double VJ,  double MJ,
+                  double VBO, double VRB,
+                  double VT>()
+    [wire gate, wire anode, wire cathode]
+{
+    // n1, p2: the two inner layers.
+    wire n1, p2;
+
+    R<RGK>() [p2, cathode];
+
+    // ── Ohmic resistance: RS in every section, never 1 mOhm ─────────────────
+    // The transistors' Re and Rc are R<> primitives and R<0> is rejected, so
+    // the library's habit is to pass 1 mOhm for "none". Not here. In a
+    // thyristor bridge, or any chain of devices that are all blocking, the
+    // nodes between them are decided by GMIN-level currents (1e-12 S * 300 V ~
+    // 3e-10 A), and a 1 kS resistor at 300 V carries G * V * eps ~ 7e-11 A of
+    // roundoff in its own KCL row — the same order. Measured on two forward-
+    // blocking SCRs in series across 230 V mains: 18.4 Newton iterations per
+    // step with trust-region rescues at 1 mOhm sections, 3.5 at 10 mOhm, 3.0
+    // at 100 mOhm; a full bridge stopped at its first firing. The bound is
+    // G << GMIN/eps ~ 4.5 kS, whatever the voltage.
+    //
+    // So RS is the resistance of each ohmic section — the anode (p1) and
+    // cathode (n2) emitters, the two inner layers' contacts and the two base
+    // contacts — and the on-state slope resistance comes out near 3 RS
+    // (measured on the part cards and quoted there). Keep RS >= ~10 mOhm:
+    // the 230 V SCR bridge example takes 5.8 Newton iterations per step at
+    // 10 mOhm and 10.2 at 5 mOhm (300-900 vs 1100-1450 per switching event).
+    // For a power part that floor costs on-state voltage: the 25 A card
+    // reaches 2.4 V at 50 A where a real one is ~1.6 V. That is the language
+    // limitation (no zero-resistance section without a node) showing through,
+    // and it is reported as such rather than tuned around.
+
+    // ── p-n-p section: emitter p1, base n1, collector p2 ────────────────────
+    // Its J1 is the reverse-blocking junction. Br = 1: in saturation J2
+    // injects back, and the reverse gain only shapes VT. No depletion charge
+    // here: J2's is carried once, on the n-p-n below.
+    module qp = bjt.PNP<IS, 1.0, 1.0,                  // Is, Nf, Nr
+                        BFP, 1.0,                      // Bf, Br
+                        0.0, 0.0,                      // Vaf, Var
+                        0.0, 0.0,                      // Ikf, Ikr
+                        0.0, 1.5,                      // Ise, Ne
+                        0.0, 2.0,                      // Isc, Nc
+                        RS, 0.0, 0.0,                  // Rb, Rbm, Irb
+                        RS, RS,                        // Re, Rc
+                        0.0, 0.75, 0.33,               // Cje, Vje, Mje
+                        0.0, 0.75, 0.33,               // Cjc, Vjc, Mjc
+                        0.5, TT, TT,                   // Fc, Tf, Tr
+                        0.0, VT>()                     // Cjs, Vt
+                       [n1, p2, anode];
+
+    // ── n-p-n section: collector n1, base p2, emitter n2 = cathode ──────────
+    // Its base resistance is RS like every section (the transistors' Rb is a
+    // synthesized V = Rb * I branch, and 1 mOhm there amplifies roundoff into
+    // the branch current exactly as a 1 kS conductance would: measured, the
+    // half-wave rectifier deck took 4.7 Newton iterations per step with 1 mOhm
+    // base resistances and 3.2 with RS). RG, the gate spreading resistance,
+    // is the separate resistor from the gate terminal to p2 below.
+    module qn = bjt.NPN<IS, 1.0, 1.0,                  // Is, Nf, Nr
+                        BFN, 1.0,                      // Bf, Br
+                        0.0, 0.0,                      // Vaf, Var
+                        0.0, 0.0,                      // Ikf, Ikr
+                        0.0, 1.5,                      // Ise, Ne
+                        0.0, 2.0,                      // Isc, Nc
+                        RS, 0.0, 0.0,                  // Rb, Rbm, Irb
+                        RS, RS,                        // Re, Rc
+                        0.0, 0.75, 0.33,               // Cje, Vje, Mje
+                        CJ, VJ, MJ,                    // Cjc, Vjc, Mjc  (J2)
+                        0.5, TT, TT,                   // Fc, Tf, Tr
+                        0.0, VT>()                     // Cjs, Vt
+                       [p2, n1, cathode];
+
+    R<RG>() [gate, p2];
+
+    // ── Breakdown of J2 (forward breakover) and J1 (reverse) ────────────────
+    // Breakdown-only junctions: the forward branch is suppressed (Is = IS *
+    // 1e-6 with N = 10, under 1e-11 A at the < 2.5 V these junctions ever see
+    // forward), so the forward J1/J2 currents remain the transistors'. Only
+    // the Bv term acts. RS is their series resistance, as everywhere.
+    module bo = dev.Diode<IS * 1.0e-6, 10.0, RS,       // Is, N, Rs
+                          0.0, 0.0, 2.0,               // Ikf, Isr, Nr
+                          VBO, 1m,                     // Bv, Ibv
+                          0.0, 0.75, 0.33, 0.5,        // Cjo, Vj, M, Fc
+                          0.0, VT>()                   // Tt, Vt
+                         [p2, n1];
+    module rb = dev.Diode<IS * 1.0e-6, 10.0, RS,
+                          0.0, 0.0, 2.0,
+                          VRB, 1m,
+                          0.0, 0.75, 0.33, 0.5,
+                          0.0, VT>()
+                         [anode, n1];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  TRIAC — bidirectional thyristor, four-quadrant gate
+//
+//  Two SCRs (the module above) in anti-parallel between MT2 and MT1: S1 is
+//  the MT2 -> MT1 thyristor, S2 the MT1 -> MT2 one. In silicon they share one
+//  die and one gate; electrically that is what a triac does — whichever
+//  direction the main terminals are biased, a gate current of either sign
+//  (quadrants I-IV) fires the section that is forward biased, and the section
+//  stays on until its current falls below IH, which for a resistive or
+//  inductive mains load is the current zero of every half-cycle.
+//
+//  The gate. Its current is referenced to MT1 in every quadrant, but S2's
+//  gate region sits at MT2. The real device solves that geometrically (the
+//  remote and junction-gate structures of the four quadrants); a lumped model
+//  has to do it with a controlled source. The gate terminal enters through a
+//  0 V sense source into the gate-MT1 input junction — two anti-parallel
+//  stdlib Diodes (IS, N = 1, series RG) with the shunt RGK, so VGT and the
+//  input resistance are the same in both polarities — and the sensed gate
+//  current |IG| is injected into BOTH sections' gates, each from its own
+//  cathode: into S1's from MT1, into S2's from MT2. That is a current-
+//  controlled current source with nothing nonlinear in it but |.|; it moves
+//  no charge between the main terminals (each injection returns through the
+//  same section's cathode), so every terminal current still sums to zero.
+//  The injected current is what the SCR section sees as its gate current, so
+//  the triac's IGT and IH are its SCR section's (measured on the card, the
+//  same in all four quadrants: the quadrant-IV insensitivity of real triacs
+//  is not modelled).
+//
+//  |IG| has a kink at IG = 0, where its slope flips sign. It is left as a
+//  kink: there the injection is zero and nothing depends on its slope, and a
+//  smoothing constant would be one more number with no physical meaning.
+//
+//  Parameters: those of SCR (one set, both sections identical).
+//  Ports: gate, MT2 (the "anode" side), MT1 (the gate reference).
+//
+//  Not modelled, beyond SCR's list: quadrant-dependent IGT; commutating
+//  dv/dt (the two sections share no charge, so a fast reversal after
+//  conduction cannot retrigger the other direction except through its own
+//  J2 capacitance); a real triac's lower dv/dt rating in the 3rd quadrant.
+// ─────────────────────────────────────────────────────────────────────────────
+
+analog module TRIAC<double IS,  double BFP, double BFN,
+                    double RGK, double RG,  double RS,
+                    double TT,
+                    double CJ,  double VJ,  double MJ,
+                    double VBO, double VRB,
+                    double VT>()
+    [wire gate, wire mt2, wire mt1]
+{
+    // gx: the gate behind the sense source. g1, g2: the two sections' gates.
+    wire gx, g1, g2;
+
+    voltage_source igs<0>() [gate, gx];
+
+    // Gate input: anti-parallel junctions and the shunt, gate to MT1.
+    module gjp = dev.Diode<IS, 1.0, RG, 0.0, 0.0, 2.0, 0.0, 0.0,
+                           0.0, 0.75, 0.33, 0.5, 0.0, VT>() [gx, mt1];
+    module gjn = dev.Diode<IS, 1.0, RG, 0.0, 0.0, 2.0, 0.0, 0.0,
+                           0.0, 0.75, 0.33, 0.5, 0.0, VT>() [mt1, gx];
+    R<RGK>() [gx, mt1];
+
+    // |IG| into each section's gate, from that section's cathode.
+    double ig = I(igs);
+    double ig_abs = ig;
+    if (ig < 0.0) { ig_abs = 0.0 - ig; }
+    current_source<>(ig_abs) [mt1, g1];
+    current_source<>(ig_abs) [mt2, g2];
+
+    module s1 = SCR<IS, BFP, BFN, RGK, RG, RS, TT, CJ, VJ, MJ, VBO, VRB, VT>()
+                   [g1, mt2, mt1];
+    module s2 = SCR<IS, BFP, BFN, RGK, RG, RS, TT, CJ, VJ, MJ, VBO, VRB, VT>()
+                   [g2, mt1, mt2];
+}

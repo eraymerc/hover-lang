@@ -1,0 +1,424 @@
+// sin/cos rotate the wound rotor's terminal quantities into the stator frame.
+from <math> import sin, cos;
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  InductionMachine — three-phase squirrel-cage induction (asynchronous)
+//  machine, dynamic model in the stator (αβ) frame, with a shaft port
+//
+//      va ──┐                              ┌─────────────────────┐
+//      vb ──┤ star (isolated neutral)      │ C<J>   B·ω    T_em  │── shaft
+//      vc ──┘ or delta (delta = 1)         └─────────────────────┘
+//
+//  The fifth-order model of every textbook (Krause; Simulink's
+//  "Asynchronous Machine"), written in the stationary frame so that no
+//  rotating transform is needed: the stator quantities ARE the Clarke
+//  quantities of the terminals. Rotor quantities are referred to the stator
+//  (turns ratio 1). With space vectors x = xα + j·xβ:
+//
+//      vs = Rs·is + dψs/dt
+//      0  = Rr·ir + dψr/dt − j·ωe·ψr                (cage: rotor shorted)
+//      ψs = Lls·is + ψm,   ψr = Llr·ir + ψm,   ψm = Lm·im,   im = is + ir
+//      ωe = p·ωm
+//      T_em = 1.5·p·(ψsα·isβ − ψsβ·isα) = 1.5·p·(ψmα·isβ − ψmβ·isα)
+//           = 1.5·p·Lm·(isβ·irα − isα·irβ)          (linear)
+//
+//  Circuit. Each axis is the machine's T equivalent circuit built from real
+//  inductors, so that the flux derivatives are the inductors' own (exactly as
+//  PMSM's dq axes are), and the currents are their branch currents:
+//
+//      s1 ──Lls──┬──Llr── r1        V(s1) = vs − Rs·is   (voltage source)
+//                Lm                 V(r1) = −Rr·ir − (speed voltage)
+//               gnd
+//
+//  (The magnetising inductor has a series voltage source that is zero unless
+//  Im_sat > 0 — see "Main-flux saturation" below.)
+//  The resistive drops are written into the two voltage sources rather than
+//  as R elements, so Rs = 0 and Rr = 0 are both allowed (as in PMSM).
+//  The rotor speed voltages, from −j·ωe·ψr:
+//
+//      V(r1α) = −Rr·irα − ωe·ψrβ
+//      V(r1β) = −Rr·irβ + ωe·ψrα
+//
+//  Transforms are amplitude-invariant (Clarke 2/3 scaling), exactly as in
+//  PMSM: balanced phase currents of peak Î give |isα + j·isβ| = Î, power is
+//  1.5·(vα·iα + vβ·iβ), hence the 1.5 in the torque. A positive-sequence
+//  supply (a leads b leads c) turns the field, and the rotor, in the positive
+//  direction.
+//
+//  Steady state. On a balanced sinusoidal supply of electrical frequency
+//  ωs = 2π·f the model reduces to the per-phase equivalent circuit
+//
+//      Vs = (Rs + j·ωs·Lls)·Is + j·ωs·Lm·(Is + Ir)
+//      0  = (Rr/s + j·ωs·Llr)·Ir + j·ωs·Lm·(Is + Ir),   s = (ωs − p·ωm)/ωs
+//      T_em = 1.5·p·|Ir|²·Rr / (s·ωs)                   (peak phasors)
+//
+//  and the model reproduces it: torque, current and input power at slips
+//  from −0.05 (generating) through breakdown to 1 (locked rotor) agree with
+//  this circuit to 1e-6 (trapezoidal, 5 µs ceiling; 2e-4 at 20 µs) — except
+//  next to synchronism, where torque ∝ slip magnifies the integrator's own
+//  ~(ω·dt)²/12 frequency error: 2e-4 of the torque at s = 0.001 — and a
+//  direct-on-line start agrees with an independent integration of the
+//  equations above to 6 mrad/s (examples/InductionMachine/dol_start.hvr).
+//
+//  Terminals. Star (delta = 0, the default): the windings share an isolated
+//  neutral, the phase voltages are the terminal voltages less their mean, and
+//  no zero-sequence current flows — as in PMSM. Delta (delta = 1): winding
+//  "a" lies between terminals a and b, "b" between b and c, "c" between c
+//  and a; the winding voltages are the line-to-line voltages and the terminal
+//  currents are differences of winding currents. No circulating
+//  zero-sequence current is modelled in delta either. The parameters are per
+//  WINDING in both cases, so a "400 V Δ / 690 V Y" machine has the same
+//  parameters in both connections and is fed 400 V line-to-line in delta.
+//
+//  Each terminal is a current source to ground, so, as for PMSM:
+//    - no phase may be left completely open (a node with only a current
+//      source on it is singular); a phase that is to carry no current still
+//      needs a path, e.g. a large resistor;
+//    - the machine gives the terminals no reference of its own: whatever
+//      drives them must tie them to ground somewhere.
+//
+//  Shaft. Exactly PMSM's convention: V(shaft) = ωm in rad/s, current =
+//  torque in N·m; J is a capacitor and B a self-sensing VCCS on the shaft
+//  node (so B = 0 is allowed), the electromagnetic torque a current source
+//  into it:
+//
+//      J·dωm/dt = T_em − B·ωm − T_shaft
+//
+//  T_shaft is the current leaving through the shaft pin into the load.
+//  Motoring torque is positive. Loads go from shaft to ground (see pmsm.hvr,
+//  and <mechanical> for friction, fan, gear and flexible-shaft parts).
+//  Driven above synchronous speed (p·ωm > ωs, s < 0) the machine generates:
+//  T_em < 0 and the electrical power reverses.
+//
+//  Operating point. Under .op the bias point is DC: the inductors are shorts,
+//  so a sinusoidal supply is taken at its t = 0 value and the stator carries
+//  the DC current V/Rs that implies. That is the true DC solution and not a
+//  sinusoidal steady state; a direct-on-line start is a run WITHOUT .op
+//  (the machine at rest, all currents zero).
+//
+//  Solver. A Newton solver (bdf2, ndf2, trapezoidal), as for PMSM.
+//
+//  Main-flux saturation (optional, Im_sat > 0). The magnetising inductance
+//  falls smoothly with the magnitude of the magnetising-current vector:
+//
+//      ψm = Lm_e·im,   Lm_e = Lm / √(1 + |im|²/Im_sat²)
+//
+//  so |ψm| = Lm·|im| for |im| ≪ Im_sat, 71 % of that at |im| = Im_sat, and
+//  tends to the ceiling Lm·Im_sat. It is isotropic (it depends on |im|, not
+//  on the direction), which gives the cross-saturation between α and β that
+//  main-flux saturation physically has, and it depends on |im|² only, so it
+//  is smooth through im = 0. Implemented as a voltage source
+//  d((Lm_e − Lm)·im)/dt in series with the unsaturated Lm inductor, so the
+//  default Im_sat = 0 is exactly the linear model. In steady state on a
+//  sinusoidal supply |im| is constant and the equivalent circuit holds with
+//  Lm_e in place of Lm. Im_sat is a fit parameter, not a datum: fit it to the
+//  no-load curve. The ceiling Lm·Im_sat must lie above the rated air-gap flux
+//  (≈ V̂s/ωs, peak phase voltage over electrical frequency) or rated voltage
+//  cannot be reached at any current: with the ceiling 1.5× the rated flux the
+//  rated magnetising current is 1.34× its linear value, with 2× it is 1.15×.
+//  The leakage inductances stay linear, and the hard ceiling makes it a poor
+//  model far past the knee (a real curve keeps a small slope there).
+//
+//  Parameters (per winding, referred to the stator)
+//      Rs      stator resistance, Ohm (0 allowed)
+//      Lls     stator leakage inductance, H (> 0)
+//      Rr      rotor resistance, referred, Ohm (0 allowed)
+//      Llr     rotor leakage inductance, referred, H (> 0)
+//      Lm      magnetising inductance, H (> 0)
+//      p       number of pole PAIRS (a 4-pole machine has p = 2)
+//      J       rotor inertia, kg·m² (0 allowed — see pmsm.hvr)
+//      B       rotor viscous friction, N·m·s/rad (0 allowed)
+//      delta   0 = star (default), 1 = delta
+//      Im_sat  main-flux saturation current, A peak (0 = linear, the default)
+//  From a data sheet's per-phase equivalent circuit at frequency f:
+//  Lls = Xls/(2π·f), and likewise Llr, Lm; a delta machine's equivalent
+//  circuit is usually already per winding, a star one per phase.
+//
+//  Outputs (logic)
+//      omega_m_out      mechanical speed ωm, rad/s (= V(shaft))
+//      i_alpha_out      stator (winding) current, α axis, A (= i of winding a)
+//      i_beta_out       stator current, β axis, A
+//      psi_r_alpha_out  rotor flux linkage ψrα, Wb (for flux observers / FOC)
+//      psi_r_beta_out   rotor flux linkage ψrβ, Wb
+//      torque_out       electromagnetic torque T_em, N·m (before friction)
+//
+//  Not modelled: saturation of the leakage flux (Lls, Llr are constants;
+//  main-flux saturation is the optional Im_sat above), deep-bar / double-cage rotor effects (Rr and Llr do not change
+//  with slip frequency, so a fit at rated slip overestimates the locked-rotor
+//  current and underestimates its torque), iron loss, stray load loss, space
+//  harmonics and slotting, temperature, and any zero-sequence path.
+// ─────────────────────────────────────────────────────────────────────────────
+
+analog module InductionMachine<double Rs, double Lls, double Rr, double Llr,
+                               double Lm, double p, double J, double B,
+                               double delta = 0, double Im_sat = 0>
+    (output double omega_m_out, output double i_alpha_out,
+     output double i_beta_out, output double psi_r_alpha_out,
+     output double psi_r_beta_out, output double torque_out)
+    [wire va, wire vb, wire vc, wire shaft]
+{
+    wire sa, ma, qa, ra, sb, mb, qb, rb;
+
+    // ── Mechanics, on the shaft node (as PMSM) ──────────────────────────────
+    C<J>()                   [shaft, gnd];
+    VCCS<B>()                [shaft, gnd, shaft, gnd];
+
+    double omega_m = V(shaft);
+    double omega_e = p * omega_m;
+
+    // ── Terminal voltages → winding voltages → αβ (amplitude-invariant) ────
+    // Star: winding k sees V(k) less the isolated star point (the mean).
+    // Delta: winding a is a–b, winding b is b–c (and c is c–a).
+    double v_n = (V(va) + V(vb) + V(vc)) / 3.0;
+    double u_a = V(va) - v_n;
+    double u_b = V(vb) - v_n;
+    if (delta > 0.5) {
+        u_a = V(va) - V(vb);
+        u_b = V(vb) - V(vc);
+    }
+    double v_alpha = u_a;
+    double v_beta  = (u_a + 2.0 * u_b) / (3.0**0.5);
+
+    // ── T equivalent circuit per axis ───────────────────────────────────────
+    double is_a = I(Lls_a);         // stator current, α (s1 → m)
+    double is_b = I(Lls_b);
+    double ir_a = I(Llr_a);         // rotor current, α (r1 → m)
+    double ir_b = I(Llr_b);
+    double im_a = I(Lm_a);          // magnetising current = is + ir
+    double im_b = I(Lm_b);
+
+    // Main flux ψm = Lm_e·im (a vector along im). Linear: Lm_e = Lm. With
+    // Im_sat > 0 it saturates smoothly with the magnetising-current
+    // magnitude; the inductor carries the unsaturated Lm and a series source
+    // the difference d((Lm_e − Lm)·im)/dt, which is zero in the linear case.
+    double lm_e = Lm;
+    if (Im_sat > 0.0) {
+        lm_e = Lm / ((1.0 + (im_a * im_a + im_b * im_b) / (Im_sat * Im_sat))**0.5);
+    }
+    double psi_m_a = lm_e * im_a;
+    double psi_m_b = lm_e * im_b;
+    double v_sat_a = ddt((lm_e - Lm) * im_a);
+    double v_sat_b = ddt((lm_e - Lm) * im_b);
+
+    double psi_r_a = Llr * ir_a + psi_m_a;
+    double psi_r_b = Llr * ir_b + psi_m_b;
+
+    double v_s_a = v_alpha - Rs * is_a;
+    double v_s_b = v_beta  - Rs * is_b;
+    double v_r_a = 0.0 - Rr * ir_a - omega_e * psi_r_b;
+    double v_r_b = 0.0 - Rr * ir_b + omega_e * psi_r_a;
+
+    voltage_source<>(v_s_a) [sa, gnd];
+    L Lls_a<Lls>()          [sa, ma];
+    L Lm_a<Lm>()            [ma, qa];
+    voltage_source<>(v_sat_a) [qa, gnd];
+    L Llr_a<Llr>()          [ra, ma];
+    voltage_source<>(v_r_a) [ra, gnd];
+
+    voltage_source<>(v_s_b) [sb, gnd];
+    L Lls_b<Lls>()          [sb, mb];
+    L Lm_b<Lm>()            [mb, qb];
+    voltage_source<>(v_sat_b) [qb, gnd];
+    L Llr_b<Llr>()          [rb, mb];
+    voltage_source<>(v_r_b) [rb, gnd];
+
+    // ── αβ currents → winding currents → terminal currents ─────────────────
+    double i_wa = is_a;
+    double i_wb = -0.5 * is_a + ((3.0**0.5) / 2.0) * is_b;
+    double i_wc = -0.5 * is_a - ((3.0**0.5) / 2.0) * is_b;
+
+    double i_a = i_wa;
+    double i_b = i_wb;
+    double i_c = i_wc;
+    if (delta > 0.5) {
+        i_a = i_wa - i_wc;
+        i_b = i_wb - i_wa;
+        i_c = i_wc - i_wb;
+    }
+
+    // Motor convention: positive current flows into the terminal.
+    current_source<>(i_a) [va, gnd];
+    current_source<>(i_b) [vb, gnd];
+    current_source<>(i_c) [vc, gnd];
+
+    // ── Electromagnetic torque, into the shaft ──────────────────────────────
+    // T = 1.5·p·(ψsα·isβ − ψsβ·isα) = 1.5·p·(ψmα·isβ − ψmβ·isα)
+    double torque = 1.5 * p * (psi_m_a * is_b - psi_m_b * is_a);
+    current_source<>(torque) [gnd, shaft];
+
+    omega_m_out     = omega_m;
+    i_alpha_out     = is_a;
+    i_beta_out      = is_b;
+    psi_r_alpha_out = psi_r_a;
+    psi_r_beta_out  = psi_r_b;
+    torque_out      = torque;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  InductionMachineWR — wound-rotor (slip-ring) induction machine
+//
+//  InductionMachine with the rotor winding brought out to three slip-ring
+//  terminals ra, rb, rc (star, isolated neutral) instead of shorted:
+//
+//      vr = Rr·ir + dψr/dt − j·ωe·ψr        (stator frame, referred)
+//
+//  The rotor terminal quantities live in the ROTOR frame (they turn with the
+//  rotor and have slip frequency s·f in steady state). They are Clarke-
+//  transformed there and rotated into the stator frame by the rotor's
+//  electrical angle
+//
+//      θr = θ0 + ∫ωe dt,    vr(stator) = vr(rotor)·e^(+jθr),
+//                           ir(rotor)  = ir(stator)·e^(−jθr)
+//
+//  (an integrator state, never wrapped, as PMSM's θe). θ0 = 0 puts rotor
+//  phase a on stator phase a at t = 0.
+//
+//  Everything is referred to the stator with turns ratio 1: the rotor
+//  terminals carry the referred voltages and currents. For a machine with an
+//  effective stator:rotor turns ratio a, a physical rotor resistor R_phys
+//  is R_phys·a² here, and the physical slip-ring voltage is the terminal
+//  voltage over a. External rotor resistance per phase simply adds to Rr in
+//  the torque–slip curve, which is what starting resistors are for.
+//
+//  Rotor terminals are current sources to ground like the stator ones, with
+//  the same two rules: no rotor phase completely open, and the rotor circuit
+//  needs a path to ground — star-connect the rotor resistors to gnd (no
+//  current flows in that ground return: the three rotor currents sum to zero).
+//  A shorted rotor is not three wires tied together (a node with only
+//  current sources on it is singular): use InductionMachine for that.
+//
+//  Ports [va, vb, vc, ra, rb, rc, shaft]; the stator may be star or delta
+//  (delta = 1), the rotor is star. Parameters as InductionMachine (including
+//  the optional Im_sat), plus theta0 (initial electrical rotor angle, rad,
+//  default 0); pass the defaulted ones by name, e.g. <..., B, delta = 1>. Outputs as
+//  InductionMachine plus theta_e_out, the rotor's electrical angle θr (rad,
+//  unwrapped). Not modelled: as InductionMachine, plus brush drop and
+//  slip-ring resistance.
+// ─────────────────────────────────────────────────────────────────────────────
+
+analog module InductionMachineWR<double Rs, double Lls, double Rr, double Llr,
+                                 double Lm, double p, double J, double B,
+                                 double theta0 = 0, double delta = 0,
+                                 double Im_sat = 0>
+    (output double omega_m_out, output double i_alpha_out,
+     output double i_beta_out, output double psi_r_alpha_out,
+     output double psi_r_beta_out, output double theta_e_out,
+     output double torque_out)
+    [wire va, wire vb, wire vc, wire ra, wire rb, wire rc, wire shaft]
+{
+    wire sa, ma, qa, xa, sb, mb, qb, xb;
+
+    // ── Mechanics, on the shaft node (as PMSM) ──────────────────────────────
+    C<J>()                   [shaft, gnd];
+    VCCS<B>()                [shaft, gnd, shaft, gnd];
+
+    double omega_m = V(shaft);
+    double omega_e = p * omega_m;
+
+    // ── Rotor electrical angle: θr = θ0 + ∫ p·ωm dt ─────────────────────────
+    double theta_r = theta0 + idt(omega_e);
+    double c_th = cos(theta_r);
+    double s_th = sin(theta_r);
+
+    // ── Stator: terminal voltages → αβ (star or delta) ──────────────────────
+    double v_n = (V(va) + V(vb) + V(vc)) / 3.0;
+    double u_a = V(va) - v_n;
+    double u_b = V(vb) - v_n;
+    if (delta > 0.5) {
+        u_a = V(va) - V(vb);
+        u_b = V(vb) - V(vc);
+    }
+    double v_alpha = u_a;
+    double v_beta  = (u_a + 2.0 * u_b) / (3.0**0.5);
+
+    // ── Rotor: slip-ring voltages → rotor-frame xy → stator frame ───────────
+    double vr_n = (V(ra) + V(rb) + V(rc)) / 3.0;
+    double ur_a = V(ra) - vr_n;
+    double ur_b = V(rb) - vr_n;
+    double vr_x = ur_a;
+    double vr_y = (ur_a + 2.0 * ur_b) / (3.0**0.5);
+    double vr_alpha = vr_x * c_th - vr_y * s_th;
+    double vr_beta  = vr_x * s_th + vr_y * c_th;
+
+    // ── T equivalent circuit per axis (as InductionMachine) ─────────────────
+    double is_a = I(Lls_a);
+    double is_b = I(Lls_b);
+    double ir_a = I(Llr_a);
+    double ir_b = I(Llr_b);
+    double im_a = I(Lm_a);
+    double im_b = I(Lm_b);
+
+    // Main flux ψm = Lm_e·im (a vector along im). Linear: Lm_e = Lm. With
+    // Im_sat > 0 it saturates smoothly with the magnetising-current
+    // magnitude; the inductor carries the unsaturated Lm and a series source
+    // the difference d((Lm_e − Lm)·im)/dt, which is zero in the linear case.
+    double lm_e = Lm;
+    if (Im_sat > 0.0) {
+        lm_e = Lm / ((1.0 + (im_a * im_a + im_b * im_b) / (Im_sat * Im_sat))**0.5);
+    }
+    double psi_m_a = lm_e * im_a;
+    double psi_m_b = lm_e * im_b;
+    double v_sat_a = ddt((lm_e - Lm) * im_a);
+    double v_sat_b = ddt((lm_e - Lm) * im_b);
+
+    double psi_r_a = Llr * ir_a + psi_m_a;
+    double psi_r_b = Llr * ir_b + psi_m_b;
+
+    double v_s_a = v_alpha - Rs * is_a;
+    double v_s_b = v_beta  - Rs * is_b;
+    double v_r_a = vr_alpha - Rr * ir_a - omega_e * psi_r_b;
+    double v_r_b = vr_beta  - Rr * ir_b + omega_e * psi_r_a;
+
+    voltage_source<>(v_s_a) [sa, gnd];
+    L Lls_a<Lls>()          [sa, ma];
+    L Lm_a<Lm>()            [ma, qa];
+    voltage_source<>(v_sat_a) [qa, gnd];
+    L Llr_a<Llr>()          [xa, ma];
+    voltage_source<>(v_r_a) [xa, gnd];
+
+    voltage_source<>(v_s_b) [sb, gnd];
+    L Lls_b<Lls>()          [sb, mb];
+    L Lm_b<Lm>()            [mb, qb];
+    voltage_source<>(v_sat_b) [qb, gnd];
+    L Llr_b<Llr>()          [xb, mb];
+    voltage_source<>(v_r_b) [xb, gnd];
+
+    // ── Stator currents → terminals ─────────────────────────────────────────
+    double i_wa = is_a;
+    double i_wb = -0.5 * is_a + ((3.0**0.5) / 2.0) * is_b;
+    double i_wc = -0.5 * is_a - ((3.0**0.5) / 2.0) * is_b;
+    double i_a = i_wa;
+    double i_b = i_wb;
+    double i_c = i_wc;
+    if (delta > 0.5) {
+        i_a = i_wa - i_wc;
+        i_b = i_wb - i_wa;
+        i_c = i_wc - i_wb;
+    }
+    current_source<>(i_a) [va, gnd];
+    current_source<>(i_b) [vb, gnd];
+    current_source<>(i_c) [vc, gnd];
+
+    // ── Rotor currents → rotor frame → slip rings ───────────────────────────
+    double ir_x =  ir_a * c_th + ir_b * s_th;
+    double ir_y = -ir_a * s_th + ir_b * c_th;
+    double i_ra = ir_x;
+    double i_rb = -0.5 * ir_x + ((3.0**0.5) / 2.0) * ir_y;
+    double i_rc = -0.5 * ir_x - ((3.0**0.5) / 2.0) * ir_y;
+    current_source<>(i_ra) [ra, gnd];
+    current_source<>(i_rb) [rb, gnd];
+    current_source<>(i_rc) [rc, gnd];
+
+    // ── Electromagnetic torque, into the shaft ──────────────────────────────
+    // T = 1.5·p·(ψsα·isβ − ψsβ·isα) = 1.5·p·(ψmα·isβ − ψmβ·isα)
+    double torque = 1.5 * p * (psi_m_a * is_b - psi_m_b * is_a);
+    current_source<>(torque) [gnd, shaft];
+
+    omega_m_out     = omega_m;
+    i_alpha_out     = is_a;
+    i_beta_out      = is_b;
+    psi_r_alpha_out = psi_r_a;
+    psi_r_beta_out  = psi_r_b;
+    theta_e_out     = theta_r;
+    torque_out      = torque;
+}

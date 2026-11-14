@@ -1,0 +1,46 @@
+import <semiconductors/thyristor> as dev;
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  SCR800V25A — generic 800 V / 25 A (RMS) phase-control SCR, TYPICAL values
+//
+//  NOT a manufacturer part: round, typical figures for a TO-220 / TO-247
+//  phase-control thyristor of the 25 A RMS class, fitted on the two-
+//  transistor SCR of <semiconductors/thyristor>. The workhorse of controlled
+//  rectifiers and soft starters; see examples/Thyristor/scr_phase_bridge.hvr.
+//
+//  ── What the values give (measured on this card, Vt = 0.026 V) ─────────────
+//
+//    IGT  ~17 mA, VGT 0.63 V      (12 V, 33 Ohm load; gate current ramp)
+//    IH   ~35 mA                  (gate open; supply ramped down)
+//    VT   2.37 V at 50 A — high for this class (data sheets: ~1.6 V); see
+//         RS below
+//    gate turn-off gain ~2: a -6 A gate pulse turns off 10 A, -5 A does not
+//    VBO  900 V forward breakover, VRB 900 V reverse breakdown
+//
+//  ── Fit ─────────────────────────────────────────────────────────────────────
+//
+//    IS = 1e-12           VGT ~0.63 V at IGT
+//    BFP = 1, BFN = 10    alpha_p + alpha_n = 1.41: IH ~ 2 IGT
+//    RGK = 30             IGT ~ VGT/RGK
+//    RG = 1, RS = 10m     on-state slope ~30 mOhm (~3 RS). RS is held at
+//                         the 10 mOhm floor <semiconductors/thyristor> asks
+//                         for: with 5 mOhm the 230 V bridge example took 10
+//                         Newton iterations per step and 1100-1450 per
+//                         switching event, with 10 mOhm 5.8 and 300-900.
+//                         The price is the on-state voltage above.
+//    TT = 2u              turn-on delay ~1.3 us and 10-90 % rise ~4.5 us
+//                         into a 0.6 A resistive load with a 100 mA gate
+//                         pulse; Qrr ~ TT * I
+//    CJ = 1n, VJ = 0.7, MJ = 0.4   ~80 pF at 400 V: dv/dt trigger near
+//                         VGT/(RGK * C) ~ 260 V/us there
+// ─────────────────────────────────────────────────────────────────────────────
+
+analog module SCR800V25A<>()[wire gate, wire anode, wire cathode] {
+    module x = dev.SCR<1e-12, 1.0, 10.0,             // IS, BFP, BFN
+                       30.0, 1.0, 10m,               // RGK, RG, RS
+                       2u,                           // TT
+                       1n, 0.7, 0.4,                 // CJ, VJ, MJ
+                       900.0, 900.0,                 // VBO, VRB
+                       0.026>()                      // VT
+                      [gate, anode, cathode];
+}

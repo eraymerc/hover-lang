@@ -1,0 +1,34 @@
+import <semiconductors> as dev;
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  SCHOTTKY100V3A — generic 100 V / 3 A Schottky rectifier (SMC / DO-201),
+//                   TYPICAL values
+//
+//  NOT a manufacturer part: typical figures for the 100 V, 3 A Schottky
+//  class. A higher-voltage Schottky trades forward drop for blocking: a
+//  higher barrier (smaller Is) and a thicker, more resistive drift layer.
+//  See SCHOTTKY45V10A.hvr for why the base Diode is the whole model.
+//
+//  ── What the values give (measured on this card) ───────────────────────────
+//
+//    VF   0.79 V at 3 A, 0.65 V at 0.5 A
+//    breakdown: 1 mA at 110 V
+//
+//  ── Fit ─────────────────────────────────────────────────────────────────────
+//
+//    Is = 14n, N = 1.4, Rs = 30m       VF = 1.4 Vt ln(3/Is) + 3 Rs
+//    Bv = 110, Ibv = 1m
+//    Cjo = 150p, Vj = 0.6, M = 0.5, Tt = 0
+// ─────────────────────────────────────────────────────────────────────────────
+
+analog module SCHOTTKY100V3A<>()[wire anode, wire cathode] {
+    module d = dev.Diode<14n, 1.4,               // Is, N
+                         30m,                    // Rs
+                         0.0,                    // Ikf
+                         0.0, 2.0,               // Isr, Nr
+                         110.0, 1m,              // Bv, Ibv
+                         150p, 0.6, 0.5, 0.5,    // Cjo, Vj, M, Fc
+                         0.0,                    // Tt
+                         0.026>()                // Vt
+                        [anode, cathode];
+}

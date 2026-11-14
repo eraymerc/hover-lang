@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="16 64 576 312" class="hv-schematic" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11">
+  <g transform="translate(64,176)"><path d="M0 -32 V-16 M0 16 V32"/><circle cx="0" cy="0" r="16" class="bold"/><path d="M-3.5 -7 H3.5 M0 -10.5 V-3.5"/><path d="M-3.5 7 H3.5"/></g>
+  <text x="88" y="172">10 V pk</text>
+  <text x="88" y="186">1 kHz</text>
+  <path d="M64 144 V128 H128"/>
+  <text x="96" y="120" text-anchor="middle" class="net">a</text>
+  <g transform="translate(160,128) rotate(90)"><path d="M0 -32 V-20.8 M0 20.8 V32"/><rect x="-8.8" y="-20.8" width="17.6" height="41.6" class="bold"/></g>
+  <text x="160" y="112" text-anchor="middle">1 Ω</text>
+  <path d="M192 128 H272"/>
+  <text x="224" y="120" text-anchor="middle" class="net">b</text>
+  <polygon points="264,128 257,124.5 257,131.5" class="fill"/>
+  <text x="240" y="146" text-anchor="middle" class="net" font-size="10">I(x.w1)</text>
+  <path d="M64 208 V240"/>
+  <path d="M64 240 V248 M56 248 H72 M59 251 H69 M62 254 H66"/>
+  <!-- x: CoupledInductors3, dots on p1, p2, p3 -->
+  <path d="M272 128 H304 V133.76 M304 218.24 V224 H272"/>
+  <path d="M304 133.76 a5.28 5.28 0 0 1 0 10.56 a5.28 5.28 0 0 1 0 10.56 a5.28 5.28 0 0 1 0 10.56 a5.28 5.28 0 0 1 0 10.56 a5.28 5.28 0 0 1 0 10.56 a5.28 5.28 0 0 1 0 10.56 a5.28 5.28 0 0 1 0 10.56 a5.28 5.28 0 0 1 0 10.56" class="bold"/>
+  <circle class="dot" cx="295" cy="138.76" r="2.4"/>
+  <path d="M368 96 H336 V106.88 M336 149.12 V160 H368"/>
+  <path d="M336 106.88 a5.28 5.28 0 0 0 0 10.56 a5.28 5.28 0 0 0 0 10.56 a5.28 5.28 0 0 0 0 10.56 a5.28 5.28 0 0 0 0 10.56" class="bold"/>
+  <circle class="dot" cx="345" cy="111.88" r="2.4"/>
+  <path d="M368 192 H336 V202.88 M336 245.12 V256 H368"/>
+  <path d="M336 202.88 a5.28 5.28 0 0 0 0 10.56 a5.28 5.28 0 0 0 0 10.56 a5.28 5.28 0 0 0 0 10.56 a5.28 5.28 0 0 0 0 10.56" class="bold"/>
+  <circle class="dot" cx="345" cy="207.88" r="2.4"/>
+  <text x="296" y="180" text-anchor="end">L1</text>
+  <text x="344" y="132">L2</text>
+  <text x="344" y="228">L3</text>
+  <path d="M272 224 V240"/>
+  <path d="M272 240 V248 M264 248 H280 M267 251 H277 M270 254 H274"/>
+  <path d="M368 160 H384"/>
+  <path d="M384 160 V168 M376 168 H392 M379 171 H389 M382 174 H386"/>
+  <path d="M368 256 V264"/>
+  <path d="M368 264 V272 M360 272 H376 M363 275 H373 M366 278 H370"/>
+  <path d="M368 96 H512 V112"/>
+  <polygon points="376,96 383,92.5 383,99.5" class="fill"/>
+  <text x="400" y="114" text-anchor="middle" class="net" font-size="10">I(x.w2)</text>
+  <text x="424" y="88" text-anchor="middle" class="net">s</text>
+  <g transform="translate(512,144)"><path d="M0 -32 V-20.8 M0 20.8 V32"/><rect x="-8.8" y="-20.8" width="17.6" height="41.6" class="bold"/></g>
+  <text x="528" y="148">100 Ω</text>
+  <path d="M512 176 V184"/>
+  <path d="M512 184 V192 M504 192 H520 M507 195 H517 M510 198 H514"/>
+  <path d="M368 192 H448 V208"/>
+  <polygon points="376,192 383,188.5 383,195.5" class="fill"/>
+  <text x="400" y="210" text-anchor="middle" class="net" font-size="10">I(x.w3)</text>
+  <text x="424" y="184" text-anchor="middle" class="net">t</text>
+  <g transform="translate(448,240)"><path d="M0 -32 V-20.8 M0 20.8 V32"/><rect x="-8.8" y="-20.8" width="17.6" height="41.6" class="bold"/></g>
+  <text x="464" y="244">5 Ω</text>
+  <path d="M448 272 V280"/>
+  <path d="M448 280 V288 M440 288 H456 M443 291 H453 M446 294 H450"/>
+  <text x="256" y="318" text-anchor="middle">x: CoupledInductors3</text>
+  <text x="256" y="332" text-anchor="middle" class="dim" font-size="10">L1 1 mH · L2 4 mH · L3 0.25 mH</text>
+  <text x="256" y="346" text-anchor="middle" class="dim" font-size="10">k12 0.95 · k13 0.9 · k23 0.85</text>
+  <text x="256" y="360" text-anchor="middle" class="dim" font-size="10">R1 0.1 Ω · R2 0.2 Ω · R3 50 mΩ</text>
+</svg>

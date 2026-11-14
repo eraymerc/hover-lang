@@ -68,7 +68,9 @@ from <math> import exp, log1p;
 //  2026-11-13 fixes. Since then (companion-form diode, per-device convergence
 //  test; sorunlar items 38, 39, 42) the SPICE diode runs at Coss = 0, Cjo = 0
 //  too and matches ngspice with the same D model: 18.8131 V, 0.802 % THD at
-//  24 V and 243.264 V, 0.762 % at 310 V. The table as first measured:
+//  24 V and 243.264 V, 0.762 % at 310 V. The table below is HISTORY — as first
+//  measured, with the solver of that day; neither the failures nor the step
+//  counts describe the current one:
 //
 //                                  smoothed PWL      SPICE diode
 //      Coss = 0,    Cjo = 0         1.5 s,  67k      FAILS at the first
@@ -82,8 +84,9 @@ from <math> import exp, log1p;
 //  the junction, and that node carries no capacitance unless Cjo > 0: when the
 //  dead time starts and the inductor current has to move onto the diode, the
 //  junction must swing from reverse bias to full conduction in one solve, and
-//  the trust-region Newton stalls on the capacitance-free node (the failure in
-//  docs/hoveR_sorunlar.txt item 28). Giving it Cjo made it run, at 2-7x the
+//  the trust-region Newton of that time stalled on the capacitance-free node
+//  (docs/hoveR_sorunlar.txt item 28; the transient now tries plain Newton
+//  first). Giving it Cjo made it run, at 2-7x the
 //  cost. (No longer: see above.) The smoothed PWL diode has no internal node, a slope bounded by 1/Rd,
 //  and is convex, so Newton converges on it from either side without any
 //  limiting. Its sharpness does not matter to the solver: Vs = 26 mV, 5 mV and
@@ -94,8 +97,10 @@ from <math> import exp, log1p;
 //  ── Coss: the default is 0 ─────────────────────────────────────────────────
 //
 //  Coss = 0 gives the ideal, PLECS-like commutation (the node jumps straight
-//  to the diode clamp) and is the fastest: on the H-bridge benchmark 67k steps
-//  against ~120k with any Coss from 3 pF to 1 nF, which the node slews cost.
+//  to the diode clamp) and is the fastest, because every node slew costs
+//  steps: on the H-bridge benchmark 50k steps at Coss = 0 against 79k at 1 pF
+//  (2026-11-14; before time breakpoints landed the dead-time edges it was 67k
+//  against ~120k for any Coss from 3 pF to 1 nF).
 //
 //  Until 2026-11-13 the default was 100 pF, as a guard for the solver rather
 //  than for the physics: on a twin of examples/MOSFET/h_bridge_inverter.hvr

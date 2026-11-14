@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-16 -32 32 64" data-title="Coulomb friction"
+     fill="none" stroke="#000" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+  <style>.fill{fill:#000}.bold{stroke-width:3.2}.dash{stroke-dasharray:3 2.5}[data-pin]{fill:#d00;stroke:none}</style>
+  <!-- A block sliding on a surface (dry friction). -->
+  <path d="M0 -32 V-12"/>
+  <rect x="-10" y="-12" width="20" height="14" class="bold"/>
+  <path d="M-14 6 H14 M-14 6 L-14 10 M0 6 V24"/>
+  <path d="M-10 10 L-6 6 M-2 10 L2 6 M6 10 L10 6"/>
+  <!-- Mechanical ground (the frame): the part draws its torque from the
+       shaft to it, as a two-terminal element to gnd. -->
+  <path d="M-12 24 H12 M-12 24 L-16 30 M-4 24 L-8 30 M4 24 L0 30 M12 24 L8 30"/>
+  <circle data-pin="shaft" data-alias="mech rotor w n+ p" data-dir="up" cx="0" cy="-32" r="2"/>
+</svg>

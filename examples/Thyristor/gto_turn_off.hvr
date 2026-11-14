@@ -1,0 +1,58 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  HVR Testbench — Gate Turn-Off: GTO versus a Conventional SCR
+//  Validates: the turn-off gain of <semiconductors/thyristor>'s two-transistor
+//             SCR, alpha_n / (alpha_n + alpha_p - 1), on two parameter sets
+// ─────────────────────────────────────────────────────────────────────────────
+//
+//  Two identical circuits, 300 V through 30 Ohm (10 A when on). Each device
+//  gets the same gate current: +1 A for 20 us at 50 us (turn on), then
+//  -2 A for 20 us at 200 us (try to turn off).
+//
+//  ── Expected result ─────────────────────────────────────────────────────────
+//
+//    GTO600V20A   alpha_p = 0.2, alpha_n = 0.95: turn-off gain 6.3, so 10 A
+//                 needs ~1.6 A of negative gate current. It turns off:
+//                 I(ag) drops from 9.96 A to 0 within ~15 us of the pulse.
+//                 (Measured threshold: -1.8 A turns it off, -1.6 A does not.)
+//    SCR800V25A   alpha_p = 0.5, alpha_n = 0.91: gain 2.2, needs ~4.5 A.
+//                 -2 A does nothing; it stays at 9.97 A. (Measured threshold:
+//                 between -5 A and -6 A.)
+//
+//  Convergence (HOVER_TRACE_STEP=1, ndf2): 565 accepted steps, 3.3 Newton
+//  iterations per step (max 10), no Newton rejections or trust-region
+//  retries.
+
+.save(main.ag, main.sa, I(main.ag_m), I(main.sa_m));
+.tran(0, 400u, 1u);
+.solver(ndf2);
+
+import <parts/thyristor>;
+
+digital module GatePulses<double t1, double w1, double i1, double t2, double w2, double i2>
+(output double ig) []
+{
+    ig = 0.0;
+    if (time >= t1 && time < t1 + w1) { ig = i1; }
+    if (time >= t2 && time < t2 + w2) { ig = i2; }
+}
+
+module main<>() []
+{
+    wire s, ag, agk, gg, sa, sak, gs;
+    state double ig = 0;
+
+    voltage_source<300>()[s, gnd];
+    module gp = GatePulses<50u, 20u, 1.0, 200u, 20u, -2.0>(ig)[];
+
+    // GTO
+    R<30>()[s, ag];
+    voltage_source ag_m<0>()[ag, agk];
+    current_source<>(ig)[gnd, gg];
+    module G = thyristor.GTO600V20A<>()[gg, agk, gnd];
+
+    // conventional SCR, same drive
+    R<30>()[s, sa];
+    voltage_source sa_m<0>()[sa, sak];
+    current_source<>(ig)[gnd, gs];
+    module T = thyristor.SCR800V25A<>()[gs, sak, gnd];
+}

@@ -59,9 +59,9 @@ from <math> import sqrt, pnjlim, jexp, vcrit_of, q_dep, rb_of;
 //  voltage feeds both the ideal and the leakage (Ise/Isc) term — the leakage
 //  diode is the softer of the two, so the stiffer one sets the bound.
 //
-//  (pnjlim() itself was rewritten to the Berkeley formulation; the previous
-//  implementation turned a large downward step into an upward jump to vcrit.
-//  See its own header in math/physicalmath.hvr.)
+//  (pnjlim() is SPICE3's DEVpnjlim: a limited downward step from a forward-
+//  biased anchor lands on vcrit, the knee. See its own header in
+//  math/physicalmath.hvr for why the symmetric variant was dropped.)
 //
 //  ── Convergence: the solver is real Newton, so keep derivatives alive ───────
 //

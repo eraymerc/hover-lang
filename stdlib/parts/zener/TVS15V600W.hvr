@@ -1,0 +1,39 @@
+import <semiconductors/zener> as dev;
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  TVS15V600W — generic unidirectional 600 W TVS diode, 15 V stand-off,
+//               TYPICAL values
+//
+//  NOT a manufacturer part. A transient-voltage suppressor is a Zener built
+//  for surge current: the numbers that matter are the breakdown voltage at
+//  the test current and the clamping voltage at the rated peak pulse
+//  current, whose product is the 600 W (10/1000 us) rating. Typical figures
+//  for the 15 V stand-off member of a 600 W SMB-class family: VBR ~17.6 V at
+//  IT = 1 mA (mid-range of 16.7-18.5 V), VC 24.4 V at IPP 24.6 A.
+//
+//  ── What the values give (measured on this card) ───────────────────────────
+//
+//    VBR  17.60 V at 1 mA
+//    VC   24.4 V at 24.6 A
+//    VF   ~2.1 V at 50 A forward (the 8.3 ms surge spec is 3.5 V max)
+//
+//  ── Fit ─────────────────────────────────────────────────────────────────────
+//
+//    IS = 1e-9, N = 1.8, RS = 20m        forward (a large junction)
+//    CJO = 3n, VJ = 0.75, M = 0.33, TT = 50n
+//    BV = 17.6, IBV = 1m, NBV = 2
+//    RZ = 0.255   VC = BV + NBV Vt ln(IPP/IBV) + RZ IPP
+//                    = 17.6 + 0.525 + 6.27 = 24.4 V
+//
+//  Not modelled: self-heating during the surge (VC rises with junction
+//  temperature on a real part), and the stand-off leakage, which here is
+//  only the reverse saturation current.
+// ─────────────────────────────────────────────────────────────────────────────
+
+analog module TVS15V600W<>()[wire anode, wire cathode] {
+    module d = dev.Zener<1e-9, 1.8, 20m,               // IS, N, RS
+                         3n, 0.75, 0.33, 50n,          // CJO, VJ, M, TT
+                         17.6, 1m, 2.0, 0.255,         // BV, IBV, NBV, RZ
+                         0.026>()                      // VT
+                        [anode, cathode];
+}

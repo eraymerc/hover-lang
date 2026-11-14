@@ -163,6 +163,25 @@ void hvr_rt_reset_analog(VM *vm) {
     }
     // nr_prev() of analog variables starts from 0 again, as on a fresh run.
     nr_resize(vm->nr, vm->nr.size());
+    if (vm->api) {
+        // The installed iterate nr_prev() compares the read-view against
+        // (vm/nr_locals.hpp): empty until the first install, as on a fresh run.
+        vm->api->inst_last.resize(0);
+        vm->api->inst_prev.resize(0);
+    }
+    // Run state outside the solution vectors, back to what a fresh load has:
+    // the breakpoint tables (landing, analog flips, per-site threshold history
+    // — vm/breakpoints.hpp) keep only whether the deck has breakpoints; the AD
+    // linearisation of the last Jacobian and the restart flag do not outlive
+    // the run they belong to. (Clocks are reset by vm_boot, ddt()/idt() slots
+    // by the operating point.)
+    const bool bp_enabled = vm->bp.enabled, bp_logic = vm->bp.logic;
+    vm->bp = VMBreakpoints{};
+    vm->bp.enabled = bp_enabled;
+    vm->bp.logic = bp_logic;
+    vm->ad_lin.clear();
+    vm->ad_lin_valid = false;
+    vm->tick_changed = false;
 }
 
 void hvr_rt_free_result(HVRLogResult *r) {

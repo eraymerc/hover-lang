@@ -1,0 +1,87 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  HVR Testbench — DC Machine Connections on One 24 V Supply
+//  Validates: the <electromechanical> DCMachinePM, DCMachineSepEx,
+//             DCMachineShunt and DCMachineSeries, each started from rest
+//             against a load from <mechanical>, and one of them driven as a
+//             generator
+// ─────────────────────────────────────────────────────────────────────────────
+//
+//  Five machines, each on its own shaft:
+//
+//    pm      permanent magnet, K = 0.07 V·s/rad              0.5 N·m load
+//    sep     separately excited, field on its own 24 V      0.5 N·m load
+//            (Rf = 48 Ohm → If = 0.5 A, Laf = 0.14 H → K = 0.07)
+//    shunt   the same field across the armature supply       0.5 N·m load
+//    series  series field, Laf = 0.05 H, Rf = 0.3 Ohm        0.5 N·m load
+//    gen     the PM machine driven by a 0.5 N·m prime mover (a negative
+//            load torque: a current INTO the shaft node): it runs above its
+//            no-load speed and pushes current back into the supply
+//
+//  All share Ra = 1 Ohm, La = 1 mH, J = 2e-5 kg·m², B = 1e-5 N·m·s/rad.
+//  K = Ke = Kt: the same constant is the back-EMF per rad/s and the torque
+//  per ampere (see dcmachine.hvr).
+//
+//  ── Expected result (steady state at 1 s) ───────────────────────────────────
+//
+//  From the speed–torque lines (with T_em = load + B·ω):
+//
+//    pm, sep, shunt   ω = (24 − Ra·T/K)/K = 240.326 rad/s, ia = 7.1772 A
+//                     (the shunt supply also feeds 0.5 A to its field)
+//    series           T = Laf·i², ω = (24 − (Ra+Rf)·i)/(Laf·i)
+//                     → i = 3.1662 A, ω = 125.599 rad/s
+//    gen              ω = 443.992 rad/s, ia = −7.0794 A: the machine
+//                     delivers 169.9 W into the 24 V source from 222 W of
+//                     shaft power, the rest is Ra·i² and friction
+//
+//  The simulation agrees to the 6–7 digits the CSV prints. ~20k steps.
+// ─────────────────────────────────────────────────────────────────────────────
+
+.save(main.w_pm, main.w_sep, main.w_shunt, main.w_series, main.w_gen,
+      main.i_pm, main.i_series, main.i_gen);
+.tran(0, 1.0, 50u);
+.solver(bdf2);
+
+from <electromechanical> import DCMachinePM, DCMachineSepEx, DCMachineShunt,
+                                DCMachineSeries;
+from <mechanical> import ConstantTorque;
+
+module main<>()[]
+{
+    wire vdc, field;
+    wire s_pm, s_sep, s_shunt, s_series, s_gen;   // one shaft per machine
+
+    state double w_pm = 0, i_pm = 0, th_pm = 0, t_pm = 0;
+    state double w_sep = 0, i_sep = 0, if_sep = 0, th_sep = 0, t_sep = 0;
+    state double w_shunt = 0, i_shunt = 0, if_shunt = 0, th_shunt = 0, t_shunt = 0;
+    state double w_series = 0, i_series = 0, if_series = 0, th_series = 0, t_series = 0;
+    state double w_gen = 0, i_gen = 0, th_gen = 0, t_gen = 0;
+
+    voltage_source supply<24>() [vdc, gnd];
+    voltage_source field_supply<24>() [field, gnd];
+
+    //                          Ra   La  K     J    B
+    module pm = DCMachinePM<1.0, 1m, 0.07, 20u, 10u>
+                    (w_pm, i_pm, th_pm, t_pm)[vdc, gnd, s_pm];
+    module load_pm = ConstantTorque<0.5>()[s_pm];
+
+    //                              Ra   La  Rf  Lf Laf   J    B
+    module sep = DCMachineSepEx<1.0, 1m, 48, 2, 0.14, 20u, 10u>
+                     (w_sep, i_sep, if_sep, th_sep, t_sep)
+                     [vdc, gnd, field, gnd, s_sep];
+    module load_sep = ConstantTorque<0.5>()[s_sep];
+
+    module shunt = DCMachineShunt<1.0, 1m, 48, 2, 0.14, 20u, 10u>
+                       (w_shunt, i_shunt, if_shunt, th_shunt, t_shunt)
+                       [vdc, gnd, s_shunt];
+    module load_shunt = ConstantTorque<0.5>()[s_shunt];
+
+    //                                Ra   La  Rf   Lf    Laf   J    B
+    module series = DCMachineSeries<1.0, 1m, 0.3, 0.5m, 0.05, 20u, 10u>
+                        (w_series, i_series, if_series, th_series, t_series)
+                        [vdc, gnd, s_series];
+    module load_series = ConstantTorque<0.5>()[s_series];
+
+    module gen = DCMachinePM<1.0, 1m, 0.07, 20u, 10u>
+                     (w_gen, i_gen, th_gen, t_gen)[vdc, gnd, s_gen];
+    module prime_mover = ConstantTorque<-0.5>()[s_gen];
+}

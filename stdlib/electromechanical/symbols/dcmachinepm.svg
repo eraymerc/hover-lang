@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-32 -32 64 64" data-title="Permanent-magnet DC motor"
+     fill="none" stroke="#000" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+  <style>.fill{fill:#000}.bold{stroke-width:3.2}.dash{stroke-dasharray:3 2.5}[data-pin]{fill:#d00;stroke:none}[data-logic]{fill:#c90;stroke:none}</style>
+  <!-- DC machine: armature circle with its two brushes, leads top (ap) and
+       bottom (an), shaft to the right. Outputs are placed by hoverdeck on
+       the free left side. -->
+  <circle cx="0" cy="0" r="20" class="bold"/>
+  <rect x="-5" y="-25" width="10" height="5" class="fill"/>
+  <rect x="-5" y="20" width="10" height="5" class="fill"/>
+  <path d="M0 -32 V-25 M0 25 V32"/>
+  <path d="M-8 6 V-6 L0 3 L8 -6 V6"/>
+  <path d="M20 -3 H27 V3 H20" class="bold"/>
+  <path d="M27 0 H32"/>
+  <circle data-pin="ap" data-alias="p a + a1" data-dir="up" cx="0" cy="-32" r="2"/>
+  <circle data-pin="an" data-alias="n b - a2" data-dir="down" cx="0" cy="32" r="2"/>
+  <circle data-pin="shaft" data-alias="rotor mech" data-dir="right" cx="32" cy="0" r="2"/>
+</svg>

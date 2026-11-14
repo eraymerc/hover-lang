@@ -1,0 +1,68 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  HVR Testbench — mains transformer + bridge rectifier + reservoir capacitor
+//  Validates: <magnetics> Transformer feeding <parts/diode> 1N4007s into a
+//             <passives> Capacitor — the classic linear power supply
+// ─────────────────────────────────────────────────────────────────────────────
+//
+//    230 V 50 Hz ── T1 ── s1 ─┬─ D1 ─┐
+//                       s2 ─┐ └─ D3 ─┤gnd       dc ─┬─ 4700 uF / 40 mOhm ESR
+//                           ├─ D2 ───┘ (to dc)      └─ 15 Ohm ── gnd
+//                           └─ D4 ── gnd
+//
+//  T1 is a GENERIC small "230 V : 12 V, 20 VA" EI-core transformer — typical
+//  values for the class, not any manufacturer's data:
+//    n   = 0.058    13.3 V rms open-circuit (wound high so that ~12 V
+//                   remains at rated load)
+//    Lm  = 20 H     ~37 mA magnetising current at 230 V
+//    Llp = 0.1 H, Lls = 0.35 mH   leakage, split ~equally (Lls = n^2 Llp)
+//    Rp  = 70 Ohm, Rs = 0.35 Ohm  winding resistances
+//
+//  The secondary floats; its only reference is through the bridge, which is
+//  enough (the diodes conduct to gnd every half cycle).
+//
+//  ── Expected result ─────────────────────────────────────────────────────────
+//
+//  The reservoir charges in the first ~10 cycles (no .op: the capacitor starts
+//  empty — the switch-on surge is in I(main.T1.w2)). Settled, over the last
+//  two cycles:
+//    V(dc)        14.02 V average, 1.29 V peak-to-peak ripple, 0.93 A load
+//    secondary    16.71 V peak under load (18.87 V open-circuit),
+//                 1.62 A rms in short pulses — the rectifier's high crest
+//                 factor is why a 20 VA transformer delivers ~13 W of DC
+//    primary      104 mA rms, 16.9 W in: 78 % overall efficiency
+//  ngspice, same circuit (K-coupled windings, the 1N4007 card as a D model at
+//  Vt = 26 mV): 14.008 V, 1.293 V ripple, 1.617 A rms, 16.714 V peak.
+//  ~9300 accepted steps, 2.7 Newton iterations per step, ~1.5 s; bdf2 and
+//  .op give the same numbers to 4 digits.
+
+.tran(0, 400m, 50u);
+.solver(ndf2);
+.save(main.line, main.s1, main.s2, main.dc, I(main.T1.w1), I(main.T1.w2));
+
+import <magnetics> as mag;
+import <passives> as pas;
+import <parts/diode> as dio;
+from <math> import sin;
+
+analog module Mains<double Vrms, double f>() [wire p]
+{
+    double v = Vrms * 1.4142135623730951 * sin(2.0 * 3.141592653589793 * f * time);
+    voltage_source<>(v) [p, gnd];
+}
+
+module main<>() []
+{
+    wire line, s1, s2, dc;
+
+    module ac = Mains<230.0, 50.0>() [line];
+    module T1 = mag.Transformer<0.058, 20.0, Llp = 0.1, Lls = 0.35m,
+                                Rp = 70.0, Rs = 0.35>() [line, gnd, s1, s2];
+
+    module D1 = dio.D1N4007<>() [s1, dc];
+    module D2 = dio.D1N4007<>() [s2, dc];
+    module D3 = dio.D1N4007<>() [gnd, s1];
+    module D4 = dio.D1N4007<>() [gnd, s2];
+
+    module C1 = pas.Capacitor<4700u, ESR = 40m>() [dc, gnd];
+    R<15>() [dc, gnd];
+}

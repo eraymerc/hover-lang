@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="16 40 640 224" class="hv-schematic" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11">
+  <!-- src: Step +10 V -> -100 V at 10 µs -->
+  <g transform="translate(64,176)"><path d="M0 -32 V-16 M0 16 V32"/><circle cx="0" cy="0" r="16" class="bold"/><path d="M-3.5 -7 H3.5 M0 -10.5 V-3.5"/><path d="M-3.5 7 H3.5"/></g>
+  <text x="88" y="168">src: Step</text>
+  <text x="88" y="182" class="dim" font-size="10">+10 V → −100 V</text>
+  <text x="88" y="196" class="dim" font-size="10">at 10 µs</text>
+  <path d="M64 144 V96 H128"/>
+  <text x="96" y="88" text-anchor="middle" class="net">s</text>
+  <g transform="translate(160,96) rotate(90)"><path d="M0 -32 V-20.8 M0 20.8 V32"/><rect x="-8.8" y="-20.8" width="17.6" height="41.6" class="bold"/></g>
+  <text x="160" y="80" text-anchor="middle">10 Ω</text>
+  <path d="M192 96 H224"/>
+  <text x="208" y="88" text-anchor="middle" class="net">x</text>
+  <g transform="translate(256,96) rotate(-90)"><path d="M0 -32 V-21.12 M0 21.12 V32"/><path d="M0 -21.12 a5.28 5.28 0 0 1 0 10.56 a5.28 5.28 0 0 1 0 10.56 a5.28 5.28 0 0 1 0 10.56 a5.28 5.28 0 0 1 0 10.56" class="bold"/></g>
+  <text x="256" y="80" text-anchor="middle">20 µH</text>
+  <path d="M288 96 H336"/>
+  <text x="312" y="88" text-anchor="middle" class="net">a</text>
+  <path d="M336 96 H352 M384 96 H400"/>
+  <circle cx="368" cy="96" r="16" class="bold"/>
+  <text x="368" y="100" text-anchor="middle">A</text>
+  <text x="368" y="64" text-anchor="middle">vam</text>
+  <text x="368" y="78" text-anchor="middle" class="dim" font-size="10">0 V</text>
+  <path d="M400 96 H448 V128"/>
+  <polygon points="424,96 417,92.5 417,99.5" class="fill"/>
+  <text x="424" y="116" text-anchor="middle" class="net" font-size="10">I(vam)</text>
+  <text x="456" y="88" class="net">k</text>
+  <!-- d: Diode, anode k, cathode gnd -->
+  <g transform="translate(448,160)"><path d="M0 -32 V-12 M0 12 V32"/><polygon points="-12,-12 12,-12 0,7.2" class="fill"/><rect x="-12" y="7.2" width="24" height="4.8" class="fill"/></g>
+  <text x="468" y="148">d: Diode</text>
+  <text x="468" y="162" class="dim" font-size="10">Is 1 nA · N 1.5 · Rs 10 mΩ</text>
+  <text x="468" y="176" class="dim" font-size="10">Cjo 100 pF · Vj 0.7 · M 0.4</text>
+  <text x="468" y="190" class="dim" font-size="10">Tt 1 µs</text>
+  <path d="M448 192 V240 H64 V208"/>
+  <circle class="dot" cx="256" cy="240" r="2.4"/>
+  <path d="M256 240 V248 M248 248 H264 M251 251 H261 M254 254 H258"/>
+</svg>

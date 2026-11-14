@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-16 -32 32 64" data-title="Constant load torque"
+     fill="none" stroke="#000" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+  <style>.fill{fill:#000}.bold{stroke-width:3.2}.dash{stroke-dasharray:3 2.5}[data-pin]{fill:#d00;stroke:none}</style>
+  <!-- A torque source: circle with a curved arrow. -->
+  <path d="M0 -32 V-14 M0 14 V24"/>
+  <circle cx="0" cy="0" r="14" class="bold"/>
+  <path d="M-7 4 A8 8 0 1 1 6 5"/>
+  <polygon points="6,5 1,6 5,1" class="fill"/>
+  <!-- Mechanical ground (the frame): the part draws its torque from the
+       shaft to it, as a two-terminal element to gnd. -->
+  <path d="M-12 24 H12 M-12 24 L-16 30 M-4 24 L-8 30 M4 24 L0 30 M12 24 L8 30"/>
+  <circle data-pin="shaft" data-alias="mech rotor w n+ p" data-dir="up" cx="0" cy="-32" r="2"/>
+</svg>

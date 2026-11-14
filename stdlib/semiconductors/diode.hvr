@@ -72,7 +72,7 @@ from <math> import exp, sqrt, pnjlim, jexp, vcrit_of, q_dep;
 //      the curve; it only refuses to leap across it in one bound. It is
 //      transparent to the Jacobian (nodiff, SPICE's companion form): the
 //      junction is linearised at the limited voltage with its true slope.
-//    · jexp() guards overflow on the exponential's argument, out at |x| = 40
+//    · jexp() clamps the exponential's argument at +60 (overflow) and -40,
 //      where nothing physical is left. See <math>'s jexp() for why that one hard
 //      clamp is tolerable and why smoothing it made things worse.
 //    · GMIN, a 1 pS conductance in parallel with the junction, exactly as
@@ -182,9 +182,9 @@ analog module Diode<double Is,  double N,
     // is held there too (60 nVt, about 1.5 V per unit N): beyond it the
     // exponential has no slope left to linearise at, and the tangent from
     // 60 nVt continues the curve instead. The hold is part of the model, not
-    // of the limiting: with the device anchor vl rarely gets there, but a
-    // junction a commutation drives kilovolts forward still climbs ~10 nVt per
-    // iteration past it, onto the flat part of jexp, without it.
+    // of the limiting: a junction that a commutation drives kilovolts forward
+    // climbs ~10 nVt per iteration, and without the hold it would walk onto
+    // the flat part of jexp.
     double v  = V(ai) - V(cathode);
     double vl = pnjlim(V(ai) - V(cathode), nr_prev(vl), nvt, vcrit_of(Is, nvt));
     if (vl > 60.0 * nvt) { vl = 60.0 * nvt; }

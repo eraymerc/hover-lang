@@ -35,12 +35,21 @@ import { fileURLToPath } from 'node:url';
 // Folder → heading in the picker, in the order the picker shows them. The
 // first deck of the first category is what an empty editor opens with.
 const CATEGORIES = [
+  ['Passives', 'Passives'],
   ['Diode', 'Diodes'],
+  ['PowerDiode', 'Power diodes'],
   ['BJT', 'BJTs'],
   ['MOSFET', 'MOSFETs'],
+  ['IGBT', 'IGBTs'],
+  ['Thyristor', 'Thyristors'],
   ['Optoelectronics', 'Optoelectronics'],
+  ['Magnetics', 'Magnetics'],
   ['PIDController', 'Control'],
+  ['Mechanical', 'Mechanical'],
   ['DCMotor', 'DC motors'],
+  ['DCMachine', 'DC machines'],
+  ['InductionMachine', 'Induction machines'],
+  ['BLDC', 'BLDC'],
   ['Inverter', 'Inverters'],
   ['PMSM', 'Motor control'],
 ];

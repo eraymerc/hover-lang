@@ -223,6 +223,9 @@ double Sim::time() const {
 double Sim::tcmp(int form, double x, double c, double p) {
     return vm_bp_compare(&impl_->vm, form, time(), x, c, p);
 }
+double Sim::tcmp_chain_n(int form, double x, double p, unsigned neg, const double *c, int n) {
+    return vm_bp_compare_chain(&impl_->vm, form, time(), x, p, neg, c, n);
+}
 bool Sim::logic_ran_early(int phase) {
     VMBreakpoints &bp = impl_->vm.bp;
     bool &skip = phase == 0 ? bp.skip_structural : bp.skip_digital;

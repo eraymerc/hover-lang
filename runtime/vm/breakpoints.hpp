@@ -2,6 +2,7 @@
 
 #include <Eigen/Dense>
 #include <limits>
+#include <vector>
 
 // ─────────────────────────────────────────────────────────────────────────────
 // BREAKPOINTS — steps that end exactly where the deck's code compares `time`
@@ -22,7 +23,8 @@
 // out the first time after the step's start at which its result flips. The
 // recognised time expressions are
 //
-//     time,  time + c,  c + time,  time - c                      (monotone)
+//     u = time,  time + c,  c + time,  time - c,                 (monotone)
+//         and chains: time - a - b, time + a - b, a + time - b, ...
 //     fmod(u, T),  u % T,  u - floor(u / T) * T,  u one of those (periodic)
 //
 // with c, T and the threshold built from literals, parameters, `state`
@@ -68,12 +70,42 @@
 // Logic needs no such help: it samples at the start of a step.
 //
 // PROGRESS. A flip less than h_min = lte_min_step(max_dt) after a step's
-// start is not landed (it is seen by the next sample, at most one step
-// late), and flips within h_min of each other are landed together, on the
-// last of them. So every landed step is at least h_min long, and a threshold
-// that tracks `time` itself cannot drive dt to zero. At a landed breakpoint
-// the solvers restart their history as at a clock tick that changed the
-// logic's outputs (vm->tick_changed): BDF1 and a short first step.
+// start is not landed exactly: the step ends h_min after its start instead,
+// so the logic's next sample sees it at most h_min late (a pulse narrower
+// than h_min is simulated h_min wide), and flips within h_min of each other
+// are landed together, on the last of them. So every landed step is at least h_min long, and a threshold
+// that tracks `time` itself cannot drive dt to zero.
+//
+// RESTART. At a landed breakpoint the solvers restart their history as at a
+// clock tick that changed the logic's outputs (vm->tick_changed): BDF1 and a
+// short first step — but only if something the circuit sees changed there.
+// For a flip in analog code that is always so (the analog source itself
+// changed). For logic, vm_breakpoint_step compares what the logic drives into
+// the circuit — every driven source (vm_drive_vector) and every logic value
+// analog code reads (phase_zcd_watch) — before and after the step's logic
+// pass, as clock.cpp does for a tick. A flag that is only saved
+// (`fmod(time, 100u) < 50u` into a .save'd variable) is still landed, but
+// restarting the history at each of its flips cost 9253 steps instead of 2005.
+//
+// PERIOD BELOW h_min. A periodic comparison whose period |T| <= h_min flips
+// at least once per h_min: landing on it pins every step to h_min — a run of
+// 1e-4 s with a 0.1 s maximum step took 954 166 steps. Its flips are not
+// reported (it is evaluated, so it is only sampled at the steps the solver
+// takes anyway), and one [VM] WARNING per comparison site says so and how to
+// fix it: lower .tran's maximum step, which lowers h_min.
+//
+// TRACKING THRESHOLDS. A logic `state` threshold counts as fixed within a
+// step, which is what makes a one-shot exact (`if (trig) { t_on = time; }
+// out = time - t_on < w;` lands on t_on + w). But code may assign it on every
+// step — `t_ok = time; if (time < t_ok + w) ...`, a retriggerable timer while
+// its trigger is held — and then the "next flip" is always w ahead and never
+// arrives: every step landed on it, the comparison did not change, and a
+// 0.1 s run with w = 1 us took 166 335 steps instead of 18. So each comparison
+// in a module body carries a number (form >> 6), and the early logic pass
+// remembers per comparison whether its threshold changed since the previous
+// step. Changed once is a one-shot being armed: landed. Changed on two
+// consecutive steps is a threshold tracking time, not a corner: not landed
+// until it has held still for a step. The comparison's VALUE is unaffected.
 //
 // WHEN. Always, for the variable-step solvers (ndf2, bdf2, trapezoidal,
 // euler_adaptive) — with or without .zcd: a breakpoint is part of what the
@@ -88,6 +120,9 @@ struct VM;
 
 // Candidate breakpoints are kept in a small fixed list (no allocation).
 constexpr int BP_LIST = 32;
+// Most offset terms in a chain `time ± c0 ± c1 ...` (codegen/breakpoints.go,
+// bpMaxChain).
+constexpr int BP_CHAIN = 8;
 
 struct VMBreakpointList {
     int    n = 0;
@@ -96,7 +131,16 @@ struct VMBreakpointList {
     void add(double e);   // ignores duplicates; when full, keeps the earliest
 };
 
+// Per comparison in a module body (TRACKING THRESHOLDS above).
+struct VMBreakpointSite {
+    double t     = std::numeric_limits<double>::quiet_NaN();  // step start it was last evaluated at
+    double x     = 0.0;   // its threshold there
+    int    moves = 0;     // consecutive step starts at which the threshold differed from the one before
+    bool   warned = false;  // its period was reported as below h_min (PERIOD BELOW h_min)
+};
+
 struct VMBreakpoints {
+    std::vector<VMBreakpointSite> sites;   // indexed by form >> 6; grows on first use
     bool   enabled   = false;  // codegen found recognised comparisons (Sim::enable_breakpoints)
     bool   logic     = false;  // ...some of them in logic: run the logic pass early to find them
     bool   collect   = false;  // the early logic pass is running: logic comparisons report
@@ -110,7 +154,8 @@ struct VMBreakpoints {
     double land_from = std::numeric_limits<double>::quiet_NaN();    // this attempt ends on the cluster [land_from, land_at]
     double land_at   = std::numeric_limits<double>::quiet_NaN();
     double land_left = std::numeric_limits<double>::quiet_NaN();    // the double below land_at (what analog code reads there)
-    bool   restart   = false;  // the attempt starts on the breakpoint the previous step landed on
+    bool   land_analog = false;  // ...and a flip analog code reported is among them
+    bool   restart   = false;  // the attempt starts on a landed breakpoint that changed the drive: restart the history
     int    cuts      = 0;      // vm_breakpoint_cut retries from the same t0
     Eigen::VectorXd view_saved;  // the solver's read-view, while the early logic pass reads x_n
 };
@@ -119,6 +164,10 @@ struct VMBreakpoints {
 // expression (form: codegen/breakpoints.go, decoded in breakpoints.cpp), and
 // reports where it next flips while the early logic pass or analog code runs.
 double vm_bp_compare(VM *vm, int form, double t, double x, double c, double p);
+// The same for u = t ± c[0] ± c[1] ... (U = 3): n terms, applied in order,
+// term i subtracted when bit i of neg is set.
+double vm_bp_compare_chain(VM *vm, int form, double t, double x, double p,
+                           unsigned neg, const double *c, int n);
 
 // Called by the variable-step solvers where they choose dt, in place of
 // vm_limit_step (whose clock ticks it applies too). Returns dt shortened to

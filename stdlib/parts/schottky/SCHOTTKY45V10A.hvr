@@ -1,0 +1,41 @@
+import <semiconductors> as dev;
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  SCHOTTKY45V10A — generic 45 V / 10 A Schottky rectifier (TO-220),
+//                   TYPICAL values
+//
+//  NOT a manufacturer part: typical figures for the 45 V, 10 A power
+//  Schottky class used as output rectifiers and freewheel diodes in low-
+//  voltage converters. A Schottky needs no model of its own: the SPICE
+//  junction of <semiconductors>' Diode covers it with a large Is (low VF, and
+//  leakage to match), a near-zero transit time (majority carriers, no stored
+//  charge) and a soft breakdown just above the rating — see
+//  parts/diode/1N5819.hvr for the same argument at 1 A.
+//
+//  ── What the values give (measured on this card) ───────────────────────────
+//
+//    VF   0.55 V at 10 A, 0.38 V at 1 A
+//    IR   ~17 uA well below breakdown (the saturation current; a real part's
+//         25 C leakage is of this order and rises steeply with temperature,
+//         which this isothermal model will not show)
+//    breakdown: 1 mA at 50 V
+//    no reverse recovery beyond the junction capacitance (Tt = 0)
+//
+//  ── Fit ─────────────────────────────────────────────────────────────────────
+//
+//    Is = 16.6u, N = 1.3, Rs = 10m     VF = 1.3 Vt ln(10/Is) + 10 Rs
+//    Bv = 50, Ibv = 1m
+//    Cjo = 600p, Vj = 0.5, M = 0.5, Tt = 0
+// ─────────────────────────────────────────────────────────────────────────────
+
+analog module SCHOTTKY45V10A<>()[wire anode, wire cathode] {
+    module d = dev.Diode<16.6u, 1.3,             // Is, N
+                         10m,                    // Rs
+                         0.0,                    // Ikf
+                         0.0, 2.0,               // Isr, Nr
+                         50.0, 1m,               // Bv, Ibv
+                         600p, 0.5, 0.5, 0.5,    // Cjo, Vj, M, Fc
+                         0.0,                    // Tt
+                         0.026>()                // Vt
+                        [anode, cathode];
+}

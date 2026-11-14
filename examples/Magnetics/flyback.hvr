@@ -1,0 +1,88 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  HVR Testbench — flyback converter, 48 V to 12 V at 100 kHz
+//  Validates: <magnetics> CoupledInductors as a flyback transformer (energy
+//             stored in the magnetising inductance, leakage spike, reflected
+//             voltage), switched by <power/inverter/switched> SwitchCell,
+//             rectified by a <parts/diode> 1N5819 Schottky into a <passives>
+//             Capacitor, with an RCD clamp
+// ─────────────────────────────────────────────────────────────────────────────
+//
+//                 T1: 1 : 0.5, k = 0.99
+//    vin ──────●┐            ┌●───── gnd
+//    48 V       )            (
+//    drain ─────┘            └────── sec ── D1 ──┬── out
+//      │                                         ├── 47 uF (ESR 30 mOhm) ── gnd
+//      ├── Q1 ── gnd   (100 kHz, D = 0.35)       └── 12 Ohm ── gnd
+//      │
+//      └── Dc ──► clamp ──┬── 10 nF ──┬── vin    (RCD clamp)
+//                         └── 10 kOhm ┘
+//
+//  The dots are on vin and gnd: while Q1 conducts, sec swings negative and D1
+//  blocks; at turn-off the stored magnetising energy flows out through D1.
+//
+//  T1: Lp = 100 uH, Ls = 25 uH (turns ratio 0.5), k = 0.99, so 2 uH of
+//  leakage on the primary — the energy the RCD clamp has to absorb every
+//  cycle. Winding resistances 50 mOhm and 20 mOhm. Q1: 50 mOhm on, 100 pF
+//  output capacitance. All generic values, not a particular part.
+//
+//  ── Expected result ─────────────────────────────────────────────────────────
+//
+//  Lossless continuous-mode flyback: Vout = n Vin D / (1 - D) = 12.92 V, and
+//  this one runs right at the boundary of continuous conduction (magnetising
+//  ripple Vin D T / Lp = 1.68 A, primary peak 1.65 A). Over the last 0.5 ms:
+//    V(out)    12.36 V average (the Schottky's ~0.45 V and the winding and
+//              switch losses take the rest), 0.21 V ripple
+//    clamp     25.7 V above Vin = (Vout + Vf) / n, the reflected voltage;
+//              drain peaks at ~94 V during the leakage spike
+//    power     13.5 W in, 12.7 W out: 94 % efficient
+//  bdf2 gives 12.39 V and 94 %, and .op the same as without it.
+//
+//  ~156k accepted steps, 3.3 Newton iterations per step, ~10 s. The cost is
+//  the leakage inductance: at every turn-off its current commutates into the
+//  clamp and rings against Coss at 1 / (2 pi sqrt(2 uH * 100 pF)) = 11 MHz.
+//  Coss = 0 halves the step count (71k); k = 1 (no leakage, nothing for the
+//  clamp to absorb, drain peak 74 V) needs 36k.
+
+.save(main.vin, main.drain, main.clamp, main.sec, main.out, main.gate,
+      I(main.T1.w1), I(main.T1.w2), I(main.vsup));
+.tran(0, 3m, 0.5u);
+.solver(ndf2);
+.zcd;
+
+import <magnetics> as mag;
+import <passives> as pas;
+import <power/inverter/switched> as sw;
+import <parts/diode> as dio;
+from <math> import fmod;
+
+// Gate: on for the first D/f of every period. fmod(time, T) < D T is a time
+// breakpoint, so every edge lands exactly.
+digital module Pwm<double f, double D>(output double g) []
+{
+    g = 0.0;
+    if (fmod(time, 1.0 / f) < D / f) { g = 1.0; }
+}
+
+module main<>() []
+{
+    wire vin, drain, clamp, sec, out;
+    state double gate = 0;
+
+    voltage_source vsup<48>() [vin, gnd];
+    module pwm = Pwm<100k, 0.35>(gate) [];
+
+    // Primary vin -> drain, secondary gnd -> sec: the dots on vin and gnd make
+    // sec swing negative while Q1 conducts (D1 blocks), positive after.
+    module T1 = mag.CoupledInductors<100u, 25u, 0.99, R1 = 50m, R2 = 20m>()
+                    [vin, drain, gnd, sec];
+    module Q1 = sw.SwitchCell<Ron = 50m, Coss = 100p>(gate) [drain, gnd];
+
+    // RCD clamp across the primary
+    module Dc = dio.D1N4007<>() [drain, clamp];
+    C<10n>()  [clamp, vin];
+    R<10k>()  [clamp, vin];
+
+    module D1 = dio.D1N5819<>() [sec, out];
+    module Co = pas.Capacitor<47u, ESR = 30m>() [out, gnd];
+    R<12>() [out, gnd];
+}

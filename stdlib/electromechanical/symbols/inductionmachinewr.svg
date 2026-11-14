@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-48 -32 96 68" data-title="Wound-rotor induction machine"
+     fill="none" stroke="#000" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+  <style>.fill{fill:#000}.bold{stroke-width:3.2}.dash{stroke-dasharray:3 2.5}[data-pin]{fill:#d00;stroke:none}[data-logic]{fill:#c90;stroke:none}</style>
+  <!-- Induction machine with the rotor brought out on the left through
+       three slip rings (small circles on the rotor leads). -->
+  <circle cx="0" cy="0" r="20" class="bold"/>
+  <circle cx="0" cy="0" r="13" class="dash"/>
+  <path d="M-16 -32 V-12 M0 -32 V-20 M16 -32 V-12"/>
+  <path d="M-6 2 V-7 L0 -1 L6 -7 V2"/>
+  <path d="M-5 7 C-3 4 -2 4 0 7 C2 10 3 10 5 7"/>
+  <path d="M-48 -16 H-36 M-32 -16 H-12 M-48 0 H-36 M-32 0 H-20 M-48 16 H-36 M-32 16 H-12"/>
+  <circle cx="-34" cy="-16" r="2"/>
+  <circle cx="-34" cy="0" r="2"/>
+  <circle cx="-34" cy="16" r="2"/>
+  <circle data-pin="va" data-alias="a u" data-dir="up" cx="-16" cy="-32" r="2"/>
+  <circle data-pin="vb" data-alias="b v" data-dir="up" cx="0" cy="-32" r="2"/>
+  <circle data-pin="vc" data-alias="c w" data-dir="up" cx="16" cy="-32" r="2"/>
+  <circle data-pin="ra" data-alias="k r_a" data-dir="left" cx="-48" cy="-16" r="2"/>
+  <circle data-pin="rb" data-alias="l r_b" data-dir="left" cx="-48" cy="0" r="2"/>
+  <circle data-pin="rc" data-alias="m r_c" data-dir="left" cx="-48" cy="16" r="2"/>
+  <path d="M20 -3 H27 V3 H20" class="bold"/>
+  <path d="M27 0 H32"/>
+  <circle data-pin="shaft" data-alias="rotor mech" data-dir="right" cx="32" cy="0" r="2"/>
+  <path d="M0 20 V32 M-48 32 H48" data-if-pin="omega_m_out i_alpha_out i_beta_out psi_r_alpha_out psi_r_beta_out theta_e_out torque_out"/>
+  <circle data-logic="omega_m_out" data-alias="omega speed" data-flow="out" data-dir="down" cx="-48" cy="32" r="2"/>
+  <circle data-logic="i_alpha_out" data-alias="i_alpha ialpha" data-flow="out" data-dir="down" cx="-32" cy="32" r="2"/>
+  <circle data-logic="i_beta_out" data-alias="i_beta ibeta" data-flow="out" data-dir="down" cx="-16" cy="32" r="2"/>
+  <circle data-logic="psi_r_alpha_out" data-alias="psi_r_alpha" data-flow="out" data-dir="down" cx="0" cy="32" r="2"/>
+  <circle data-logic="psi_r_beta_out" data-alias="psi_r_beta" data-flow="out" data-dir="down" cx="16" cy="32" r="2"/>
+  <circle data-logic="theta_e_out" data-alias="theta_e theta" data-flow="out" data-dir="down" cx="32" cy="32" r="2"/>
+  <circle data-logic="torque_out" data-alias="torque t_em te" data-flow="out" data-dir="down" cx="48" cy="32" r="2"/>
+</svg>

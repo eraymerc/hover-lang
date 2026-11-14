@@ -1,0 +1,97 @@
+import <semiconductors> as dev;
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Zener / TVS diode — breakdown with its own slope
+//
+//  What the base Diode lacks
+//  ─────────────────────────
+//  <semiconductors>' Diode carries breakdown as -Ibv e^(-(Bv + v)/Vt): its
+//  exponent is the bare thermal voltage. ngspice's diode has a breakdown
+//  emission coefficient NBV for exactly this reason, and Hover's has not. With
+//  NBV = 1 the dynamic resistance in breakdown is Vt/I + Rs, so a 12 V / 1 W
+//  Zener whose data sheet gives Zzt = 9 Ohm at Izt = 21 mA can only be fitted
+//  by putting ~8 Ohm in Rs — which is then also the forward series
+//  resistance, and lifts VF at 200 mA from ~0.9 V to ~2.4 V. (The 1N4733A card
+//  makes that trade with Rs = 1 Ohm.) A TVS is the same problem at amps: its
+//  clamping voltage VC at IPP is set by the breakdown slope, not by Vt.
+//
+//  The model
+//  ─────────
+//  Two stdlib Diodes, no new junction code — the classic SPICE Zener
+//  macro-model:
+//
+//    forward:    Diode<IS, N, RS, ..., CJO, VJ, M, TT>   anode -> cathode,
+//                with its own breakdown off (Bv = 0)
+//    breakdown:  Diode<IBV e^-30, NBV, RZ>  cathode -> x, in series with a
+//                fixed source V(x) - V(anode) = BV - 30 NBV Vt
+//
+//  The breakdown path is an ordinary forward junction pointed the other way,
+//  carrying exactly IBV at v = -BV:
+//
+//      i_bd = IBV e^-30 e^((-v - BV + 30 NBV Vt)/(NBV Vt))
+//           = IBV e^((-v - BV)/(NBV Vt))       ->    i_bd(-BV) = IBV
+//
+//  i.e. SPICE's breakdown term with NBV and its own series resistance RZ.
+//  Being a stdlib Diode it has the stdlib junction limiting (pnjlim on
+//  nr_prev of its own output, the 60 nVt hold, companion form) and GMIN.
+//
+//  Why the series source rather than a junction "forward biased by BV": a
+//  stdlib junction is held at 60 nVt (jexp's ceiling, see <math>), and a
+//  12 V knee is 150 NBV Vt for NBV = 3 — out of reach, and the branch then
+//  conducts nothing (measured: 1 MOhm-limited at every current). With the
+//  source the junction itself sits at 30 NBV Vt at IBV, and a TVS surge of
+//  IPP = 1e5 IBV adds only another 11.5 NBV Vt, all inside the range.
+//
+//  The breakdown path carries no charge: the depletion capacitance (CJO) and
+//  stored charge (TT) are the forward diode's, across the same terminals.
+//
+//  Datasheet mapping:
+//      VZ at IZT       ->  BV = VZ, IBV = IZT
+//      ZZT at IZT      ->  ZZT = NBV Vt / IZT + RZ
+//      ZZK at IZK      ->  sets NBV (the knee: ZZK ~ NBV Vt / IZK + RZ)
+//      VC at IPP (TVS) ->  VC ~ BV + NBV Vt ln(IPP/IBV) + RZ IPP
+//
+//  Parameters
+//  ──────────
+//    IS, N, RS          forward junction (A, -, Ohm; RS > 0)
+//    CJO, VJ, M         depletion capacitance (F, V, -)
+//    TT                 transit time, forward stored charge (s)
+//    BV                 breakdown voltage, positive (V)
+//    IBV                current at v = -BV (A), > 0
+//    NBV                breakdown emission coefficient (-), >= 1
+//    RZ                 series resistance in breakdown (Ohm), > 0
+//    VT                 thermal voltage (isothermal)
+//
+//  Not modelled: the temperature coefficient of VZ (the sign change near
+//  5-6 V between the Zener and avalanche mechanisms), self-heating of a TVS
+//  during a surge, and the capacitance of a TVS's large junction beyond CJO.
+// ─────────────────────────────────────────────────────────────────────────────
+
+analog module Zener<double IS,  double N,   double RS,
+                    double CJO, double VJ,  double M,  double TT,
+                    double BV,  double IBV, double NBV, double RZ,
+                    double VT>()
+    [wire anode, wire cathode]
+{
+    module df = dev.Diode<IS, N, RS,
+                          0.0,                     // Ikf
+                          0.0, 2.0,                // Isr, Nr
+                          0.0, 0.0,                // Bv, Ibv: off, see db
+                          CJO, VJ, M, 0.5,         // Cjo, Vj, M, Fc
+                          TT, VT>()
+                         [anode, cathode];
+
+    // x: between the breakdown junction and its offset source.
+    wire x;
+    voltage_source<BV - 30.0 * NBV * VT>() [x, anode];
+
+    // Static arguments are folded at elaboration time, where only literal
+    // arithmetic (+ - * / **) is available, hence e ** -30 rather than exp().
+    module db = dev.Diode<IBV * 2.718281828459045 ** (0.0 - 30.0), NBV, RZ,
+                          0.0,                     // Ikf
+                          0.0, 2.0,                // Isr, Nr
+                          0.0, 0.0,                // Bv, Ibv
+                          0.0, 0.75, 0.33, 0.5,    // Cjo, Vj, M, Fc
+                          0.0, VT>()               // Tt, Vt
+                         [cathode, x];
+}

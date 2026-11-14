@@ -57,3 +57,78 @@ version = "0.9.0"
 # None. The standard library depends on nothing outside itself, which is what
 # makes it installable on a machine that has nothing else — the one package
 # every install must be able to fetch cannot have a dependency that might fail.
+
+# ── passives/ and magnetics/ (added 2026-11-14) ─────────────────────────────
+#
+#   passives/            Capacitor (ESR, ESL, leakage), Inductor (Rdc, core-
+#                        loss Rp, self-capacitance Cp), Resistor (Ls, Cp);
+#                        every parasitic defaults to the ideal part.
+#                        `import <passives> as pas;`
+#   magnetics/           CoupledInductors, CoupledInductors3 (coupled.hvr);
+#                        IdealTransformer, Transformer (T-model),
+#                        CenterTapTransformer (transformer.hvr);
+#                        SaturableInductor, SaturableTransformer
+#                        (saturable.hvr, smooth tanh core, no hysteresis);
+#                        TransformerYy, TransformerDy (threephase.hvr, banks
+#                        of three Transformer units).
+#                        `import <magnetics> as mag;`
+#
+# Both are self-contained (magnetics uses only <math>'s sqrt and tanh) and
+# carry a symbols/ folder with one <module name>.svg per module. Worked,
+# verified decks: examples/Passives/ and examples/Magnetics/.
+
+# ── power semiconductors (added 2026-11-14) ─────────────────────────────────
+#
+#   semiconductors/igbt/       IGBT, IGBTD (with anti-parallel diode): the
+#                              textbook MOSFET-driven wide-base PNP, built
+#                              from the stdlib NMOS, PNP and Diode; knee,
+#                              VCE(sat), square-law transfer, turn-off tail
+#                              (tau = BF*TF), J1 reverse breakdown.
+#                              `import <semiconductors/igbt> as igbt;`
+#   semiconductors/thyristor/  SCR (two-transistor, from the stdlib NPN/PNP;
+#                              latching, IH, VBO, dv/dt, gate turn-off — a
+#                              GTO is a parameterisation of it) and TRIAC
+#                              (two SCR sections, |IG| to both gates).
+#                              `import <semiconductors/thyristor> as th;`
+#   semiconductors/zener/      Zener: forward Diode plus a breakdown Diode
+#                              with its own slope (NBV, RZ), for Zeners and
+#                              TVS diodes. `import <semiconductors/zener>;`
+#   parts/igbt/, parts/thyristor/, parts/zener/, parts/schottky/
+#                              generic TYPICAL-value cards (no manufacturer
+#                              models): IGBT600V30A, IGBTD600V30A,
+#                              SCR400V0A8, SCR800V25A, GTO600V20A,
+#                              TRIAC600V8A, ZENER12V1W, ZENER24V1W,
+#                              TVS15V600W, SCHOTTKY45V10A, SCHOTTKY100V3A.
+#
+# All use only <semiconductors>, <semiconductors/bjt>, <semiconductors/
+# mosfet> and <math>; each directory carries a symbols/ folder. Power diodes
+# with reverse recovery need nothing new: the base Diode's Tt matches
+# ngspice's TT recovery. Worked, verified decks: examples/IGBT/,
+# examples/Thyristor/ and examples/PowerDiode/.
+
+# ── electromechanical/ machines and mechanical/ (added 2026-11-14) ──────────
+#
+#   electromechanical/   beside pmsm/spmsm/ipmsm, same shaft convention
+#                        (V(shaft) = rad/s, current = N·m, J and B inside):
+#                        InductionMachine (squirrel cage, stator-frame
+#                        T-circuit model, star or delta, optional smooth
+#                        main-flux saturation) and InductionMachineWR (slip-
+#                        ring rotor terminals) in induction.hvr;
+#                        DCMachinePM, DCMachineSepEx, DCMachineShunt,
+#                        DCMachineSeries (dcmachine.hvr, optional smooth field
+#                        saturation); BLDC (bldc.hvr: smooth trapezoidal
+#                        EMF, Hall outputs). `from <electromechanical> import
+#                        InductionMachine;`
+#   electromechanical/parts/
+#                        generic TYPICAL-value cards (no manufacturer data):
+#                        IM1k5W_4P_400V, PMDC24V_100W, BLDC24V_8P.
+#   mechanical/          shaft parts in the same convention: Inertia,
+#                        ViscousFriction, CoulombFriction (tanh-smoothed),
+#                        FanLoad (∝ ω|ω|), ConstantTorque, TorqueStep,
+#                        FlexibleShaft (spring + damper), Gear (ideal ratio).
+#                        `from <mechanical> import Inertia, FanLoad;`
+#
+# Both use only <math>; every directory carries a symbols/ folder with one
+# <module name>.svg per module. Worked, verified decks:
+# examples/InductionMachine/, examples/DCMachine/, examples/BLDC/ and
+# examples/Mechanical/.

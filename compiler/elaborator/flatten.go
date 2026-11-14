@@ -19,6 +19,7 @@ func (e *Elaborator) flattenModule(mod *ast.ModuleDeclStatement, prefix string, 
 	// file that DECLARED mod, not the entry file's — so a library can import
 	// its own dependencies and choose its own aliases. See scope.go.
 	scope := e.scopeFor(mod)
+	e.instModule[prefix] = mod
 
 	// The declaring file also selects the FUNCTION namespace every statement
 	// below is emitted against (LogicObject.File → ElaboratedProgram.FuncScopes),
@@ -84,11 +85,31 @@ func (e *Elaborator) flattenStatements(stmts []ast.Statement, scope *fileScope, 
 			}
 
 			childPorts := make(map[string]string)
+			instPorts := make(map[string]bool)
 			for i, arg := range s.LogicArgs {
 				if i < len(target.LogicArgs) {
 					childPorts[target.LogicArgs[i].Name] = e.mangleExpression(arg, prefix, ports)
+					instPorts[target.LogicArgs[i].Name] = true
+					// An argument that is the enclosing instance's own logic
+					// port was checked where that port was bound.
+					forwarded := false
+					if id, ok := arg.(*ast.IdentifierExpression); ok {
+						forwarded = e.instLogicPorts[prefix][id.Value]
+					}
+					if !forwarded {
+						e.logicBindings = append(e.logicBindings, logicBinding{
+							line: s.Line(), instance: s.InstanceName, module: s.ModuleName,
+							port: target.LogicArgs[i], arg: arg.String(),
+							signal:     childPorts[target.LogicArgs[i].Name],
+							structural: target.Token.Type == token.MODULE,
+						})
+					}
 				}
 			}
+			if e.instLogicPorts == nil {
+				e.instLogicPorts = make(map[string]map[string]bool)
+			}
+			e.instLogicPorts[prefix+"."+s.InstanceName] = instPorts
 			for i, arg := range s.PhysArgs {
 				if i < len(target.PhysPorts) {
 					childPorts[target.PhysPorts[i]] = e.mangleNode(arg.String(), prefix, ports)

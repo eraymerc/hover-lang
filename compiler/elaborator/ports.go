@@ -126,6 +126,51 @@ func (e *Elaborator) checkSourceControls() {
 	}
 }
 
+// logicBinding is one () argument of a module instance (flatten.go).
+type logicBinding struct {
+	line             int
+	instance, module string
+	port             ast.DeclLogicArg
+	arg, signal      string // as written; flattened
+	structural       bool   // the module is a plain (structural) module
+}
+
+// checkLogicPortBindings verifies that no logic port of a module instance is
+// bound to a wire.
+//
+// A logic port carries a value (a state or logic variable); a wire is a node
+// of the circuit and has no value of its own until V() reads it. Bound to a
+// logic port, the node's flattened name went straight into the generated
+// code as if it were a variable, and the deck failed in the C++ compiler with
+// an undeclared `v4main3out`. Post-flatten, like checkSourceControls: the
+// argument may name a wire declared in a parent instance.
+func (e *Elaborator) checkLogicPortBindings() {
+	for _, b := range e.logicBindings {
+		if b.port.Type.IsWire() {
+			continue
+		}
+		typ, declared := e.output.Symbols[b.signal]
+		if !declared || !typ.IsWire() {
+			continue
+		}
+		dir := b.port.Direction
+		if dir != "" {
+			dir += " "
+		}
+		node := b.port.Name + "_node"
+		how := fmt.Sprintf("e.g. [wire %s] in its header and V(%s) in its body", node, node)
+		if b.structural {
+			how = fmt.Sprintf("e.g. [wire %s] in its header, passed on in the [] of the module that reads it with V()", node)
+		}
+		e.errors = append(e.errors, fmt.Sprintf(
+			"Line %d: instance '%s' of '%s' binds its logic port '%s' (%s%s) to '%s', which is a wire (a circuit node), not a logic signal.\n"+
+				"  () ports carry values; a node goes in the [] wire list. Give '%s' a wire port for it instead —\n"+
+				"  %s — and instantiate it with '%s' in its [].",
+			b.line, b.instance, b.module, b.port.Name, dir, b.port.Type.String(), b.arg,
+			b.module, how, b.arg))
+	}
+}
+
 // describeDeclFile renders " (in pmsm.hvr)" for a module from a non-entry file,
 // and "" otherwise. A header error in an imported library is otherwise reported
 // as a bare line number in a file the user never opened.

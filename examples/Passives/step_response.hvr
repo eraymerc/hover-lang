@@ -1,0 +1,62 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  HVR Testbench — step response of the real passives (<passives>)
+//  Validates: Capacitor (ESR + leakage) and Inductor (Rdc) in the time domain,
+//             against the same circuits built from R, C and L primitives
+// ─────────────────────────────────────────────────────────────────────────────
+//
+//  A 10 V step at t = 1 ms (a time breakpoint: the step lands on it exactly)
+//  drives, side by side:
+//
+//    RC   1 kOhm into Capacitor<1u, ESR = 10, Rleak = 9k>, and its twin
+//         1 kOhm into C<1u> || R<9k>, in series with R<10>.
+//         The capacitor charges to 10 * 9k / 10.01k = 8.991 V with
+//         tau = 1 uF * (9k || 1.01k) = 0.908 ms; the terminal voltage jumps
+//         by 10 * 10 / 1010 = 99.0 mV at the step (the ESR divider).
+//    RL   9 Ohm into Inductor<10m, Rdc = 1>, and its twin 9 Ohm into L<10m>
+//         in series with R<1>. i = 1 A * (1 - e^(-t/1 ms)).
+//
+//  ── Expected result ─────────────────────────────────────────────────────────
+//
+//  main.c equals main.c2 and I(main.l1.br) equals I(main.lp) to the CSV's 7
+//  digits under ndf2 and bdf2 (accepted steps ~510, 1.52 Newton iterations
+//  per step). Both are within 2.4e-5 (ndf2) of the exponentials above; that
+//  is the integrator's truncation error at a 20 us step ceiling, the same for
+//  model and twin. Under trapezoidal the model's inductor drifts 1.8 mA from
+//  the L primitive once the steps settle into single-iteration Newton solves
+//  — a runtime limitation explained in stdlib/passives/passives.hvr.
+
+.tran(0, 10m, 20u);
+.solver(ndf2);
+.save(main.c, main.c2, I(main.l1.br), I(main.lp));
+
+import <passives> as pas;
+
+digital module Step<double t0, double amp>(output double v) []
+{
+    v = 0.0;
+    if (time >= t0) { v = amp; }
+}
+
+module main<>() []
+{
+    wire a, c, l, c2, cx, l2, lx;
+    state double vs = 0;
+
+    module st = Step<1m, 10.0>(vs) [];
+    voltage_source<>(vs) [a, gnd];
+
+    // The models
+    R<1k>() [a, c];
+    module c1 = pas.Capacitor<1u, ESR = 10.0, Rleak = 9k>() [c, gnd];
+    R<9>()  [a, l];
+    module l1 = pas.Inductor<10m, Rdc = 1.0>() [l, gnd];
+
+    // The same circuits from primitives
+    R<1k>() [a, c2];
+    C<1u>() [c2, cx];
+    R<9k>() [c2, cx];
+    R<10>() [cx, gnd];
+    R<9>()  [a, l2];
+    L lp<10m>() [l2, lx];
+    R<1>()  [lx, gnd];
+}

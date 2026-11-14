@@ -1,0 +1,67 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  HVR Testbench — IGBT Output Characteristics (IC vs VCE at four VGE)
+//  Validates: <semiconductors/igbt> static behaviour — the J1 knee, the
+//             on-resistance region that makes VCE(sat), and the flat active
+//             region set by the gate — on the IGBT600V30A card
+// ─────────────────────────────────────────────────────────────────────────────
+//
+//  VCE is ramped 0 -> 6 V over 6 ms (1 V/ms, slow enough that the
+//  capacitances carry nanoamps) across four copies of the device held at
+//  VGE = 8, 10, 12 and 15 V. Each column of the CSV is one curve of the data
+//  sheet's output-characteristic plot; plot I(main.a15) against main.c.
+//
+//  ── Expected result ─────────────────────────────────────────────────────────
+//
+//    · nothing flows below ~0.6 V: J1 must be forward biased first (the knee
+//      a MOSFET does not have); 1 A at 0.70 V for VGE = 15 V
+//    · above the knee, VCE(sat) = 1.97 V at 30 A for VGE = 15 V
+//    · the curves flatten at (1 + BF) KP/2 (VGE - VTH)^2 (1 + LAMBDA VDS):
+//      13.7 A at VGE = 8 V, 115 A at VGE = 15 V (VCE = 6 V)
+//
+//  Checked against an ngspice twin of the same equivalent circuit (level-1
+//  NMOS, Gummel-Poon PNP, J1 breakdown diode, the Miller charge as a B
+//  source, Vt matched with TEMP = TNOM = 28.56 C):
+//
+//      VCE    VGE = 8 V: Hover / ngspice     VGE = 15 V: Hover / ngspice
+//      0.7      0.5455 / 0.5456 A               0.9765 / 0.9769 A
+//      1.0      2.7699 / 2.7702                 7.0071 / 7.0082
+//      2.0      9.6123 / 9.6129                30.8205 / 30.8241
+//      6.0     13.6905 / 13.6905              115.3924 / 115.4007
+//
+//  i.e. four to five digits; the residual is the ramp's capacitive current
+//  and ngspice's own reltol.
+
+.save(main.c, I(main.a8), I(main.a10), I(main.a12), I(main.a15));
+.op;
+.tran(0, 6m, 5u);
+.solver(ndf2);
+
+import <parts/igbt>;
+
+analog module Ramp<double rate>() [wire p, wire n] {
+    double v = rate * time;
+    voltage_source<>(v)[p, n];
+}
+
+module main<>() []
+{
+    wire c, c8, c10, c12, c15, g8, g10, g12, g15;
+
+    module vce = Ramp<1000.0>()[c, gnd];
+
+    voltage_source<8>() [g8,  gnd];
+    voltage_source<10>()[g10, gnd];
+    voltage_source<12>()[g12, gnd];
+    voltage_source<15>()[g15, gnd];
+
+    // one ammeter per curve
+    voltage_source a8<0>() [c, c8];
+    voltage_source a10<0>()[c, c10];
+    voltage_source a12<0>()[c, c12];
+    voltage_source a15<0>()[c, c15];
+
+    module q8  = igbt.IGBT600V30A<>()[g8,  c8,  gnd];
+    module q10 = igbt.IGBT600V30A<>()[g10, c10, gnd];
+    module q12 = igbt.IGBT600V30A<>()[g12, c12, gnd];
+    module q15 = igbt.IGBT600V30A<>()[g15, c15, gnd];
+}

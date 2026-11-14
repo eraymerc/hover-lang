@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-32 -32 64 64" data-title="Transformer (T-model)"
+     fill="none" stroke="#000" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+  <style>.fill{fill:#000}.bold{stroke-width:3.2}.dash{stroke-dasharray:3 2.5}[data-pin]{fill:#d00;stroke:none}</style>
+  <!-- Two windings on a core (the double bar). Dots on p1 and p2. -->
+  <path d="M-32 -16 H-8 M-32 16 H-8 M8 -16 H32 M8 16 H32"/>
+  <path d="M-8 -16 a4 4 0 0 1 0 8 a4 4 0 0 1 0 8 a4 4 0 0 1 0 8 a4 4 0 0 1 0 8" class="bold"/>
+  <path d="M8 -16 a4 4 0 0 0 0 8 a4 4 0 0 0 0 8 a4 4 0 0 0 0 8 a4 4 0 0 0 0 8" class="bold"/>
+  <path d="M-1.6 -18 V18 M1.6 -18 V18" class="bold"/>
+  <circle cx="-14" cy="-22" r="1.8" class="fill"/>
+  <circle cx="14" cy="-22" r="1.8" class="fill"/>
+  <circle data-pin="p1" data-alias="1 pri_p primary_p" data-dir="left" cx="-32" cy="-16" r="2"/>
+  <circle data-pin="n1" data-alias="pri_n primary_n" data-dir="left" cx="-32" cy="16" r="2"/>
+  <circle data-pin="p2" data-alias="2 sec_p secondary_p" data-dir="right" cx="32" cy="-16" r="2"/>
+  <circle data-pin="n2" data-alias="sec_n secondary_n" data-dir="right" cx="32" cy="16" r="2"/>
+</svg>

@@ -78,6 +78,10 @@ from <math> import exp, log, log1p, log10, pow, sqrt;
 //  ("convergence blocked by row main.light"). At 1 uF the row weighs in at
 //  microamps and the same step converges. Its accuracy is unaffected: the
 //  step test on u is in volts, and u is held to the node tolerance.
+//  (That was measured while the transient tried the trust region first. Since
+//  2026-11-14 it tries plain Newton first and falls back to the trust region;
+//  whether 1 F would pass today has not been re-measured. 1 uF is right
+//  either way: it keeps this row's residual on the scale of the circuit's.)
 //
 //  The rising/falling choice is a smooth blend, not an if: with d = u_ss - u,
 //      w = (1 + d / sqrt(d^2 + 0.01^2)) / 2      (1 rising, 0 falling)

@@ -1,0 +1,201 @@
+// tanh smooths Coulomb friction through zero speed; fabs makes the fan load
+// oppose the rotation in either direction.
+from <math> import tanh, fabs;
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Rotational mechanics on a shaft node — inertia, friction, loads, a
+//  flexible shaft and an ideal gear
+//
+//  These parts use the shaft convention of <electromechanical> (PMSM,
+//  InductionMachine, the DC machines, BLDC), the force–current analogy:
+//
+//      V(shaft) = ωm, shaft speed in rad/s         (1 V = 1 rad/s)
+//      current  = torque in N·m                    (1 A = 1 N·m)
+//      C = inertia (kg·m²),  conductance = viscous friction (N·m·s/rad),
+//      L = 1 / torsional stiffness (rad/(N·m)),  power = V·I in W
+//
+//  A machine's torque is a current INTO its shaft node; a load is anything
+//  that draws current OUT of it to ground. Every one-port part below is
+//  connected [shaft] and draws its torque from shaft to gnd, so it simply
+//  sits on the machine's shaft wire beside the machine, and several of them
+//  on one node add up (inertias add, torques add):
+//
+//      wire shaft;
+//      module m    = InductionMachine<...>(...)[a, b, c, shaft];
+//      module jl   = Inertia<0.01>()[shaft];
+//      module fan  = FanLoad<10, 150>()[shaft];
+//
+//  A positive load torque opposes positive rotation; with the machine
+//  motoring at positive speed, the power ω·T a load absorbs is positive.
+//
+//  The two-port parts (FlexibleShaft, Gear) join two shaft nodes:
+//  [shaft_a, shaft_b], where shaft_a is the driving side by convention.
+//
+//  Parts
+//      Inertia<J>                  [shaft]   J·dω/dt                (C)
+//      ViscousFriction<B>          [shaft]   B·ω                    (VCCS; B = 0 ok)
+//      CoulombFriction<Tc, w_s>    [shaft]   Tc·tanh(ω/w_s)
+//      FanLoad<T_rated, w_rated>   [shaft]   T_rated·(ω/w_rated)·|ω/w_rated|
+//      ConstantTorque<T>           [shaft]   T, whatever the speed
+//      TorqueStep<T0, T1, t_step>  [shaft]   T0, then T1 from t_step on
+//      FlexibleShaft<K, D>         [shaft_a, shaft_b]  K·Δθ + D·Δω
+//      Gear<n>                     [shaft_a, shaft_b]  ω_b = ω_a/n, T_a = T_b/n
+//
+//  Not here, deliberately: backlash and stick-slip (static friction above
+//  the Coulomb level, a true stop at zero speed). Both are discontinuities
+//  in the force law that the smooth forms below cannot represent honestly;
+//  CoulombFriction's tanh lets the shaft creep at any torque below Tc, at a
+//  speed of about w_s·T/Tc.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ═══════════════════════════════════════════════════════════════
+//  Inertia
+// ═══════════════════════════════════════════════════════════════
+//
+//  T = J·dω/dt, a capacitor of J farads from shaft to ground. Stores the
+//  kinetic energy ½·J·ω². Under .op the inertia is relaxed like any
+//  capacitor: the shaft starts at the DC speed the torques balance at.
+
+module Inertia<double J>()[wire shaft]
+{
+    C<J>() [shaft, gnd];
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  Viscous friction
+// ═══════════════════════════════════════════════════════════════
+//
+//  T = B·ω, a conductance B. Written, as in PMSM, as a VCCS sensing its own
+//  terminals, so that B = 0 is no torque rather than R<1/0>.
+
+module ViscousFriction<double B>()[wire shaft]
+{
+    VCCS<B>() [shaft, gnd, shaft, gnd];
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  Coulomb (dry) friction, smoothed through zero speed
+// ═══════════════════════════════════════════════════════════════
+//
+//      T = Tc·tanh(ω / w_s)
+//
+//  The ideal Coulomb law Tc·sign(ω) jumps by 2·Tc at ω = 0 — a step in the
+//  torque inside some solver step, and an infinite slope for Newton. The
+//  tanh replaces the jump by a ramp of width w_s (rad/s): the torque is
+//  76 % of Tc at |ω| = w_s, 96 % at 2·w_s and 99.9 % at 4·w_s, and its slope
+//  at standstill is Tc/w_s, a viscous friction of that size. Pick w_s small
+//  next to the speeds of interest but not so small that Tc/w_s dwarfs the
+//  rest of the shaft's damping: w_s = 0.1–1 % of the running speed is
+//  typical. Below Tc a holding torque does not hold the shaft: it creeps at
+//  ω ≈ w_s·atanh(T/Tc) (see the header: no stiction).
+
+analog module CoulombFriction<double Tc, double w_s>()[wire shaft]
+{
+    double torque = Tc * tanh(V(shaft) / w_s);
+    current_source<>(torque) [shaft, gnd];
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  Fan / pump / propeller load, torque ∝ speed²
+// ═══════════════════════════════════════════════════════════════
+//
+//      T = T_rated·(ω/w_rated)·|ω/w_rated|
+//
+//  The affinity law of a centrifugal fan or pump: T_rated at w_rated (rad/s),
+//  a quarter of it at half speed, and the power T·ω ∝ ω³. Written with |ω| so
+//  that it opposes the rotation in either direction; the torque is
+//  continuously differentiable through zero (slope 2·T_rated·|ω|/w_rated²,
+//  zero at standstill), so it needs no smoothing.
+
+analog module FanLoad<double T_rated, double w_rated>()[wire shaft]
+{
+    double x = V(shaft) / w_rated;
+    double torque = T_rated * x * fabs(x);
+    current_source<>(torque) [shaft, gnd];
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  Constant torque
+// ═══════════════════════════════════════════════════════════════
+//
+//  T drawn from the shaft at any speed, in a fixed direction — a hoist
+//  holding a weight, a conveyor against gravity: an ACTIVE load. It does not
+//  reverse with the speed, so a machine that cannot hold it is driven
+//  backwards (T > 0 then turns the shaft negative). For a load that always
+//  opposes the motion use CoulombFriction.
+
+module ConstantTorque<double T>()[wire shaft]
+{
+    current_source<T>() [shaft, gnd];
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  Torque step
+// ═══════════════════════════════════════════════════════════════
+//
+//  T0 before t_step, T1 from t_step on (an active load, like ConstantTorque).
+//  The comparison is a time breakpoint, so the variable-step solvers land a
+//  step exactly on t_step with or without .zcd (manual, "Time Breakpoints").
+
+analog module TorqueStep<double T0, double T1, double t_step>()[wire shaft]
+{
+    double torque = T0;
+    if (time >= t_step) { torque = T1; }
+    current_source<>(torque) [shaft, gnd];
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  Flexible shaft (torsion spring + damper) — the two-mass coupling
+// ═══════════════════════════════════════════════════════════════
+//
+//      T = K·(θa − θb) + D·(ωa − ωb)        transmitted from a to b
+//
+//  A spring is an inductor in this analogy (dT/dt = K·Δω): L = 1/K henry,
+//  whose branch current is the spring torque. The damper is a conductance D
+//  between the two nodes (a self-sensing VCCS, so D = 0 is allowed). Put
+//  an Inertia on shaft_b (or a machine, or a load) to make the two-mass
+//  system; with J_a and J_b on its ends the shaft resonates at
+//
+//      f_0 = (1/2π)·√(K·(J_a + J_b)/(J_a·J_b)).
+//
+//  The twist starts at zero (θa = θb at t = 0). Under .op the spring is a
+//  short at DC: both ends turn at one speed, the spring carrying the steady
+//  torque. The spring torque is I(<instance>.spring) (positive from a to b);
+//  the twist angle is that over K.
+//
+//  Parameters
+//      K   torsional stiffness, N·m/rad (> 0)
+//      D   torsional damping, N·m·s/rad (0 allowed)
+
+module FlexibleShaft<double K, double D>()[wire shaft_a, wire shaft_b]
+{
+    L spring<1.0 / K>()  [shaft_a, shaft_b];
+    VCCS<D>()            [shaft_a, shaft_b, shaft_a, shaft_b];
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  Ideal gear
+// ═══════════════════════════════════════════════════════════════
+//
+//      ω_b = ω_a / n,      T_a = T_b / n            (lossless: ωa·Ta = ωb·Tb)
+//
+//  n is the ratio of input to output speed: n = 5 is a 5:1 reducer (the
+//  output turns 5 times slower with 5 times the torque); a negative n
+//  reverses the direction. Seen from shaft_a, an inertia J on shaft_b is
+//  J/n², a friction B is B/n², a torque T is T/n.
+//
+//  It is an ideal transformer: a VCVS sets V(shaft_b) = V(shaft_a)/n, and its
+//  branch current — the torque the gear delivers into shaft_b — is reflected
+//  back onto shaft_a by a CCCS of gain 1/n. Because shaft_b is set by a
+//  source, nothing else may impose the speed of shaft_b (a speed source, a
+//  second gear driving it); put the speed source on shaft_a instead. A rigid
+//  gear has no inertia, compliance, backlash or loss of its own — add an
+//  Inertia, a FlexibleShaft or a ViscousFriction where those matter.
+//
+//  The torque delivered into shaft_b is −I(<instance>.mesh).
+
+module Gear<double n>()[wire shaft_a, wire shaft_b]
+{
+    VCVS mesh<1.0 / n>()  [shaft_b, gnd, shaft_a, gnd];
+    CCCS<1.0 / n>()       [gnd, shaft_a, mesh];
+}

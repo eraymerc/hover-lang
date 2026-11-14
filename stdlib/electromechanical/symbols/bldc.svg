@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-48 -32 96 60" data-title="Brushless DC motor"
+     fill="none" stroke="#000" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+  <style>.fill{fill:#000}.bold{stroke-width:3.2}.dash{stroke-dasharray:3 2.5}[data-pin]{fill:#d00;stroke:none}[data-logic]{fill:#c90;stroke:none}</style>
+  <!-- Three-phase motor with a trapezoid under the M (trapezoidal back-EMF);
+       the Hall outputs share the output rail with speed, angle and torque. -->
+  <circle cx="0" cy="0" r="20" class="bold"/>
+  <path d="M-16 -32 V-12 M0 -32 V-20 M16 -32 V-12"/>
+  <path d="M-8 3 V-9 L0 0 L8 -9 V3"/>
+  <path d="M-9 12 L-5 8 H5 L9 12"/>
+  <circle data-pin="va" data-alias="a u" data-dir="up" cx="-16" cy="-32" r="2"/>
+  <circle data-pin="vb" data-alias="b v" data-dir="up" cx="0" cy="-32" r="2"/>
+  <circle data-pin="vc" data-alias="c w" data-dir="up" cx="16" cy="-32" r="2"/>
+  <path d="M20 -3 H27 V3 H20" class="bold"/>
+  <path d="M27 0 H32"/>
+  <circle data-pin="shaft" data-alias="rotor mech" data-dir="right" cx="32" cy="0" r="2"/>
+  <path d="M0 20 V24 M-48 24 H48" data-if-pin="omega_m_out hall_a_out hall_b_out hall_c_out theta_e_out torque_out"/>
+  <circle data-logic="omega_m_out" data-alias="omega speed" data-flow="out" data-dir="down" cx="-48" cy="24" r="2"/>
+  <circle data-logic="hall_a_out" data-alias="hall_a ha" data-flow="out" data-dir="down" cx="-32" cy="24" r="2"/>
+  <circle data-logic="hall_b_out" data-alias="hall_b hb" data-flow="out" data-dir="down" cx="-16" cy="24" r="2"/>
+  <circle data-logic="hall_c_out" data-alias="hall_c hc" data-flow="out" data-dir="down" cx="16" cy="24" r="2"/>
+  <circle data-logic="theta_e_out" data-alias="theta_e theta" data-flow="out" data-dir="down" cx="32" cy="24" r="2"/>
+  <circle data-logic="torque_out" data-alias="torque t_em te" data-flow="out" data-dir="down" cx="48" cy="24" r="2"/>
+</svg>

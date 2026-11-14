@@ -290,6 +290,14 @@ public:
     // A recognised time comparison, S(time) op x (codegen/breakpoints.go):
     // its value exactly as the expression computes it, plus where it flips.
     double tcmp(int form, double x, double c, double p);
+    // ...with a chain of offsets, u = time ± c0 ± c1 ... (bit i of neg: ci is
+    // subtracted), applied one by one as the expression does.
+    template <class... C>
+    double tcmp_chain(int form, double x, double p, unsigned neg, C... c) {
+        const double k[] = {static_cast<double>(c)...};
+        return tcmp_chain_n(form, x, p, neg, k, (int)sizeof...(C));
+    }
+    double tcmp_chain_n(int form, double x, double p, unsigned neg, const double *c, int n);
     double dt() const;  // the clock period inside a clocked phase, else the solver step
     double V(const char *net) const;
     double V_prev(const char *net) const;  // previous Newton iterate

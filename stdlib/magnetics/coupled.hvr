@@ -1,0 +1,143 @@
+from <math> import sqrt;
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Coupled inductors — two and three magnetically coupled windings
+//
+//  SPICE's K element, as a module. Each winding is a branch of the MNA system
+//  whose voltage is its resistance drop plus the rate of change of its flux
+//  linkage, and the flux linkages are the inductance matrix times the
+//  currents:
+//
+//      v1 = R1 i1 + d/dt (L1 i1 + M i2)          M = k sqrt(L1 L2)
+//      v2 = R2 i2 + d/dt (M i1  + L2 i2)
+//
+//           i1 →                         i2 →
+//      p1 ──●─┐                     ┌─●── p2        ● = dotted end
+//             )  L1     k     L2   (
+//      n1 ────┘                     └──── n2
+//
+//  Dots are on p1 and p2: a current entering p1 induces a voltage that makes
+//  p2 positive with respect to n2. A negative k is the same as moving one dot.
+//
+//  ── How it is written, and why ─────────────────────────────────────────────
+//
+//  Each winding is a voltage_source (w1, w2, w3) whose value reads the branch
+//  currents of all of them, I(w1), I(w2) ..., and takes ddt() of the flux.
+//  The currents are therefore unknowns of the MNA system — the same unknowns
+//  an L primitive has — and ddt() is integrated with the active solver's own
+//  formula (runtime/vm/state_slots.hpp), so the result is the companion model
+//  SPICE builds for coupled inductors, with the inductance matrix L/h in the
+//  branch rows. Nothing is integrated by hand and nothing lags a step.
+//
+//  The flux is written once per winding, as a whole, rather than as an L
+//  primitive plus a separate mutual term: one ddt() per winding keeps the
+//  stored energy exactly 1/2 i' L i (see Verified), and it lets R1, R2 and the
+//  leakage be 0, which an R or L primitive does not.
+//
+//  ── The coupling coefficient ───────────────────────────────────────────────
+//
+//  |k| <= 1 is required for the windings to be passive (the inductance matrix
+//  must be positive semi-definite); nothing checks it, and |k| > 1 is a
+//  circuit that creates energy.
+//
+//  k = 1 works. The inductance matrix is then singular, but the branch rows are
+//  not: whatever resistance either winding sees — its own R, a load, a source
+//  impedance — makes the system regular, as it does in SPICE. The one circuit
+//  that cannot be solved at k = 1 is the one that has no solution: ideal
+//  voltage sources imposed on BOTH windings (they would have to be in exactly
+//  the turns ratio). Tested at k = 1 with 0 winding resistance, 1 Ohm source
+//  impedance and a 100 Ohm load, against ngspice's K = 1: 19.00929 V vs
+//  19.00929 V secondary peak.
+//
+//  ── Using it ───────────────────────────────────────────────────────────────
+//
+//  The windings are galvanically isolated, so a side that connects to nothing
+//  but its own load has no DC reference: its common-mode voltage is
+//  undetermined and the matrix is singular in exact arithmetic (SPICE reports
+//  "singular matrix" there). In testing, a floating 100 Ohm secondary came out
+//  at 0 V common mode with the correct differential voltage, but that is what
+//  the LU happened to do with a zero pivot, not something the solver
+//  promises. Ground one end of every isolated side, or tie it to ground
+//  through a large resistor.
+//
+//  Branch currents are I(<instance>.w1), I(<instance>.w2), ... — positive into
+//  the p terminal — and are .save-able like any branch.
+//
+//  At DC, and in .op, the windings are what inductors are: shorts (their R
+//  only). With `.op;` an AC source whose value at t = 0 is not zero therefore
+//  starts with that value treated as DC, i.e. a large current through the
+//  winding resistance that then decays with L/R — the same as SPICE. Start
+//  such sources at a zero crossing or leave .op out.
+//
+//  Use ndf2 or bdf2. trapezoidal matches them on smooth sine-driven decks but
+//  drifts once steps converge in one Newton iteration (see <passives>' header
+//  for the measurement); that is a runtime limitation of trapezoidal with any
+//  ddt()-driven source, not of this model.
+//
+//  ── Verified ───────────────────────────────────────────────────────────────
+//
+//  CoupledInductors 1 mH / 4 mH, k = 0.9, 1 Ohm source, 100 Ohm load, 10 V
+//  1 kHz, against the closed-form phasor solution and an ngspice twin
+//  (L, L, K): secondary 17.20910 V / +6.1139 deg (analytic 17.20924 V /
+//  +6.1141 deg, ngspice 17.20909 V); whole waveform within 1.4e-4 of ngspice
+//  on ndf2, bdf2 and trapezoidal, with and without .op. Energy: the
+//  integrated terminal power equals 1/2 i' L i to 7.5e-8 J out of a
+//  3.1e-3 J peak (k = 0.9 and k = 1). .ac impedance with k = 0.95 and
+//  R1 = 0.5, R2 = 1 Ohm, 10 Hz - 100 MHz: 4.4e-10 relative.
+//
+//  CoupledInductors3 1 / 4 / 0.25 mH, k = 0.95 / 0.9 / 0.85, all three
+//  loaded, against ngspice with three K elements: 17.26305 V vs 17.26304 V
+//  and 4.050154 V vs 4.050154 V, phases within 2e-4 deg, winding currents
+//  within 2e-5 over the run (examples/Magnetics/coupled_inductors3.hvr).
+//
+//  Not modelled: saturation (<magnetics> SaturableInductor /
+//  SaturableTransformer), core loss, winding capacitance, frequency-dependent
+//  winding resistance.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Two coupled windings.
+//
+//   L1, L2   self inductances, H (> 0)
+//   k        coupling coefficient, -1 <= k <= 1
+//   R1, R2   winding resistances, Ohm                      0
+analog module CoupledInductors<double L1, double L2, double k,
+                               double R1 = 0, double R2 = 0>()
+    [wire p1, wire n1, wire p2, wire n2]
+{
+    double M  = k * sqrt(L1 * L2);
+    double i1 = I(w1);
+    double i2 = I(w2);
+    double v1 = R1 * i1 + ddt(L1 * i1 + M * i2);
+    double v2 = R2 * i2 + ddt(M * i1 + L2 * i2);
+    voltage_source w1<>(v1) [p1, n1];
+    voltage_source w2<>(v2) [p2, n2];
+}
+
+// Three coupled windings, one coupling coefficient per pair.
+//
+//   L1, L2, L3       self inductances, H (> 0)
+//   k12, k13, k23    pairwise coupling coefficients
+//   R1, R2, R3       winding resistances, Ohm              0
+//
+// Each |k| <= 1 is not sufficient on its own: the 3x3 inductance matrix must
+// be positive semi-definite, i.e. also
+// 1 - k12^2 - k13^2 - k23^2 + 2 k12 k13 k23 >= 0. A three-winding transformer
+// with all k = 1 satisfies it with equality.
+analog module CoupledInductors3<double L1, double L2, double L3,
+                                double k12, double k13, double k23,
+                                double R1 = 0, double R2 = 0, double R3 = 0>()
+    [wire p1, wire n1, wire p2, wire n2, wire p3, wire n3]
+{
+    double M12 = k12 * sqrt(L1 * L2);
+    double M13 = k13 * sqrt(L1 * L3);
+    double M23 = k23 * sqrt(L2 * L3);
+    double i1 = I(w1);
+    double i2 = I(w2);
+    double i3 = I(w3);
+    double v1 = R1 * i1 + ddt(L1  * i1 + M12 * i2 + M13 * i3);
+    double v2 = R2 * i2 + ddt(M12 * i1 + L2  * i2 + M23 * i3);
+    double v3 = R3 * i3 + ddt(M13 * i1 + M23 * i2 + L3  * i3);
+    voltage_source w1<>(v1) [p1, n1];
+    voltage_source w2<>(v2) [p2, n2];
+    voltage_source w3<>(v3) [p3, n3];
+}

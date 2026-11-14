@@ -1,0 +1,47 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  HVR Testbench — two coupled inductors (<magnetics> CoupledInductors)
+//  Validates: self and mutual inductance, dot convention, energy storage,
+//             against the closed-form phasor solution and ngspice's K element
+// ─────────────────────────────────────────────────────────────────────────────
+//
+//    10 V, 1 kHz ── 1 Ohm ──●┐ L1 = 1 mH   L2 = 4 mH ┌●── s ── 100 Ohm ── gnd
+//                           )      k = 0.9           (
+//                    gnd ───┘                        └─── gnd
+//
+//  ── Expected result ─────────────────────────────────────────────────────────
+//
+//  Steady state (fit over the last two cycles):
+//    V(s)          17.2091 V peak at +6.114 deg  (phasor solution 17.20924 V,
+//                                                 +6.1141 deg; ngspice with
+//                                                 L, L, K: 17.20909 V)
+//    I(main.x.w1)  1.56893 A peak at -69.775 deg (phasor 1.56895 A)
+//  The whole waveform, start-up included, stays within 1.4e-4 of ngspice.
+//  The power that enters the two windings, integrated, equals the stored
+//  energy 1/2 (L1 i1^2 + 2 M i1 i2 + L2 i2^2) at every point to 7.5e-8 J
+//  (peak stored energy 3.1e-3 J). 5014 accepted steps, 2 Newton iterations
+//  each, on ndf2, bdf2 and trapezoidal, with or without .op.
+//
+//  Change 0.9 to 1.0 for perfect coupling: 19.0093 V at +8.700 deg, as the
+//  phasor solution and ngspice's K = 1 give.
+
+.tran(0, 10m, 2u);
+.solver(ndf2);
+.save(main.b, main.s, I(main.x.w1), I(main.x.w2));
+
+import <magnetics> as mag;
+from <math> import sin;
+
+analog module Sine<double amp, double f>() [wire p]
+{
+    double v = amp * sin(2.0 * 3.141592653589793 * f * time);
+    voltage_source<>(v) [p, gnd];
+}
+
+module main<>() []
+{
+    wire a, b, s;
+    module src = Sine<10.0, 1k>() [a];
+    R<1>() [a, b];
+    module x = mag.CoupledInductors<1m, 4m, 0.9>() [b, gnd, s, gnd];
+    R<100>() [s, gnd];
+}
