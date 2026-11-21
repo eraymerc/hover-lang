@@ -87,6 +87,20 @@ inline double ulp_of(double v) {
     return std::nextafter(v, INF) - v;
 }
 
+// INDISTINGUISHABLY CLOSE. A flip within this many ulps of the current time
+// is taken as happening now — ngspice's rule (dctran.c: a time within 100
+// ulps of a breakpoint is at it, and breakpoints within 100 ulps of the
+// current time are thrown out). Two instants that should coincide but are
+// computed by different roundings — two PWM legs at u ~ 0, a carrier edge
+// and a clock tick — land a few ulps apart, and from t = 16 s on (ulp
+// 3.6e-15 s) two ulps exceed h_min = 5 fs of a 5 us maximum step: they
+// became separate breakpoints with a 7 fs step between them, which a node
+// held only by diode leakage could not be solved across (an HCA inverter
+// with a diode-bridge load, "timestep too small" at t = 16.002 s in every
+// run; 2026-11-22). Below ~0.3 s (5 us maximum step) 100 ulps are still under
+// h_min and this changes nothing.
+constexpr double BP_SAME_ULPS = 100.0;
+
 // The flip of pred near E0, if it is after t_ref: the first double in
 // (max(t_ref, E0 - h), E0 + h] where pred differs from its value at the
 // bracket's start. h is a few dozen ulps of the magnitudes involved: E0 is
@@ -243,7 +257,7 @@ bool unresolvable(VM *vm, int form, double x, double p) {
 }
 
 double compare(VM *vm, int form, double t, double x, const Chain &c, double p) {
-    const bool result = pred(form, c, t, x, p);
+    bool result = pred(form, c, t, x, p);
     VMBreakpoints &bp = vm->bp;
     if ((bp.collect || (vm->in_analog && bp.h_min > 0.0)) && unresolvable(vm, form, x, p))
         return result ? 1.0 : 0.0;
@@ -262,12 +276,21 @@ double compare(VM *vm, int form, double t, double x, const Chain &c, double p) {
             }
             if (s.moves >= 2) return result ? 1.0 : 0.0;
         }
+        // A flip indistinguishably close (BP_SAME_ULPS) is now: the logic
+        // reads the value after it, and no step is landed for it.
+        const double t_same = vm->time + BP_SAME_ULPS * ulp_of(vm->time);
+        double from = vm->time;
+        const double f0 = next_flip(form, x, c, p, from);
+        if (f0 <= t_same) {
+            result = pred(form, c, f0, x, p);
+            from = t_same;
+        }
         // A flip less than h_min ahead cannot be landed exactly (PROGRESS), but
         // it must not be dropped either: the value sampled now would then be
         // held for a whole free step (a 0.5 ns pulse lasted 3.6 ms). The step is
         // ended h_min from here instead, and the next sample sees the new value.
-        const double t_min = vm->time + bp.h_min;
-        if (next_flip(form, x, c, p, vm->time) <= t_min) bp.logic_next.add(std::nextafter(t_min, INF));
+        const double t_min = std::fmax(vm->time + bp.h_min, from);
+        if (next_flip(form, x, c, p, from) <= t_min) bp.logic_next.add(std::nextafter(t_min, INF));
         bp.logic_next.add(next_flip(form, x, c, p, t_min));
     } else if (vm->in_analog && bp.h_min > 0.0) {
         // Analog code, at the solved point t (the left limit on a landing step).
@@ -318,7 +341,9 @@ double vm_breakpoint_step(VM *vm, double dt, double max_dt) {
     const bool landed_analog = landed && bp.land_analog;
     if (!landed && !(t == bp.t0 && bp.restart)) bp.restart = false;
     bp.h_min = lte_min_step(max_dt);
-    const double t_min = t + bp.h_min;
+    // Nothing is landed within h_min, nor within BP_SAME_ULPS of t: a flip
+    // that close is now (analog code sees it at the next solved point).
+    const double t_min = t + std::fmax(bp.h_min, BP_SAME_ULPS * ulp_of(t));
 
     // Candidates: what analog code reported during the last attempt, then the
     // logic's comparisons as they stand at t.
