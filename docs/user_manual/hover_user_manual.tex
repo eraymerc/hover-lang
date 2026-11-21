@@ -422,6 +422,37 @@ they keep their grid --- the step the deck chose is its sampling --- and a
 comparison there is simply evaluated at each step. Decks without a recognised
 comparison run exactly as before.
 
+\subsection{.clock — Clocked Logic}
+
+\begin{lstlisting}
+.clock(mcu, 25u);                        // name, period
+module ctl = Controller<>(u)[vout] @mcu; // a digital module bound to it
+\end{lstlisting}
+
+A digital module bound to a clock runs once per tick, at
+\(t = k \cdot T\), instead of once per solver step; between ticks its outputs
+keep their values (zero-order hold). The variable-step solvers end a step
+exactly on every tick; the fixed-step solvers require the period to be a whole
+number of steps. Inside a clocked module \code{dt} is the clock period, and
+its comparisons sample at the ticks (they are not time breakpoints). A
+rejected step rolls the module's \code{state} back --- arrays and structs
+included --- and its retry runs the tick again from the same point.
+
+\textbf{Order within a step.} A clocked module is a register; unclocked
+digital and structural logic is combinational, held over each step. At the
+start of a step the ticks due at that instant run first, then the unclocked
+logic, once, on the registers' new values --- so a PWM, a dead-time module or
+any other unclocked logic fed by a clocked output reacts in the same step as
+the tick. A clocked module that reads unclocked logic sees the value held over
+the previous step, which is that value just before the tick, as a flip-flop
+samples its input before the clock edge.
+
+\textbf{History restart.} A tick restarts the integrator's history with a
+short step only if the step's logic pass changed something the circuit sees
+--- a source the logic drives, or a logic value analog code reads --- whether
+directly or through unclocked logic. A tick that only advances a counter or
+rewrites the same outputs leaves the history alone.
+
 \subsection{.op — DC Operating Point}
 
 \begin{lstlisting}
@@ -1578,6 +1609,51 @@ C<100n>()[node, gnd];           // 100 nF
 L<10u>()[a, b];                 // 10 uH
 \end{lstlisting}
 
+\subsection{Zero-Ohm Resistors: \code{R<0>}}
+\label{sec:rzero}
+
+\code{R<0>} is an ideal short. Element values are compile-time constants (an
+\code{R<Rs>} inside a module gets the number its instance passed), so the
+compiler resolves the short once: the two nets become one net and the
+resistor stamps nothing. The circuit matrix gets one row smaller, and the
+short is exact --- there is no large conductance standing in for it. A model
+can therefore take an optional series resistance as an ordinary parameter and
+a card can pass \code{0} for ``none'':
+
+\begin{lstlisting}
+analog module D<double Rs>() [wire anode, wire cathode] {
+    wire ai;
+    R<Rs>() [anode, ai];   // Rs = 0: ai is the anode itself
+    ...
+}
+\end{lstlisting}
+
+\noindent Both names survive the merge: \code{V(ai)}, \code{.save(main.d.ai)}
+and \code{.ac} columns read the merged net, each under its own name; a net
+shorted to \code{gnd} reads 0. An element whose terminals the short joins (an
+\code{R}, \code{C}, \code{L} or current source in parallel with it) is shorted
+out, as it would be by a wire; an inductor shorted this way keeps the current
+it had. \code{I()} of an \code{R} is not readable, \code{R<0>} included ---
+put a 0\,V \code{voltage\_source} in series to measure a current
+(Section~\ref{sec:currents}).
+
+A voltage source cannot sit across an ideal short. A fixed or logic-driven
+\code{voltage\_source}, a \code{VCVS} or a \code{CCVS} whose terminals zero-ohm
+resistors join --- directly, or around a loop of other such sources --- is a
+compile error naming the source and the resistors:
+
+\begin{lstlisting}
+[Elaborator] Error: elaboration failed:
+Line 5: voltage_source 'main.vs' is short-circuited: zero-ohm resistor(s)
+main.rshort (line 7) join its terminals directly.
+\end{lstlisting}
+
+\noindent A voltage source driven by \textit{analog} code is exempt: that is
+how impedances are written (\code{v = R * I(br) + ddt(L * I(br))}, as in
+\code{<passives>}), and shorting one of those is a well-posed circuit.
+Negative resistances are stamped as written. (\code{L<0>} is also a short,
+through its branch row; \code{C<0>} is an open circuit.)
+
 \subsection{Nodes with No DC Path to Ground}
 \label{sec:floating}
 
@@ -1596,7 +1672,7 @@ circuit matrix is singular at DC. The compiler finds such groups and warns
   resistor, e.g. R<1Meg>() [s1, gnd];
 \end{lstlisting}
 
-\noindent A path is an \code{R}, an \code{L}, a voltage source (fixed or
+\noindent A path is an \code{R} (\code{R<0>} included), an \code{L}, a voltage source (fixed or
 driven), or the output of a \code{VCVS}/\code{CCVS}. A \code{C} is not (open
 at DC: the node between two series capacitors floats), nor is a fixed current
 source, a source driven by digital or structural logic, a \code{CCCS}, or a

@@ -7,7 +7,7 @@ rule Go uses for packages and Python uses for packages.
 Two things to choose independently:
 
 - **Which directory** — the standard library, an installed package, or a
-  path relative to the importing file.
+  path (relative to the importing file, or absolute).
 - **How the names arrive** — behind a qualifier (the default), or bound
   directly.
 
@@ -123,6 +123,15 @@ import "../shared/rails";
 Resolved relative to the directory of the file **that wrote the import** —
 not the entry file, and not the current directory.
 
+An absolute path is taken as written:
+
+```hover
+from "/home/me/projects/shared/lib/hca" import HCA;
+```
+
+It still names a directory. It ties the deck to one machine's layout, so
+prefer a relative path or a package for anything you share.
+
 ### Angle brackets — `<name/path>`
 
 **The first segment is a package name.**
@@ -189,11 +198,14 @@ library directory)
 ```
 the standard library is not installed, so "math" cannot be found —
 run `hover --setup` (it downloads the standard library; this needs network
-access)
+access), or, if "math" is a third-party package, run `hover hpm install math`
 ```
 
 The second form is how a fresh install that never ran `--setup` finds out.
-Releases do not bundle the standard library.
+Releases do not bundle the standard library. It is chosen whenever no
+standard library is installed at all, whatever the name — the compiler does
+not keep a list of the standard library's directories, so it cannot tell
+`<math>` from a package you have not installed yet, and names both fixes.
 
 See [packages.md](packages.md) for how packages get installed, and
 [../examples/package/](../examples/package/) for one you can build and
@@ -308,6 +320,7 @@ header is linked automatically.
 | `import <idx:a>;` | package `a` from index `idx` — never stdlib |
 | `import <stdlib/a>;` | the standard library's `a`, by its package name |
 | `import "./b";` | directory `b` next to this file, as `b.x` |
+| `import "/abs/b";` | directory `/abs/b`, as written, as `b.x` |
 | `from <a> import X;` | just `X`, unqualified |
 | `from <a> import X as Y;` | just `X`, called `Y` |
 | `from "./b" import X, Y;` | just `X` and `Y` |

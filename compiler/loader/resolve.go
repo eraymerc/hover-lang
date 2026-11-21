@@ -49,26 +49,27 @@ func stdlibRoot() (string, error) {
 // one map; a caller that wants a different project calls Load again.
 var PackageRoots map[string]string
 
-// StdlibPackageNames is the set of package names that belong to the standard
-// library, used only to phrase a better error when one of them is missing.
+// stdlibInstalled reports whether any standard library is visible to this
+// compilation, used only to phrase a failed angle import.
 //
-// Injected by main rather than defined here, because which packages make up
-// the standard library is the package manager's business, and the compiler
-// importing hpm to ask would invert the layering for the sake of four
-// strings. Empty is fine: the diagnostic just falls back to the generic
-// "not installed" wording.
-var StdlibPackageNames map[string]bool
-
-// SetStdlibPackageNames records the standard library's package names.
-func SetStdlibPackageNames(names []string) {
-	m := make(map[string]bool, len(names))
-	for _, n := range names {
-		m[n] = true
+// The package table already answers it: the standard library installs as the
+// package "stdlib" (machine-wide by --setup, or pinned by a project), and
+// whenever it is installed that name is bound alongside its top-level
+// directories. A stdlib folder next to the binary counts too, since
+// ResolveImportPath falls back to it. Asking "is it installed at all" rather
+// than "is this one of its names" is what keeps the hint right as the
+// standard library grows — there is no list of its directories to go stale.
+func stdlibInstalled() bool {
+	if _, ok := PackageRoots["stdlib"]; ok {
+		return true
 	}
-	StdlibPackageNames = m
+	if root, err := stdlibRoot(); err == nil {
+		if info, statErr := os.Stat(root); statErr == nil && info.IsDir() {
+			return true
+		}
+	}
+	return false
 }
-
-func isStdlibPackage(name string) bool { return StdlibPackageNames[name] }
 
 // MachineInstalledPackages reports every package installed machine-wide, and
 // exists purely to phrase one diagnostic: a package that IS installed on this
@@ -81,8 +82,9 @@ func isStdlibPackage(name string) bool { return StdlibPackageNames[name] }
 // A function rather than a set because it is consulted only on the failure
 // path: the machine lockfile should not be read on every successful compile
 // for a message that is almost never printed. Injected by main for the same
-// layering reason as StdlibPackageNames; nil is fine and falls back to the
-// generic wording.
+// layering reason: which packages are installed is the package manager's
+// business, and the compiler importing hpm to ask would invert that. nil is
+// fine and falls back to the generic wording.
 var MachineInstalledPackages func() []string
 
 // SetMachineInstalledPackages installs the machine-wide package lookup.
@@ -112,6 +114,7 @@ func SetPackageRoots(roots map[string]string) { PackageRoots = roots }
 //	import <a/b>        ->  the "b" subdirectory of either
 //	import <idx:a/b>    ->  package "a" from index "idx" — never stdlib
 //	import "./a/b"      ->  {importerDir}/a/b
+//	import "/x/a"       ->  /x/a, as written (an absolute path; C:\x\a on Windows)
 //
 // An import names a directory, not a file: every `.hvr` file directly inside
 // it is imported together, as one unit sharing one namespace. This is Go's
@@ -156,7 +159,14 @@ func ResolveImportPath(currentFileDir, importPath string, isSystem bool) string 
 		}
 		// fall through to relative if the binary can't be located
 	}
-	return filepath.Clean(filepath.Join(currentFileDir, filepath.FromSlash(importPath)))
+	p := filepath.FromSlash(importPath)
+	if !isSystem && filepath.IsAbs(p) {
+		// An absolute directory is taken as written, as importc takes an
+		// absolute header (main.go). filepath.Join would not: it appends
+		// "/home/x/lib" to the importer's directory instead.
+		return filepath.Clean(p)
+	}
+	return filepath.Clean(filepath.Join(currentFileDir, p))
 }
 
 // missingPackageRoot is the stand-in directory for an index-qualified package
@@ -239,8 +249,9 @@ func validQualifier(q string) error {
 // Needed because a package import and a standard-library import are spelled
 // identically: `import <hvr-rc>` failing must not report "no such directory
 // .../stdlib/hvr-rc", a path nobody wrote and a directory nobody
-// expected to exist. The test is whether the first segment names anything in
-// the standard library at all — if it does not, the user meant a package.
+// expected to exist. A name not found in an installed standard library is a
+// package; with no standard library installed at all, it is most likely the
+// standard library that is missing.
 func missingPackageHint(importPath string, isSystem bool) string {
 	if !isSystem {
 		return ""
@@ -262,15 +273,6 @@ func missingPackageHint(importPath string, isSystem bool) string {
 			return "" // a real stdlib directory; the missing thing is inside it
 		}
 	}
-	// Standard-library names get their own message. Releases ship no
-	// stdlib, so the overwhelmingly likely cause of `import <math>` failing
-	// is a fresh install that has never run --setup — and telling that user
-	// to `hover hpm install math` would send them to configure a project
-	// when nothing is wrong with their project.
-	if isStdlibPackage(pkg) {
-		return fmt.Sprintf("the standard library is not installed, so %q cannot be found — "+
-			"run `hover --setup` (it downloads the standard library; this needs network access)", pkg)
-	}
 	// Installed, yet not visible: this file is inside a project, and a project
 	// sees only what its own hover.toml declares. Sending this user to install
 	// it again would not change anything — the fix is to declare it, from the
@@ -280,6 +282,17 @@ func missingPackageHint(importPath string, isSystem bool) string {
 			"project this file belongs to, so it is not visible here — run `hover hpm install %s` "+
 			"from the project directory to declare it (a project sees only its own dependencies, "+
 			"so that a build of it works the same on any machine)", pkg, pkg)
+	}
+	// No standard library at all. Releases ship none, so the overwhelmingly
+	// likely cause of `import <math>` failing is a fresh install that has
+	// never run --setup — and telling that user to `hover hpm install math`
+	// would send them to configure a project when nothing is wrong with their
+	// project. Which names the standard library has is not known here, so the
+	// third-party reading is offered second rather than guessed away.
+	if !stdlibInstalled() {
+		return fmt.Sprintf("the standard library is not installed, so %q cannot be found — "+
+			"run `hover --setup` (it downloads the standard library; this needs network access), "+
+			"or, if %q is a third-party package, run `hover hpm install %s`", pkg, pkg, pkg)
 	}
 	return fmt.Sprintf("package %q is not installed — run `hover hpm install %s` "+
 		"(or check the path, if you meant a standard library directory)", pkg, pkg)

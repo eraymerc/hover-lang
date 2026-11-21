@@ -1,7 +1,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
-//  HVR Testbench — step response of the real passives (<passives>)
-//  Validates: Capacitor (ESR + leakage) and Inductor (Rdc) in the time domain,
-//             against the same circuits built from R, C and L primitives
+//  HVR Testbench — Real Passives: Step Response
+//  Validates: <passives> Capacitor (ESR + leakage) and Inductor (Rdc) in the
+//             time domain, against the same circuits built from R, C and L
+//             primitives
 // ─────────────────────────────────────────────────────────────────────────────
 //
 //  A 10 V step at t = 1 ms (a time breakpoint: the step lands on it exactly)
@@ -21,9 +22,7 @@
 //  digits under ndf2 and bdf2 (accepted steps ~510, 1.52 Newton iterations
 //  per step). Both are within 2.4e-5 (ndf2) of the exponentials above; that
 //  is the integrator's truncation error at a 20 us step ceiling, the same for
-//  model and twin. Under trapezoidal the model's inductor drifts 1.8 mA from
-//  the L primitive once the steps settle into single-iteration Newton solves
-//  — a runtime limitation explained in stdlib/passives/passives.hvr.
+//  model and twin. trapezoidal gives the same agreement.
 
 .tran(0, 10m, 20u);
 .solver(ndf2);

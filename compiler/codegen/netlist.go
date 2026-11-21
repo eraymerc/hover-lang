@@ -31,6 +31,11 @@ func (g *generator) emitBuildNetlist() {
 	for _, phys := range g.prog.Physicals {
 		g.emitRegisterCall(phys)
 	}
+	// Nets merged by R<0> (elaborator/shorts.go): their names resolve to the
+	// surviving net's row, so .save/.ac/V() by name keep working.
+	for _, alias := range sortedKeys(g.prog.NetAlias) {
+		g.line("sim.alias_node(%s, %s);", cStr(alias), cStr(g.prog.NetAlias[alias]))
+	}
 
 	g.pop()
 	g.raw("}")
@@ -55,6 +60,9 @@ func (g *generator) emitBuildNetlist() {
 // (inductors and voltage-defined sources require an extra MNA row for
 // their branch current; resistors/capacitors/current sources do not).
 func (g *generator) emitRegisterCall(phys elaborator.PhysicalObject) {
+	if elaborator.IsZeroResistor(phys) {
+		return // an ideal short, merged away by the elaborator (shorts.go)
+	}
 	// Register all nodes this primitive touches
 	for _, n := range phys.Nodes {
 		cleanN := n // elaborator names are structural now — nothing to scrub
@@ -112,6 +120,9 @@ func (g *generator) emitStampCall(phys elaborator.PhysicalObject) {
 
 	switch strings.ToLower(phys.Type) {
 	case "r", "resistor":
+		if elaborator.IsZeroResistor(phys) {
+			break // R<0>: its two nets are one net; nothing to stamp
+		}
 		g.line("sim.stamp_resistor(%s, %s, %s);",
 			node(0), node(1), param(0))
 

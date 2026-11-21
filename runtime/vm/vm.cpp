@@ -40,9 +40,9 @@ void vm_init(VM *vm, API *api, Solver *solver) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 void vm_run_digital(VM *vm) {
+    if (!vm->clocks.empty()) { vm_run_logic_clocked(vm); return; }  // ticks first — vm/clock.cpp
     if (vm->phase_structural) vm->phase_structural(vm);
     if (vm->phase_digital)    vm->phase_digital(vm);
-    if (!vm->clocks.empty())  vm_run_clocks(vm);  // clocked digital modules — vm/clock.cpp
 }
 
 void vm_run_analog(VM *vm) {

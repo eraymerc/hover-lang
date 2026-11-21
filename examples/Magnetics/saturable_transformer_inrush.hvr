@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
-//  HVR Testbench — magnetising inrush of a loaded transformer (<magnetics>
-//  SaturableTransformer)
-//  Validates: saturable magnetising branch inside the T-model, with leakage,
+//  HVR Testbench — Magnetising Inrush of a Loaded Transformer
+//  Validates: <magnetics> SaturableTransformer —
+//             saturable magnetising branch inside the T-model, with leakage,
 //             winding resistances and a resistive load
 // ─────────────────────────────────────────────────────────────────────────────
 //

@@ -60,6 +60,7 @@ double api_V(const API *api, const char *net_name) {
         return 0.0;
     }
     int idx = api->sys->resolve_node(net_name);
+    if (idx == -1) return 0.0;  // a net merged into ground (alias_node)
     if (idx < 0) {
         fprintf(stderr, "[MNA API] warning: V(\"%s\") — net not found, returning 0\n", net_name);
         return 0.0;

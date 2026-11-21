@@ -97,7 +97,7 @@ analog module Photodiode<double Is,  double N,
 
     // ── Dark current: shunt resistance ──────────────────────────────────────
     // Stamped as a linear conductance current rather than R<Rsh>, so that
-    // Rsh = 0 can mean "none" (the R primitive rejects 0).
+    // Rsh = 0 can mean "none" (an open; R<0> would be an ideal short).
     double g_sh = 0.0;
     if (Rsh > 0.0) { g_sh = 1.0 / Rsh; }
     double i_sh = g_sh * (V(anode) - V(cathode));

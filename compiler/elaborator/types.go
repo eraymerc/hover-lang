@@ -122,6 +122,12 @@ type ElaboratedProgram struct {
 	// per file (see buildStructRegistry for why that diverges from
 	// FuncScopes/module scoping).
 	Structs map[string]*ast.StructDeclStatement
+
+	// NetAlias maps each net a zero-ohm resistor merged away to the net it
+	// was merged into ("gnd" when ground was one of them). Physicals already
+	// use the surviving names; the merged ones stay readable through this
+	// (shorts.go). nil when the design has no R<0>.
+	NetAlias map[string]string
 }
 
 // ImportedFile is one file's parsed program plus its own (non-transitive)

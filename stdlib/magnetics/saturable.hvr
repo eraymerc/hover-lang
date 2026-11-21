@@ -75,8 +75,8 @@ from <math> import tanh;
 //  With .op the core starts at the DC operating point — the current a DC
 //  voltage drives through the winding resistance.
 //
-//  Use ndf2 or bdf2: trapezoidal drifts on this model by 5 % of the inrush
-//  peak within 100 ms, the runtime limitation described in coupled.hvr.
+//  ndf2, bdf2 and trapezoidal agree on this model (first inrush peak within
+//  0.01 % of an independent reference under trapezoidal).
 //
 //  Not modelled: hysteresis, remanence, eddy-current and hysteresis loss,
 //  temperature. Losses to first order: a resistor across the winding.

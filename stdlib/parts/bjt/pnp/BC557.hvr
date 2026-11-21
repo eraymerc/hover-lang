@@ -15,7 +15,7 @@ import <semiconductors/bjt> as dev;
 //  at different Vceo grades and this model does not represent breakdown, so
 //  it stands in for those as well.
 //
-//  Same deviations as the other parts: Re = 1 mOhm, Cjs = 2p, Var/Rbm/Irb = 0,
+//  Same deviations as the other parts: Re = 0, Cjs = 2p, Var/Rbm/Irb = 0,
 //  Vt fixed at 0.026 V, no Itf/Vtf/Xtf.
 //
 //  Note Tf = 608.9p against the BC547's 411.1p — the PNP is the slower of the
@@ -31,7 +31,7 @@ analog module QBC557<>()[wire base, wire collector, wire emitter] {
                        0.0, 1.5,                // Ise, Ne
                        0.0, 2.0,                // Isc, Nc
                        10.0, 0.0, 0.0,          // Rb, Rbm, Irb
-                       1m, 1.007,               // Re, Rc
+                       0.0, 1.007,              // Re, Rc
                        15.7p, 0.75, 0.3777,     // Cje, Vje, Mje
                        12.4p, 0.75, 0.3763,     // Cjc, Vjc, Mjc
                        0.5, 608.9p, 54.68n,     // Fc, Tf, Tr

@@ -1,4 +1,5 @@
 #include "logger.hpp"
+#include "vm.hpp"
 
 #include <cstdio>
 #include <cstring>
@@ -107,4 +108,27 @@ void logger_export_csv(const Logger *log, const char *filename) {
     fclose(f);
     fprintf(stdout, "--- Simulation results saved to %s (%zu columns, %zu timesteps) ---\n",
             filename, all_cols.size() + 1, n_steps);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LOG AN ACCEPTED SOLVER STEP (vm.hpp)
+// The node columns come from the solution itself; the I() columns and the
+// signals phase_log computes from V()/I() come from the read-view. Both must
+// describe the same point. Every solver's last evaluation is at an iterate,
+// not at the accepted solution: the iterate before the final solve for the
+// Newton solvers (the previous time point when the step converged in one
+// iteration — a 1 A R-L step's I(L) then lagged its own node voltage by a
+// step, 1.1e-4 A), the step's start for euler_fixed. The read-view is put
+// back afterwards: it is what the next step's first install shifts into
+// nr_prev(), and logging must not change the run.
+// ─────────────────────────────────────────────────────────────────────────────
+
+void vm_log_accepted(VM *vm) {
+    const Eigen::VectorXd &x = vm->solver->last_solution;
+    const Eigen::VectorXd view = vm->api->last_solution;
+    api_peek_solution(vm->api, x);
+    logger_log_step(&vm->logger, vm->time, vm->solver->sys, x);
+    if (vm->phase_log) vm->phase_log(vm);
+    logger_log_signals(&vm->logger, vm->values);
+    api_peek_solution(vm->api, view);
 }

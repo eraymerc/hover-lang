@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cstdio>
 
 // ─────────────────────────────────────────────────────────────────────────────
 // INTERNAL STEP-SIZE GUARDS
@@ -132,28 +133,69 @@ inline double cold_start_dt(double max_dt, double t_stop) {
 // .tran's t_step, which is the only step-size number a user should reason about.
 inline constexpr double REJECT_DT_RATIO = 1e-12;
 
+// ── THE MINIMUM STEP BOUNDS THE BACK-OFF TOO ─────────────────────────────────
+//
+// h_min = lte_min_step(max_dt) (lte.hpp) is the simulator's time resolution:
+// the truncation-error controller never goes below it, and every step landed
+// on a breakpoint is at least that long (vm/breakpoints.hpp, PROGRESS). The
+// convergence back-off used to ignore it and halve on down — to 1.8e-26 s at
+// t = 1.4e-4 s on a 200 V bridge, below the ulp of t, where t + dt == t. And
+// the two rules fought: a step that failed on its way to a breakpoint less
+// than 2 h_min ahead was halved, and the halved step, ending within h_min of
+// the breakpoint, was stretched back onto it by the landing rule — the same
+// step, failing the same way, forever (an H-bridge deck with both legs'
+// edges 7.5 fs apart: 635 000 attempts in ten minutes, no FATAL; 2026-11-21).
+// So a retry shorter than h_min is not made: the run ends there, as ngspice
+// ends with "timestep too small" below its delmin.
+//
+// The solvers are deterministic, so a rejected step no shorter than the one
+// rejected before it, from the same point, will fail the same way. That ends
+// the run too — the guarantee that nothing re-lengthening a retry (the
+// landing rule above at exactly 2 h_min, or anything added later) can spin.
+
 // RejectRun tracks one run of consecutive step rejections. Declare one per
 // solver run(), call note() on each rejection and clear() on each accepted
-// step; exhausted() is the "give up" verdict.
+// step; exhausted() is the "give up" verdict and fatal() reports it.
 struct RejectRun {
     double dt_at_start = 0.0;   // dt when this rejection run began; 0 = no run
+    double dt_last     = 0.0;   // the dt rejected last in this run
+    bool   stalled     = false; // a rejected dt no shorter than the one before it
 
     // note records the dt that was just rejected. The FIRST rejection of a run
     // sets the baseline — deliberately the dt that failed, not the reduced one,
     // so the ratio measures the full distance backed off.
     void note(double rejected_dt) {
         if (dt_at_start == 0.0) dt_at_start = rejected_dt;
+        else if (!(rejected_dt < dt_last)) stalled = true;
+        dt_last = rejected_dt;
     }
 
-    void clear() { dt_at_start = 0.0; }
+    void clear() { dt_at_start = 0.0; dt_last = 0.0; stalled = false; }
+
+    // The retry would be shorter than the minimum step, or cannot get shorter.
+    bool too_small(double next_dt, double h_min) const {
+        return stalled || !(next_dt >= h_min);
+    }
 
     // exhausted answers whether the retry dt has fallen REJECT_DT_RATIO below
-    // where the back-off started. Written with a negated comparison so a NaN dt
-    // — which every ordinary comparison would answer "false, keep going" to —
-    // ends the run instead of spinning forever.
-    bool exhausted(double next_dt) const {
+    // where the back-off started, or below h_min (above). Written with negated
+    // comparisons so a NaN dt — which every ordinary comparison would answer
+    // "false, keep going" to — ends the run instead of spinning forever.
+    bool exhausted(double next_dt, double h_min) const {
+        if (too_small(next_dt, h_min)) return true;
         if (dt_at_start == 0.0) return false;
         return !(next_dt >= dt_at_start * REJECT_DT_RATIO);
+    }
+
+    // The FATAL line. "Failed to converge" stays its first words: scripts
+    // look for them.
+    void fatal(const char *solver, double t, double next_dt, double h_min) const {
+        if (too_small(next_dt, h_min))
+            fprintf(stderr, "[%s] FATAL: Failed to converge at t=%.3e: timestep too small — the step "
+                            "cannot be cut below the minimum step %.1e s (1e-9 x the maximum step)\n",
+                    solver, t, h_min);
+        else
+            fprintf(stderr, "[%s] FATAL: Failed to converge at t=%.3e\n", solver, t);
     }
 };
 

@@ -1,6 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
-//  HVR Testbench — ideal transformer at DC (<magnetics> IdealTransformer)
-//  Validates: voltage ratio, current ratio and reflected impedance
+//  HVR Testbench — Ideal Transformer at DC
+//  Validates: <magnetics> IdealTransformer —
+//             voltage ratio, current ratio and reflected impedance
 // ─────────────────────────────────────────────────────────────────────────────
 //
 //    10 V ── 2 Ohm ── b ──●┐ 1 : 0.5 ┌●── s ── 1 Ohm ── gnd

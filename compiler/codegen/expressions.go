@@ -216,6 +216,9 @@ func (g *generator) emitExpr(expr ast.Expression, logic elaborator.LogicObject) 
 					netName = n.Arguments[0].String()
 				}
 				net := resolveNet(netName, logic)
+				if a, ok := g.prog.NetAlias[net]; ok {
+					net = a // merged by an R<0> (elaborator/shorts.go)
+				}
 				if net == "gnd" || net == "0" {
 					return "0.0", CDouble
 				}

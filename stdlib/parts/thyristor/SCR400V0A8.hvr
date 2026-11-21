@@ -12,7 +12,7 @@ import <semiconductors/thyristor> as dev;
 //
 //    IGT  ~0.17 mA, VGT 0.64 V    (12 V, 1 kOhm load; gate current ramp)
 //    IH   ~1.5 mA                 (gate open; supply ramped down)
-//    VT   1.20 V at 1 A
+//    VT   0.75 V at 11 mA, 1.01 V at 0.5 A, 1.19 V at 1 A, 1.54 V at 2 A
 //    VBO  500 V forward breakover, VRB 500 V reverse breakdown
 //
 //  ── Fit ─────────────────────────────────────────────────────────────────────
@@ -20,7 +20,9 @@ import <semiconductors/thyristor> as dev;
 //    IS = 2e-14           sets VGT at IGT (0.64 V)
 //    BFP = 0.167, BFN = 20  alpha_p = 0.14: IH/IGT ~ 10, typical of this class
 //    RGK = 3.3k           the built-in cathode short: IGT ~ VGT/RGK
-//    RG = 10, RS = 0.1    gate spreading / ohmic sections (on-state ~0.2 Ohm)
+//    RG = 10              gate spreading resistance
+//    RS = 0.33            on-state slope resistance (the anode terminal
+//                         resistance of the model: VT ~ 0.86 V + RS * I)
 //    TT = 1u              stored charge: turn-on delay, recovery, turn-off
 //    CJ = 100p, VJ = 0.7, MJ = 0.4   J2 capacitance: ~14 pF at 100 V, which
 //                         with RGK gives the low dv/dt rating (~10-15 V/us)
@@ -35,7 +37,7 @@ import <semiconductors/thyristor> as dev;
 
 analog module SCR400V0A8<>()[wire gate, wire anode, wire cathode] {
     module x = dev.SCR<2e-14, 0.167, 20.0,           // IS, BFP, BFN
-                       3.3k, 10.0, 0.1,              // RGK, RG, RS
+                       3.3k, 10.0, 0.33,             // RGK, RG, RS
                        1u,                           // TT
                        100p, 0.7, 0.4,               // CJ, VJ, MJ
                        500.0, 500.0,                 // VBO, VRB

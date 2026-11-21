@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-//  HVR Testbench — flyback converter, 48 V to 12 V at 100 kHz
+//  HVR Testbench — Flyback Converter, 48 V to 12 V at 100 kHz
 //  Validates: <magnetics> CoupledInductors as a flyback transformer (energy
 //             stored in the magnetising inductance, leakage spike, reflected
 //             voltage), switched by <power/inverter/switched> SwitchCell,

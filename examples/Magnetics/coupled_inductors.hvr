@@ -1,6 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
-//  HVR Testbench — two coupled inductors (<magnetics> CoupledInductors)
-//  Validates: self and mutual inductance, dot convention, energy storage,
+//  HVR Testbench — Two Coupled Inductors
+//  Validates: <magnetics> CoupledInductors —
+//             self and mutual inductance, dot convention, energy storage,
 //             against the closed-form phasor solution and ngspice's K element
 // ─────────────────────────────────────────────────────────────────────────────
 //

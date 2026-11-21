@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 80 784 728" class="hv-schematic" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11">
+  <!-- commutation: SixStep (local digital module) -->
+  <rect x="224" y="96" width="288" height="56"/>
+  <text x="368" y="121.5" text-anchor="middle">commutation: SixStep</text>
+  <text x="368" y="134.5" text-anchor="middle" class="dim" font-size="10">Hall code (a b c) → 2 gates</text>
+  <path d="M256 152 V214" class="dash"/>
+  <polygon points="256,216 252.5,209 259.5,209" class="fill"/>
+  <text x="251" y="182" text-anchor="end" class="net" font-size="10">g_al</text>
+  <path d="M288 152 V214" class="dash"/>
+  <polygon points="288,216 284.5,209 291.5,209" class="fill"/>
+  <text x="293" y="196" class="net" font-size="10">g_ah</text>
+  <path d="M352 152 V214" class="dash"/>
+  <polygon points="352,216 348.5,209 355.5,209" class="fill"/>
+  <text x="347" y="182" text-anchor="end" class="net" font-size="10">g_bl</text>
+  <path d="M384 152 V214" class="dash"/>
+  <polygon points="384,216 380.5,209 387.5,209" class="fill"/>
+  <text x="389" y="196" class="net" font-size="10">g_bh</text>
+  <path d="M448 152 V214" class="dash"/>
+  <polygon points="448,216 444.5,209 451.5,209" class="fill"/>
+  <text x="443" y="182" text-anchor="end" class="net" font-size="10">g_cl</text>
+  <path d="M480 152 V214" class="dash"/>
+  <polygon points="480,216 476.5,209 483.5,209" class="fill"/>
+  <text x="485" y="196" class="net" font-size="10">g_ch</text>
+  <!-- bridge: SwitchedThreePhaseBridge (as switched_three_phase) -->
+  <g transform="translate(400,376)"><path d="M-160 -96 H112 M-160 96 H112"/><path d="M-96 -96 V-80 M-96 -32 V32 M-96 80 V96"/><circle cx="-96" cy="-80" r="2.4"/><circle cx="-96" cy="-32" r="2.4"/><circle cx="-96" cy="32" r="2.4"/><circle cx="-96" cy="80" r="2.4"/><path d="M-96 -32 L-120 -76 M-96 80 L-120 36"/><path d="M-80 -96 V96"/><polygon points="-88,-38 -72,-38 -80,-54" class="fill"/><path d="M-88 -54 H-72"/><polygon points="-88,58 -72,58 -80,42" class="fill"/><path d="M-88 42 H-72"/><circle cx="-80" cy="0" r="2.4" class="fill"/><path d="M-112 -160 V-61.34" class="dash"/><path d="M-144 -160 V58 H-108" class="dash"/><circle cx="-80" cy="-96" r="2.4" class="fill"/><circle cx="-80" cy="96" r="2.4" class="fill"/><circle cx="-96" cy="-96" r="2.4" class="fill"/><circle cx="-96" cy="96" r="2.4" class="fill"/><path d="M-96 0 H-64 V88 A8 8 0 0 1 -64 104 V160"/><circle cx="-96" cy="0" r="2.4" class="fill"/><path d="M0 -96 V-80 M0 -32 V32 M0 80 V96"/><circle cx="0" cy="-80" r="2.4"/><circle cx="0" cy="-32" r="2.4"/><circle cx="0" cy="32" r="2.4"/><circle cx="0" cy="80" r="2.4"/><path d="M0 -32 L-24 -76 M0 80 L-24 36"/><path d="M16 -96 V96"/><polygon points="8,-38 24,-38 16,-54" class="fill"/><path d="M8 -54 H24"/><polygon points="8,58 24,58 16,42" class="fill"/><path d="M8 42 H24"/><circle cx="16" cy="0" r="2.4" class="fill"/><path d="M-16 -160 V-61.34" class="dash"/><path d="M-48 -160 V58 H-12" class="dash"/><circle cx="16" cy="-96" r="2.4" class="fill"/><circle cx="16" cy="96" r="2.4" class="fill"/><circle cx="0" cy="-96" r="2.4" class="fill"/><circle cx="0" cy="96" r="2.4" class="fill"/><path d="M0 0 H32 V88 A8 8 0 0 1 32 104 V160"/><circle cx="0" cy="0" r="2.4" class="fill"/><path d="M96 -96 V-80 M96 -32 V32 M96 80 V96"/><circle cx="96" cy="-80" r="2.4"/><circle cx="96" cy="-32" r="2.4"/><circle cx="96" cy="32" r="2.4"/><circle cx="96" cy="80" r="2.4"/><path d="M96 -32 L72 -76 M96 80 L72 36"/><path d="M112 -96 V96"/><polygon points="104,-38 120,-38 112,-54" class="fill"/><path d="M104 -54 H120"/><polygon points="104,58 120,58 112,42" class="fill"/><path d="M104 42 H120"/><circle cx="112" cy="0" r="2.4" class="fill"/><path d="M80 -160 V-61.34" class="dash"/><path d="M48 -160 V58 H84" class="dash"/><circle cx="96" cy="-96" r="2.4" class="fill"/><circle cx="96" cy="96" r="2.4" class="fill"/><path d="M96 0 H128 V160"/><circle cx="96" cy="0" r="2.4" class="fill"/></g>
+  <text x="536" y="372">bridge</text>
+  <text x="536" y="386">SwitchedThreePhaseBridge</text>
+  <text x="536" y="400" class="dim" font-size="10">Ron 10 mΩ · Vf 0.8 V · Rd 10 mΩ</text>
+  <!-- DC link -->
+  <g transform="translate(160,376)"><path d="M0 -32 V-16 M0 16 V32"/><circle cx="0" cy="0" r="16" class="bold"/><path d="M-3.5 -7 H3.5 M0 -10.5 V-3.5"/><path d="M-3.5 7 H3.5"/></g>
+  <text x="136" y="372" text-anchor="end">vbus</text>
+  <text x="136" y="386" text-anchor="end">24 V</text>
+  <path d="M160 344 V280 H240"/>
+  <path d="M160 408 V472 H240"/>
+  <text x="200" y="272" text-anchor="middle" class="net">dc_p</text>
+  <polygon points="196,280 203,276.5 203,283.5" class="fill"/>
+  <text x="200" y="296" text-anchor="middle" class="net" font-size="10">I(vbus)</text>
+  <circle class="dot" cx="160" cy="472" r="2.4"/>
+  <path d="M160 472 V480 M152 480 H168 M155 483 H165 M158 486 H162"/>
+  <!-- a, b, c to the motor -->
+  <path d="M336 536 V568 H400 V584"/>
+  <path d="M432 536 V584"/>
+  <path d="M528 536 V568 H464 V584"/>
+  <text x="330" y="528" text-anchor="end" class="net">a</text>
+  <text x="438" y="528" class="net">b</text>
+  <text x="534" y="528" class="net">c</text>
+  <!-- motor: BLDC24V_8P card -->
+  <g transform="translate(432,648)"><circle cx="0" cy="0" r="40" class="bold"/><path d="M-32 -64 V-24 M0 -64 V-40 M32 -64 V-24"/><path d="M-16 6 V-18 L0 0 L16 -18 V6"/><path d="M-18 24 L-10 16 H10 L18 24"/><path d="M40 -6 H54 V6 H40" class="bold"/><path d="M54 0 H64"/><path d="M0 40 V48 M-96 48 H96"/></g>
+  <text x="380" y="646" text-anchor="end">motor: BLDC24V_8P</text>
+  <text x="380" y="660" text-anchor="end" class="dim" font-size="10">Rs 0.35 Ω · Ls 0.4 mH</text>
+  <text x="380" y="674" text-anchor="end" class="dim" font-size="10">p 4 · flux 7.16 mWb</text>
+  <path d="M496 648 H592"/>
+  <text x="544" y="640" text-anchor="middle" class="net">shaft</text>
+  <g transform="translate(592,680)"><path d="M0 -32 V-16 M0 16 V32"/><circle cx="0" cy="0" r="16" class="bold"/><path d="M-8 -1.1 A9.1 9.1 0 1 1 6.9 0"/><polygon points="6.9,0 1.1,1.1 5.7,-4.6" class="fill"/><path d="M-8 10.3 H-1.1 V4.6 H8"/></g>
+  <path d="M592 712 V720 M584 720 H600 M587 723 H597 M590 726 H594"/>
+  <text x="612" y="672">load: TorqueStep</text>
+  <text x="612" y="686" class="dim" font-size="10">0 → 0.1 N·m at 150 ms</text>
+  <!-- rail outputs: omega, hall_a/b/c, theta_e, torque_em -->
+  <path d="M336 696 V718" class="dash"/>
+  <polygon points="336,720 332.5,713 339.5,713" class="fill"/>
+  <text x="330" y="718" text-anchor="end" class="net" font-size="10">omega</text>
+  <path d="M496 696 V718" class="dash"/>
+  <polygon points="496,720 492.5,713 499.5,713" class="fill"/>
+  <text x="496" y="733" text-anchor="middle" class="net" font-size="10">theta_e</text>
+  <path d="M528 696 V742" class="dash"/>
+  <polygon points="528,744 524.5,737 531.5,737" class="fill"/>
+  <text x="528" y="757" text-anchor="middle" class="net" font-size="10">torque_em</text>
+  <path d="M368 696 V736 H48 V140 H222" class="dash"/>
+  <polygon points="224,140 217,136.5 217,143.5" class="fill"/>
+  <text x="160" y="731" text-anchor="middle" class="net" font-size="10">hall_a</text>
+  <path d="M400 696 V752 H32 V124 H222" class="dash"/>
+  <polygon points="224,124 217,120.5 217,127.5" class="fill"/>
+  <text x="144" y="747" text-anchor="middle" class="net" font-size="10">hall_b</text>
+  <path d="M464 696 V768 H16 V108 H222" class="dash"/>
+  <polygon points="224,108 217,104.5 217,111.5" class="fill"/>
+  <text x="128" y="763" text-anchor="middle" class="net" font-size="10">hall_c</text>
+</svg>

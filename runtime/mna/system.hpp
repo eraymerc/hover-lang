@@ -129,11 +129,23 @@ struct System {
     }
 
     // Resolve a node name to its index.
-    // Returns -1 for ground, -2 if not found.
+    // Returns -1 for ground (or a net aliased to it), -2 if not found.
     int resolve_node(const std::string &name) const {
         if (name == "gnd" || name == "0") return -1;
         auto it = node_map.find(name);
         return (it != node_map.end()) ? it->second : -2;
+    }
+
+    // Make `alias` resolve to the same row as `target`, or to ground (-1).
+    // The compiler merges the two nets of a zero-ohm resistor into one row
+    // (compiler/elaborator/shorts.go); this keeps the name that disappeared
+    // readable by V(), .save and .ac. Adds no row. Call after every
+    // register_node; an unknown target leaves the alias unknown.
+    void alias_node(const std::string &alias, const std::string &target) {
+        if (alias == "gnd" || alias == "0" || node_map.count(alias)) return;
+        if (target == "gnd" || target == "0") { node_map[alias] = -1; return; }
+        auto it = node_map.find(target);
+        if (it != node_map.end()) node_map[alias] = it->second;
     }
 
     // ─────────────────────────────────────────────────────────────────────────

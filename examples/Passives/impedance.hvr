@@ -1,8 +1,9 @@
 // ─────────────────────────────────────────────────────────────────────────────
-//  HVR Testbench — impedance of the real passives (<passives>), .ac sweep
-//  Validates: Capacitor (ESR, ESL, leakage), Inductor (Rdc, core-loss Rp,
-//             self-capacitance Cp) and Resistor (Ls, Cp) against the closed
-//             form of their equivalent circuits, 10 Hz to 100 MHz
+//  HVR Testbench — Real Passives: Impedance over Frequency (.ac Sweep)
+//  Validates: <passives> Capacitor (ESR, ESL, leakage), Inductor (Rdc,
+//             core-loss Rp, self-capacitance Cp) and Resistor (Ls, Cp)
+//             against the closed form of their equivalent circuits,
+//             10 Hz to 100 MHz
 // ─────────────────────────────────────────────────────────────────────────────
 //
 //  A 1 A AC current source drives each part on its own, so the voltage on its

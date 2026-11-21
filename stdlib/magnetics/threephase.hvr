@@ -36,7 +36,7 @@
 //  Winding currents: I(<instance>.ta.w1) / .w2 for the sa-phase unit, .tb and
 //  .tc for the others.
 //
-//  Use ndf2 or bdf2, and no `.op;` with three sinusoidal sources: two of them
+//  Use no `.op;` with three sinusoidal sources: two of them
 //  are non-zero at t = 0, and .op takes those values as DC (see coupled.hvr).
 //
 //  ── Verified ───────────────────────────────────────────────────────────────

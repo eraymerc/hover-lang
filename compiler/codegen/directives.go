@@ -428,8 +428,8 @@ func (g *generator) parseSaveDirectives() (mnaNodes, vmSignals, branchCurrents [
 				continue
 			}
 
-			if physNodeSet(g.prog.Physicals)[name] {
-				mnaNodes = append(mnaNodes, name)
+			if physNodeSet(g.prog.Physicals)[name] || g.prog.NetAlias[name] != "" {
+				mnaNodes = append(mnaNodes, name) // an R<0>-merged net logs via alias_node
 				continue
 			}
 

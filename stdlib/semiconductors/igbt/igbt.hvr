@@ -93,8 +93,9 @@ from <math> import pow;
 //    TF      s      drift-region transit time; tail tau = BF*TF (0 = no tail)
 //    RC      Ohm    ohmic resistance of each ohmic section (collector, MOS
 //                   drain and source access, emitter); on-state ohmic slope
-//                   ~2.7 RC. Keep >= ~5 mOhm: see "Ohmic resistance" below
-//    RG      Ohm    internal gate resistance (> 0)
+//                   ~2.7 RC. 0 (ideal) or >= ~5 mOhm: see "Ohmic
+//                   resistance" below
+//    RG      Ohm    internal gate resistance (>= 0; 0 = none)
 //    BVR     V      reverse breakdown of the collector junction J1, i.e. the
 //                   reverse blocking voltage (tens of volts for field-stop
 //                   parts; 0 = no breakdown, see the J1 note in the body)
@@ -134,19 +135,19 @@ analog module IGBT<double VTH, double KP,  double LAMBDA,
     R<RG>() [gate, gi];
 
     // ── Ohmic resistance: RC, in every ohmic section, never 1 mOhm ──────────
-    // The stdlib transistors take their terminal resistances as R<> primitives
-    // and R<0> is rejected, so a section with "no" resistance has to be given
-    // some value. The library's habit is 1 mOhm. Here that value is not
-    // harmless: at 1 kS a resistor at a few hundred volts carries roundoff of
-    // G * V * eps ~ 1e3 * 300 * 2.2e-16 ~ 7e-11 A in its KCL row, while an
+    // The stdlib transistors take their terminal resistances as R<> primitives.
+    // RC = 0 is legal — R<0> is an ideal short, merged away by the compiler —
+    // but leaves VCE(sat) to the junction and the channel. A small non-zero
+    // value is not harmless: at 1 kS a resistor at a few hundred volts carries
+    // roundoff of G * V * eps ~ 1e3 * 300 * 2.2e-16 ~ 7e-11 A in its KCL row, while an
     // off device's internal nodes are held only by GMIN-level currents
     // (1e-12 S * 300 V ~ 3e-10 A). Two blocking devices in series — a bridge
     // leg with both switches off — leave their midpoint to be decided by
     // exactly those currents, and with 1 mOhm sections Newton's update for it
     // is roundoff: measured on two series-blocking thyristors built the same
     // way, 18 iterations per step and trust-region rescues at 1 mOhm, 3.5 at
-    // 10 mOhm, 3.0 at 100 mOhm (see <semiconductors/thyristor>). The bound is
-    // G << GMIN/eps ~ 4.5 kS, independent of the voltage.
+    // 10 mOhm, 3.0 at 100 mOhm, 3.1 at 0 (see <semiconductors/thyristor>).
+    // The bound is G << GMIN/eps ~ 4.5 kS, independent of the voltage.
     //
     // So no section here is 1 mOhm: the collector side (the PNP's emitter
     // resistance), the PNP's collector (the emitter-side p-body), its base
@@ -154,7 +155,10 @@ analog module IGBT<double VTH, double KP,  double LAMBDA,
     // regions each get RC. Together they make the
     // on-state ohmic slope roughly RC + 2/3 * 2 RC + 1/3 * RC ~ 2.7 RC (the MOS
     // carries 1/(1 + BF) of the current, the PNP collector the rest). Keep RC
-    // at or above ~5 mOhm; the part cards quote the resulting VCE(sat).
+    // at or above ~5 mOhm (or 0); the part cards quote the resulting VCE(sat).
+    // On the IGBT examples themselves 0, 2 and 5 mOhm converge alike (3.2
+    // Newton iterations per attempted step on the double pulse, 3.8 on the
+    // half bridge); the floor comes from the series-blocking case above.
 
     // ── MOS channel: Level-1 NMOS, lumped geometry, bulk tied to source ──────
     // RD/RS are RC, as above. TOX = 0: no Meyer

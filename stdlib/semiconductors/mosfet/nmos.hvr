@@ -28,9 +28,8 @@ from <math> import fabs, sqrt, pnjlim, fetlim, limvds, jexp, vcrit_of, q_dep;
 //     source ──[RS]── si ──┘                    └── bulk
 //
 //  RD and RS are real resistors and their conductance lands in G, exactly as
-//  the BJT's Rc/Re do. R<0> is a short and would make the matrix singular, so
-//  a card with no stated ohmic resistance passes 1m rather than 0 — the same
-//  convention stdlib/parts/bjt/npn/2N2222.hvr documents for Re.
+//  the BJT's Rc/Re do. A card with no stated ohmic resistance passes 0: R<0>
+//  is an ideal short, and the compiler merges di/si into the terminal.
 //
 //  ── Per-iteration limiting (manual 13.1) ────────────────────────────────────
 //

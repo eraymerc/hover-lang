@@ -26,6 +26,15 @@ Eigen::VectorXd vm_drive_vector(VM *vm) {
 static Eigen::VectorXd probe(VM *vm, const VMSnapshot &start, const Eigen::VectorXd &x_end,
                              double dt, double s) {
     vm_restore_state(vm, start);
+    // A tick due at the step's start ran there, before the step's logic
+    // (vm_run_logic_clocked, clock.cpp): replay it there — at t_n, reading
+    // x_n — so the logic below sees the registers the step saw. Never at the
+    // probe's own time: ticks stay on step boundaries.
+    if (!vm->clocks.empty() && vm_clocks_due(vm)) {
+        vm->api->last_solution = start.last_solution;
+        vm->api->prev_solution = start.last_solution;
+        vm_tick_clocks(vm);
+    }
     vm->time = start.time + s * dt;
     const Eigen::VectorXd x = start.last_solution + s * (x_end - start.last_solution);
     vm->api->last_solution = x;

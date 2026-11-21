@@ -13,9 +13,8 @@ import <semiconductors/bjt> as dev;
 //
 //  Deviations from the card, all forced by what the model supports:
 //
-//    Re    The card specifies no emitter resistance. R<0> is a short, so a
-//          negligible 1 mOhm stands in. At 100 mA that is 0.1 mV — below the
-//          resolution of anything you would measure.
+//    Re    The card specifies no emitter resistance, so Re = 0: R<0> is an
+//          ideal short and the emitter terminal is the junction node.
 //    Cjs   No substrate capacitance on a discrete card. Set to 2 pF, which
 //          is a realistic collector-emitter capacitance for a TO-92 part and
 //          is also REQUIRED: it is the only capacitive coupling between the
@@ -44,7 +43,7 @@ analog module Q2N2222<>()[wire base, wire collector, wire emitter] {
                        14.34f, 1.307,           // Ise, Ne
                        0.0, 2.0,                // Isc, Nc
                        10.0, 0.0, 0.0,          // Rb, Rbm, Irb
-                       1m, 1.0,                 // Re, Rc
+                       0.0, 1.0,                // Re, Rc
                        22.01p, 0.75, 0.377,     // Cje, Vje, Mje
                        7.306p, 0.75, 0.3416,    // Cjc, Vjc, Mjc
                        0.5, 411.1p, 46.91n,     // Fc, Tf, Tr

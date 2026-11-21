@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
-//  HVR Testbench — inrush into a saturable inductor (<magnetics>
-//  SaturableInductor)
-//  Validates: the tanh flux-current curve, deep saturation, recovery, against
+//  HVR Testbench — Inrush into a Saturable Inductor
+//  Validates: <magnetics> SaturableInductor —
+//             the tanh flux-current curve, deep saturation, recovery, against
 //             an independently integrated reference
 // ─────────────────────────────────────────────────────────────────────────────
 //

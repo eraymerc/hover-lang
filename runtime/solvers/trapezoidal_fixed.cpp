@@ -112,17 +112,14 @@ void TrapezoidalFixed::run(VM *vm) {
 
             Eigen::VectorXd x_new;
             double alpha_this_iter;
-            Eigen::VectorXd correction_this_iter;
 
             if (using_euler) {
                 alpha_this_iter = alpha_euler;
-                correction_this_iter = norton_correction;
                 x_new = solver_solve_rhs(vm->solver, 1.0, x_anchor, alpha_euler,
                                          &norton_correction, &cached_jacobian);
             } else {
                 total_correction = trap_base + norton_correction;
                 alpha_this_iter = alpha_trap;
-                correction_this_iter = total_correction;
                 x_new = solver_solve_rhs(vm->solver, 1.0, x_anchor, alpha_trap,
                                          &total_correction, &cached_jacobian);
             }
@@ -141,8 +138,15 @@ void TrapezoidalFixed::run(VM *vm) {
                 break;
             }
 
+            // The residual takes the PHYSICAL term only — trap_base, or nothing
+            // under Euler — as in trapezoidal.cpp. The total RHS correction also
+            // carries the Newton term J*x_guess, which belongs to the linear
+            // solve alone: in the residual it shifts both ends of the comparison
+            // by a large J*x, and any deck with an analog-module source (J != 0)
+            // had its steps rejected until the radius collapsed.
             TrustRegionResult tr = trust_region_step(
-                vm, trust, x_guess, x_new, alpha_this_iter, x_anchor, &correction_this_iter);
+                vm, trust, x_guess, x_new, alpha_this_iter, x_anchor,
+                using_euler ? nullptr : &trap_base);
             
             if (tr.collapsed) break;
             if (tr.accepted) x_guess = tr.x_candidate;
@@ -159,10 +163,15 @@ void TrapezoidalFixed::run(VM *vm) {
             recompute_jacobian = true; 
         }
 
-        vm_commit_slots_at(vm, x_guess);
+        // The analog phase at the accepted point, under this step's companion:
+        // the next step's drive pass stamps B_old — trap_base — from what it
+        // leaves, so the history is f at this point and not at the iterate
+        // before the final solve (trapezoidal.cpp's accept site has the
+        // measurements). The slots commit this same evaluation.
+        api_peek_solution(vm->api, x_guess);
+        vm_run_analog(vm);
+        slots_commit(vm->slots);
         solver_advance_time(vm->solver, x_guess);
-        logger_log_step(&vm->logger, vm->time, vm->solver->sys, vm->solver->last_solution);
-        if (vm->phase_log) vm->phase_log(vm);
-        logger_log_signals(&vm->logger, vm->values);
+        vm_log_accepted(vm);
     }
 }

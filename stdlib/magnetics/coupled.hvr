@@ -69,10 +69,10 @@ from <math> import sqrt;
 //  winding resistance that then decays with L/R — the same as SPICE. Start
 //  such sources at a zero crossing or leave .op out.
 //
-//  Use ndf2 or bdf2. trapezoidal matches them on smooth sine-driven decks but
-//  drifts once steps converge in one Newton iteration (see <passives>' header
-//  for the measurement); that is a runtime limitation of trapezoidal with any
-//  ddt()-driven source, not of this model.
+//  Any implicit solver works: ndf2, bdf2 and trapezoidal agree on these
+//  models. (Until 2026-11-14 trapezoidal drifted on every ddt()-driven source
+//  once steps converged in one Newton iteration; that was a runtime defect,
+//  since fixed.)
 //
 //  ── Verified ───────────────────────────────────────────────────────────────
 //

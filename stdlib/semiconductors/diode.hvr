@@ -129,9 +129,9 @@ from <math> import exp, sqrt, pnjlim, jexp, vcrit_of, q_dep;
 //  — the card's Eg/Xti scaling is absent), and the Level-3 refinements.
 //
 //  Parameters are ordinary SPICE card values with their usual positive signs.
-//  Rs must be > 0: R<0> is a short and the primitive rejects it, so parts use
-//  1 mOhm where the card specifies none. Ikf, Isr, Bv, Cjo and Tt are each
-//  disabled by passing 0.
+//  Rs = 0 means no series resistance (R<0> is an ideal short: the compiler
+//  merges ai into the anode). Ikf, Isr, Bv, Cjo and Tt are each disabled by
+//  passing 0.
 // ─────────────────────────────────────────────────────────────────────────────
 
 analog module Diode<double Is,  double N,

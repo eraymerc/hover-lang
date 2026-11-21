@@ -91,6 +91,7 @@ func (e *Elaborator) Elaborate() (*ElaboratedProgram, error) {
 	e.checkLogicPortBindings()
 	e.checkSourceControls()
 	e.checkFloatingIslands()
+	e.mergeZeroResistors() // R<0>: last, it rewrites the nets (shorts.go)
 
 	// 4. Within each phase, writers before readers (order.go).
 	e.output.Logic = orderLogicByDataflow(e.output.Logic)

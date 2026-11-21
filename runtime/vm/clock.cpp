@@ -10,7 +10,8 @@
 //
 //   * Ticks run from vm_run_digital, which every solver already calls at the
 //     start of each step attempt. A clock whose next tick is due at the
-//     step's start time runs its phase there (vm_run_clocks).
+//     step's start time runs its phase there, BEFORE the unclocked logic
+//     (vm_run_logic_clocked, below).
 //
 //   * Each clock remembers the last tick it ran, and that counter is part of
 //     the VM snapshot. A rejected step restores the counter along with the
@@ -53,24 +54,12 @@ static long tick_at(const VM *vm, const VMClock &c) {
     return (long)std::floor((vm->time + tick_tol(vm, c)) / c.period);
 }
 
-void vm_run_clocks(VM *vm) {
-    // A step that starts on a breakpoint restarts the history as a tick does
-    // (vm/breakpoints.hpp); bp.restart is false in a deck without any.
-    vm->tick_changed = vm->bp.restart;
-    if (vm->in_probe) return;   // a .zcd probe re-runs logic; ticks stay on step boundaries
+bool vm_clocks_due(const VM *vm) {
+    for (const VMClock &c : vm->clocks) if (tick_at(vm, c) > c.last_tick) return true;
+    return false;
+}
 
-    bool due_any = false;
-    for (const VMClock &c : vm->clocks) if (tick_at(vm, c) > c.last_tick) { due_any = true; break; }
-    if (!due_any) return;
-
-    // Did the tick change anything the circuit sees? Compare the drive vector
-    // before and after (bit-exact: an unchanged output re-drives the same
-    // value). Only then do the solvers restart their history — before 0.9
-    // every tick did, though h_bridge.hvr's sequencer changes its outputs on
-    // 3 of 400 ticks. Outputs that feed an analog module directly rather than
-    // a source are not seen here; a controller drives the circuit through
-    // sources.
-    const Eigen::VectorXd before = vm_drive_vector(vm);
+void vm_tick_clocks(VM *vm) {
     for (int i = 0; i < (int)vm->clocks.size(); i++) {
         VMClock &c = vm->clocks[i];
         const long due = tick_at(vm, c);
@@ -79,9 +68,60 @@ void vm_run_clocks(VM *vm) {
             if (vm->run_clock) vm->run_clock(vm, i);
         }
     }
-    const Eigen::VectorXd after = vm_drive_vector(vm);
-    vm->tick_changed = vm->bp.restart ||
-                       !(before.size() == after.size() && (before.array() == after.array()).all());
+}
+
+bool vm_tick_restart(VM *vm, const Eigen::VectorXd &before) {
+    const Eigen::VectorXd after = circuit_drive(vm);
+    if (!(before.size() == after.size() && (before.array() == after.array()).all())) {
+        vm->tick_restart_at = vm->time;
+        return true;
+    }
+    // A retry of a step whose first attempt found a change: the outputs of
+    // that attempt that are not `state` were not rolled back, so they already
+    // hold the new values and "before" no longer shows the jump.
+    return vm->time == vm->tick_restart_at;
+}
+
+// THE LOGIC PASS OF A DECK WITH CLOCKS — TICKS FIRST.
+//
+// A clocked module is a register and the unclocked digital logic is
+// combinational, held between steps (sample-and-hold). At a clock edge real
+// logic samples its inputs as they were just before the edge, updates the
+// registers, and the combinational logic settles on the new values. So the
+// ticks due at t_n run first — they read the unclocked values held over the
+// previous step, which ARE those values just before t_n — and the unclocked
+// logic runs after them, on the registers' new values, once per step as
+// always. Until 2026-11-21 the order was the reverse: logic fed by a clocked
+// output saw it one step late, so a source driven through an unclocked module
+// changed one solver step after the tick (up to the maximum step), and the
+// solvers carried their history across that change.
+//
+// Did the step change anything the circuit sees? circuit_drive — the driven
+// sources AND the logic values analog code reads (an analog switch model's
+// gate) — before the ticks against after the whole pass, bit-exact, as at a
+// landed breakpoint (vm/breakpoints.cpp). Only then do the solvers restart
+// their history: before 0.9 every tick did, though h_bridge.hvr's sequencer
+// changes its outputs on 3 of 400 ticks. (Until 2026-11-21 only the sources
+// were compared, so a clocked gate read by an analog module never restarted.)
+//
+// In a deck whose logic has breakpoints the step's logic pass runs early, in
+// vm_breakpoint_step, and the ticks and this decision run there; the
+// solver's call then finds no tick due and keeps bp.restart.
+void vm_run_logic_clocked(VM *vm) {
+    // A step that starts on a breakpoint restarts the history as a tick does
+    // (vm/breakpoints.hpp); bp.restart is false in a deck without any.
+    vm->tick_changed = vm->bp.restart;
+    // A .zcd probe re-runs logic along the step; its ticks are replayed at the
+    // step's start (vm/zcd.cpp), never at the probe's time.
+    const bool tick = !vm->in_probe && vm_clocks_due(vm);
+    Eigen::VectorXd before;
+    if (tick) {
+        before = circuit_drive(vm);
+        vm_tick_clocks(vm);
+    }
+    if (vm->phase_structural) vm->phase_structural(vm);
+    if (vm->phase_digital)    vm->phase_digital(vm);
+    if (tick) vm->tick_changed = vm_tick_restart(vm, before) || vm->bp.restart;
 }
 
 double vm_limit_step(const VM *vm, double dt) {

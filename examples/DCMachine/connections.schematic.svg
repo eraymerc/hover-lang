@@ -1,0 +1,144 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-40 24 880 928" class="hv-schematic" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11">
+  <!-- supply and field_supply -->
+  <g transform="translate(48,104)"><path d="M0 -32 V-16 M0 16 V32"/><circle cx="0" cy="0" r="16" class="bold"/><path d="M-3.5 -7 H3.5 M0 -10.5 V-3.5"/><path d="M-3.5 7 H3.5"/></g>
+  <text x="24" y="100" text-anchor="end">supply</text>
+  <text x="24" y="114" text-anchor="end">24 V</text>
+  <path d="M48 72 V48 H112"/>
+  <text x="80" y="40" text-anchor="middle" class="net">vdc</text>
+  <path d="M48 136 V144"/>
+  <path d="M48 144 V152 M40 152 H56 M43 155 H53 M46 158 H50"/>
+  <g transform="translate(224,104)"><path d="M0 -32 V-16 M0 16 V32"/><circle cx="0" cy="0" r="16" class="bold"/><path d="M-3.5 -7 H3.5 M0 -10.5 V-3.5"/><path d="M-3.5 7 H3.5"/></g>
+  <text x="248" y="100">field_supply</text>
+  <text x="248" y="114">24 V</text>
+  <path d="M224 72 V64 H144"/>
+  <text x="184" y="58" text-anchor="middle" class="net">field</text>
+  <path d="M224 136 V144"/>
+  <path d="M224 144 V152 M216 152 H232 M219 155 H229 M222 158 H226"/>
+  <path d="M112 48 V784"/>
+  <!-- pm: DCMachinePM -->
+  <path d="M112 176 H136 A8 8 0 0 1 152 176 H464 V216"/>
+  <circle class="dot" cx="112" cy="176" r="2.4"/>
+  <g transform="translate(464,248)"><circle cx="0" cy="0" r="20" class="bold"/><rect x="-5" y="-25" width="10" height="5" class="fill"/><rect x="-5" y="20" width="10" height="5" class="fill"/><path d="M-8 6 V-6 L0 3 L8 -6 V6"/><path d="M20 -3 H27 V3 H20" class="bold"/><path d="M27 0 H32"/><path d="M0 -32 V-25 M0 25 V32"/></g>
+  <path d="M464 280 V304"/>
+  <path d="M464 304 V312 M456 312 H472 M459 315 H469 M462 318 H466"/>
+  <text x="392" y="236" text-anchor="end">pm: DCMachinePM</text>
+  <text x="392" y="250" text-anchor="end" class="dim" font-size="10">Ra 1 Ω · La 1 mH</text>
+  <text x="392" y="264" text-anchor="end" class="dim" font-size="10">K 0.07 V·s/rad</text>
+  <text x="392" y="278" text-anchor="end" class="dim" font-size="10">J 20e-6 · B 10e-6</text>
+  <path d="M496 248 H576"/>
+  <text x="536" y="240" text-anchor="middle" class="net">s_pm</text>
+  <g transform="translate(576,280)"><path d="M0 -32 V-16 M0 16 V32"/><circle cx="0" cy="0" r="16" class="bold"/><path d="M-8 4.6 A9.1 9.1 0 1 1 6.9 5.7"/><polygon points="6.9,5.7 1.1,6.9 5.7,1.1" class="fill"/></g>
+  <path d="M576 312 V320 M568 320 H584 M571 323 H581 M574 326 H578"/>
+  <text x="600" y="276">load_pm: ConstantTorque</text>
+  <text x="600" y="290" class="dim" font-size="10">0.5 N·m</text>
+  <path d="M480 236 V208 H630" class="dash"/>
+  <polygon points="632,208 625,204.5 625,211.5" class="fill"/>
+  <path d="M572 213 L580 203"/>
+  <text x="582" y="201" class="dim" font-size="10">4</text>
+  <text x="640" y="192" class="net" font-size="10">w_pm</text>
+  <text x="640" y="205" class="net" font-size="10">i_pm</text>
+  <text x="640" y="218" class="net" font-size="10">th_pm</text>
+  <text x="640" y="231" class="net" font-size="10">t_pm</text>
+  <!-- sep: DCMachineSepEx -->
+  <path d="M112 328 H136 A8 8 0 0 1 152 328 H464 V368"/>
+  <circle class="dot" cx="112" cy="328" r="2.4"/>
+  <g transform="translate(464,400)"><circle cx="0" cy="0" r="20" class="bold"/><rect x="-5" y="-25" width="10" height="5" class="fill"/><rect x="-5" y="20" width="10" height="5" class="fill"/><path d="M-8 6 V-6 L0 3 L8 -6 V6"/><path d="M20 -3 H27 V3 H20" class="bold"/><path d="M27 0 H32"/><path d="M0 -32 V-25 M0 25 V32"/><path d="M-48 -32 V-16 M-48 16 V32"/><path d="M-48 -16 a4 4 0 0 1 0 8 a4 4 0 0 1 0 8 a4 4 0 0 1 0 8 a4 4 0 0 1 0 8" class="bold"/></g>
+  <path d="M464 432 V456"/>
+  <path d="M144 64 V352 H416"/>
+  <path d="M416 352 V368"/>
+  <path d="M416 432 V456 H464"/>
+  <circle class="dot" cx="464" cy="456" r="2.4"/>
+  <path d="M464 456 V464 M456 464 H472 M459 467 H469 M462 470 H466"/>
+  <text x="392" y="388" text-anchor="end">sep: DCMachineSepEx</text>
+  <text x="392" y="402" text-anchor="end" class="dim" font-size="10">Ra 1 Ω · La 1 mH</text>
+  <text x="392" y="416" text-anchor="end" class="dim" font-size="10">Rf 48 Ω · Lf 2 H · Laf 0.14 H</text>
+  <text x="392" y="430" text-anchor="end" class="dim" font-size="10">J 20e-6 · B 10e-6</text>
+  <path d="M496 400 H576"/>
+  <text x="536" y="392" text-anchor="middle" class="net">s_sep</text>
+  <g transform="translate(576,432)"><path d="M0 -32 V-16 M0 16 V32"/><circle cx="0" cy="0" r="16" class="bold"/><path d="M-8 4.6 A9.1 9.1 0 1 1 6.9 5.7"/><polygon points="6.9,5.7 1.1,6.9 5.7,1.1" class="fill"/></g>
+  <path d="M576 464 V472 M568 472 H584 M571 475 H581 M574 478 H578"/>
+  <text x="600" y="428">load_sep: ConstantTorque</text>
+  <text x="600" y="442" class="dim" font-size="10">0.5 N·m</text>
+  <path d="M480 388 V360 H630" class="dash"/>
+  <polygon points="632,360 625,356.5 625,363.5" class="fill"/>
+  <path d="M572 365 L580 355"/>
+  <text x="582" y="353" class="dim" font-size="10">5</text>
+  <text x="640" y="337.5" class="net" font-size="10">w_sep</text>
+  <text x="640" y="350.5" class="net" font-size="10">i_sep</text>
+  <text x="640" y="363.5" class="net" font-size="10">if_sep</text>
+  <text x="640" y="376.5" class="net" font-size="10">th_sep</text>
+  <text x="640" y="389.5" class="net" font-size="10">t_sep</text>
+  <!-- shunt: DCMachineShunt -->
+  <path d="M112 480 H464 V504"/>
+  <circle class="dot" cx="112" cy="480" r="2.4"/>
+  <g transform="translate(464,552)"><circle cx="0" cy="0" r="20" class="bold"/><rect x="-5" y="-25" width="10" height="5" class="fill"/><rect x="-5" y="20" width="10" height="5" class="fill"/><path d="M-8 6 V-6 L0 3 L8 -6 V6"/><path d="M20 -3 H27 V3 H20" class="bold"/><path d="M27 0 H32"/><path d="M0 -48 V-25 M0 25 V48"/><path d="M0 -36 H-32 V-16 M-32 16 V36 H0"/><circle cx="0" cy="-36" r="2.4" class="fill"/><circle cx="0" cy="36" r="2.4" class="fill"/><path d="M-32 -16 a4 4 0 0 1 0 8 a4 4 0 0 1 0 8 a4 4 0 0 1 0 8 a4 4 0 0 1 0 8" class="bold"/></g>
+  <path d="M464 600 V608"/>
+  <path d="M464 608 V616 M456 616 H472 M459 619 H469 M462 622 H466"/>
+  <text x="392" y="540" text-anchor="end">shunt: DCMachineShunt</text>
+  <text x="392" y="554" text-anchor="end" class="dim" font-size="10">Ra 1 Ω · La 1 mH</text>
+  <text x="392" y="568" text-anchor="end" class="dim" font-size="10">Rf 48 Ω · Lf 2 H · Laf 0.14 H</text>
+  <text x="392" y="582" text-anchor="end" class="dim" font-size="10">J 20e-6 · B 10e-6</text>
+  <path d="M496 552 H576"/>
+  <text x="536" y="544" text-anchor="middle" class="net">s_shunt</text>
+  <g transform="translate(576,584)"><path d="M0 -32 V-16 M0 16 V32"/><circle cx="0" cy="0" r="16" class="bold"/><path d="M-8 4.6 A9.1 9.1 0 1 1 6.9 5.7"/><polygon points="6.9,5.7 1.1,6.9 5.7,1.1" class="fill"/></g>
+  <path d="M576 616 V624 M568 624 H584 M571 627 H581 M574 630 H578"/>
+  <text x="600" y="580">load_shunt: ConstantTorque</text>
+  <text x="600" y="594" class="dim" font-size="10">0.5 N·m</text>
+  <path d="M480 540 V512 H630" class="dash"/>
+  <polygon points="632,512 625,508.5 625,515.5" class="fill"/>
+  <path d="M572 517 L580 507"/>
+  <text x="582" y="505" class="dim" font-size="10">5</text>
+  <text x="640" y="489.5" class="net" font-size="10">w_shunt</text>
+  <text x="640" y="502.5" class="net" font-size="10">i_shunt</text>
+  <text x="640" y="515.5" class="net" font-size="10">if_shunt</text>
+  <text x="640" y="528.5" class="net" font-size="10">th_shunt</text>
+  <text x="640" y="541.5" class="net" font-size="10">t_shunt</text>
+  <!-- series: DCMachineSeries -->
+  <path d="M112 632 H464 V640"/>
+  <circle class="dot" cx="112" cy="632" r="2.4"/>
+  <g transform="translate(464,704)"><circle cx="0" cy="0" r="20" class="bold"/><rect x="-5" y="-25" width="10" height="5" class="fill"/><rect x="-5" y="20" width="10" height="5" class="fill"/><path d="M-8 6 V-6 L0 3 L8 -6 V6"/><path d="M20 -3 H27 V3 H20" class="bold"/><path d="M27 0 H32"/><path d="M0 -64 V-56 M0 -24 V-25 M0 25 V32"/><path d="M0 -56 a4 4 0 0 1 0 8 a4 4 0 0 1 0 8 a4 4 0 0 1 0 8 a4 4 0 0 1 0 8" class="bold"/></g>
+  <path d="M464 736 V760"/>
+  <path d="M464 760 V768 M456 768 H472 M459 771 H469 M462 774 H466"/>
+  <text x="392" y="692" text-anchor="end">series: DCMachineSeries</text>
+  <text x="392" y="706" text-anchor="end" class="dim" font-size="10">Ra 1 Ω · La 1 mH</text>
+  <text x="392" y="720" text-anchor="end" class="dim" font-size="10">Rf 0.3 Ω · Lf 0.5 mH · Laf 0.05 H</text>
+  <text x="392" y="734" text-anchor="end" class="dim" font-size="10">J 20e-6 · B 10e-6</text>
+  <path d="M496 704 H576"/>
+  <text x="536" y="696" text-anchor="middle" class="net">s_series</text>
+  <g transform="translate(576,736)"><path d="M0 -32 V-16 M0 16 V32"/><circle cx="0" cy="0" r="16" class="bold"/><path d="M-8 4.6 A9.1 9.1 0 1 1 6.9 5.7"/><polygon points="6.9,5.7 1.1,6.9 5.7,1.1" class="fill"/></g>
+  <path d="M576 768 V776 M568 776 H584 M571 779 H581 M574 782 H578"/>
+  <text x="600" y="732">load_series: ConstantTorque</text>
+  <text x="600" y="746" class="dim" font-size="10">0.5 N·m</text>
+  <path d="M480 692 V664 H630" class="dash"/>
+  <polygon points="632,664 625,660.5 625,667.5" class="fill"/>
+  <path d="M572 669 L580 659"/>
+  <text x="582" y="657" class="dim" font-size="10">5</text>
+  <text x="640" y="641.5" class="net" font-size="10">w_series</text>
+  <text x="640" y="654.5" class="net" font-size="10">i_series</text>
+  <text x="640" y="667.5" class="net" font-size="10">if_series</text>
+  <text x="640" y="680.5" class="net" font-size="10">th_series</text>
+  <text x="640" y="693.5" class="net" font-size="10">t_series</text>
+  <!-- gen: DCMachinePM -->
+  <path d="M112 784 H464 V824"/>
+  <g transform="translate(464,856)"><circle cx="0" cy="0" r="20" class="bold"/><rect x="-5" y="-25" width="10" height="5" class="fill"/><rect x="-5" y="20" width="10" height="5" class="fill"/><path d="M-8 6 V-6 L0 3 L8 -6 V6"/><path d="M20 -3 H27 V3 H20" class="bold"/><path d="M27 0 H32"/><path d="M0 -32 V-25 M0 25 V32"/></g>
+  <path d="M464 888 V912"/>
+  <path d="M464 912 V920 M456 920 H472 M459 923 H469 M462 926 H466"/>
+  <text x="392" y="844" text-anchor="end">gen: DCMachinePM</text>
+  <text x="392" y="858" text-anchor="end" class="dim" font-size="10">Ra 1 Ω · La 1 mH</text>
+  <text x="392" y="872" text-anchor="end" class="dim" font-size="10">K 0.07 V·s/rad</text>
+  <text x="392" y="886" text-anchor="end" class="dim" font-size="10">J 20e-6 · B 10e-6</text>
+  <path d="M496 856 H576"/>
+  <text x="536" y="848" text-anchor="middle" class="net">s_gen</text>
+  <g transform="translate(576,888)"><path d="M0 -32 V-16 M0 16 V32"/><circle cx="0" cy="0" r="16" class="bold"/><path d="M-8 4.6 A9.1 9.1 0 1 1 6.9 5.7"/><polygon points="6.9,5.7 1.1,6.9 5.7,1.1" class="fill"/></g>
+  <path d="M576 920 V928 M568 928 H584 M571 931 H581 M574 934 H578"/>
+  <text x="600" y="884">prime_mover: ConstantTorque</text>
+  <text x="600" y="898" class="dim" font-size="10">-0.5 N·m, drives the shaft</text>
+  <path d="M480 844 V816 H630" class="dash"/>
+  <polygon points="632,816 625,812.5 625,819.5" class="fill"/>
+  <path d="M572 821 L580 811"/>
+  <text x="582" y="809" class="dim" font-size="10">4</text>
+  <text x="640" y="800" class="net" font-size="10">w_gen</text>
+  <text x="640" y="813" class="net" font-size="10">i_gen</text>
+  <text x="640" y="826" class="net" font-size="10">th_gen</text>
+  <text x="640" y="839" class="net" font-size="10">t_gen</text>
+</svg>

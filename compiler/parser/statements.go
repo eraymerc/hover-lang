@@ -69,6 +69,9 @@ func (p *parser) parse_statement() ast.Statement {
 		if p.isTypedLocalDeclStart() {
 			return p.parseLocalDecl()
 		}
+		if p.isUnnamedModuleInstance() {
+			return p.reportUnnamedModuleInstance()
+		}
 		return p.parseExpressionOrAssignment()
 	}
 }

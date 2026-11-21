@@ -20,7 +20,7 @@
 //
 //  A: latched during the pulse (I(aa) 11.25 mA, V(a) = 0.75 V) and still
 //     latched after it ends; the anode current then follows the ramp down
-//     until it reaches IH = 1.59 mA (t = 16.39 ms), where the loop gain falls
+//     until it reaches IH = 1.5 mA (t = 16.39 ms), where the loop gain falls
 //     below one and the SCR drops out — V(a) jumps back to the supply.
 //  B: blocks (0.8 uA) until the supply reaches VBO = 500 V at t = 5 ms. J2
 //     avalanches and clamps the anode at 501.2 V while the avalanche current
@@ -29,7 +29,7 @@
 //     the SCR turns itself on, at t = 5.25 ms; I(ab) jumps to
 //     (V - VT)/10 kOhm = 53 mA and follows the ramp.
 //
-//  Convergence (HOVER_TRACE_STEP=1, ndf2): 4518 accepted steps, 1.8 Newton
+//  Convergence (HOVER_TRACE_STEP=1, ndf2): 4519 accepted steps, 1.8 Newton
 //  iterations per step (max 11), no rejections or trust-region retries.
 
 .save(main.a, main.b, I(main.aa), I(main.ab));

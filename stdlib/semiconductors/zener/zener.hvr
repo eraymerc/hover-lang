@@ -53,13 +53,13 @@ import <semiconductors> as dev;
 //
 //  Parameters
 //  ──────────
-//    IS, N, RS          forward junction (A, -, Ohm; RS > 0)
+//    IS, N, RS          forward junction (A, -, Ohm; RS >= 0, 0 = none)
 //    CJO, VJ, M         depletion capacitance (F, V, -)
 //    TT                 transit time, forward stored charge (s)
 //    BV                 breakdown voltage, positive (V)
 //    IBV                current at v = -BV (A), > 0
 //    NBV                breakdown emission coefficient (-), >= 1
-//    RZ                 series resistance in breakdown (Ohm), > 0
+//    RZ                 series resistance in breakdown (Ohm), >= 0
 //    VT                 thermal voltage (isothermal)
 //
 //  Not modelled: the temperature coefficient of VZ (the sign change near

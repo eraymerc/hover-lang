@@ -182,6 +182,7 @@ void hvr_rt_reset_analog(VM *vm) {
     vm->ad_lin.clear();
     vm->ad_lin_valid = false;
     vm->tick_changed = false;
+    vm->tick_restart_at = std::numeric_limits<double>::quiet_NaN();
 }
 
 void hvr_rt_free_result(HVRLogResult *r) {

@@ -36,8 +36,9 @@ struct VM;
 // the first event. examples/DCMotor/h_bridge.hvr's LoadTorque — a +-10 mA
 // friction torque reversing with the speed — went undetected on all counts.
 //
-// Clock ticks never fire inside a probe (vm->in_probe): vm_limit_step already
-// lands every tick on a step boundary.
+// Clock ticks never fire at a probe's own time (vm->in_probe): vm_limit_step
+// already lands every tick on a step boundary. A tick due at the step's start
+// is replayed there before each probe's logic, as the step ran it.
 // ─────────────────────────────────────────────────────────────────────────────
 
 constexpr double ZCD_REL  = 1e-3;   // jump threshold, relative to the component

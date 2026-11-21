@@ -61,9 +61,9 @@ struct VM {
     // ── Program ──────────────────────────────────────────────────────────────
     // ── Signal store ─────────────────────────────────────────────────────────
     std::unordered_map<std::string, double> values;
-    // `state` variables as save_state_vars last copied them, by codegen index
-    // (Sim::set_state_var). What a snapshot rolls back.
-    std::vector<double> state_vals;
+    // `state` variables as save_state_vars last copied them: raw bytes, back
+    // to back in codegen order (Sim::state_put). What a snapshot rolls back.
+    std::vector<unsigned char> state_vals;
 
     // ── MNA layer ────────────────────────────────────────────────────────────
     API    *api;
@@ -118,8 +118,9 @@ struct VM {
     std::vector<double> zcd_watch;
 
     // save_state_vars / restore_state_vars copy every Hover `state`
-    // variable's current C++ global value into/from vm->state_vals, by the
-    // index codegen gives it (until 0.9: vm->values, by dotted name). This is what lets
+    // variable's current C++ global (its bytes: scalars, arrays and structs
+    // alike) into/from vm->state_vals, in codegen order (until 0.9:
+    // vm->values, by dotted name). This is what lets
     // vm_save_state/vm_restore_state (snapshot.cpp) actually roll back
     // real program state during a ZCD probe or solver step rejection —
     // without these, vm->values only ever reflects whatever phase_log
@@ -154,10 +155,11 @@ struct VM {
     double failed_at = 0.0;
     void (*run_clock)(VM *vm, int index) = nullptr;
 
-    // Set by vm_run_clocks: true when a tick ran at this step's start AND
-    // changed what the logic drives into the circuit (vm_drive_vector before
-    // vs after). A tick that changes nothing must not restart the
-    // integrators' history (docs/hoveR_sorunlar.txt item 13).
+    // Set by the step's logic pass: true when a tick ran at this step's start
+    // AND the pass changed what the logic drives into the circuit
+    // (circuit_drive before vs after, vm/clock.cpp), or the step starts on a
+    // landed breakpoint that did. A tick that changes nothing must not
+    // restart the integrators' history (docs/hoveR_sorunlar.txt item 13).
     bool tick_changed = false;
     // True while vm_locate_event re-runs the logic along a step: clock ticks
     // must not fire there (vm/zcd.cpp).
@@ -203,6 +205,10 @@ struct VM {
     // `time` with a threshold (vm/breakpoints.hpp). Disabled for a deck
     // without any recognised comparison.
     VMBreakpoints bp;
+
+    // The time of the last tick step that changed the drive, so a retry of
+    // that step restarts the history too (vm_tick_restart, vm/clock.cpp).
+    double tick_restart_at = std::numeric_limits<double>::quiet_NaN();
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -224,6 +230,14 @@ void vm_commit_slots_at(VM *vm, const Eigen::VectorXd &x);
 // The first half of that: evaluate the slots at x without committing (the LTE
 // estimate needs the new point's values before the step is accepted).
 void vm_eval_slots_at(VM *vm, const Eigen::VectorXd &x);
+
+// Log the accepted point (vm->solver->last_solution) as one output row. The
+// I() columns and every signal phase_log derives from V()/I() read the API's
+// read-view, which a solver leaves at its last Newton iterate — on a step that
+// converged in one iteration that is the PREVIOUS point, so a branch current
+// was logged one step late (vm/logger.cpp). The read-view is pointed at the
+// logged solution for the row and put back afterwards.
+void vm_log_accepted(VM *vm);
 
 // SPICE's CKTnoncon, recovered without the models' help: is a junction or FET
 // limiter still active at the step-converged x? The device models limit their
@@ -268,9 +282,16 @@ void vm_run_phase_b(VM *vm);
 // vm_breakpoint_step (vm/breakpoints.hpp) when the deck has breakpoints.
 double vm_limit_step(const VM *vm, double dt);
 
-// Runs every clock whose next tick is due at vm->time (vm_run_digital calls
-// it), and forgets which ticks have run (vm_boot calls it). vm/clock.cpp.
-void vm_run_clocks(VM *vm);
+// vm/clock.cpp. vm_run_digital hands a deck with clocks to
+// vm_run_logic_clocked: the ticks due at vm->time first, then the unclocked
+// logic, and vm->tick_changed. vm_clocks_due / vm_tick_clocks are its parts,
+// for the early logic pass of vm/breakpoints.cpp and the .zcd probes;
+// vm_tick_restart compares circuit_drive after the pass with `before`.
+// vm_reset_clocks forgets which ticks have run (vm_boot calls it).
+void vm_run_logic_clocked(VM *vm);
+bool vm_clocks_due(const VM *vm);
+void vm_tick_clocks(VM *vm);
+bool vm_tick_restart(VM *vm, const Eigen::VectorXd &before);
 void vm_reset_clocks(VM *vm);
 
 // (vm_tick_due, "will this step run a tick", is gone: the solvers restart

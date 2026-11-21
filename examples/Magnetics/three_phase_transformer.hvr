@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
-//  HVR Testbench — three-phase transformer banks (<magnetics> TransformerDy,
-//  TransformerYy)
-//  Validates: Dyn11 phase shift and line ratio, YNyn0, per-winding T-model
+//  HVR Testbench — Three-Phase Transformer Banks (Dy and Yy)
+//  Validates: <magnetics> TransformerDy and TransformerYy —
+//             Dyn11 phase shift and line ratio, YNyn0, per-winding T-model
 //             parameters, against the per-unit phasor solution
 // ─────────────────────────────────────────────────────────────────────────────
 //

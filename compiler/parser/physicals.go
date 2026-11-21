@@ -180,6 +180,54 @@ func (p *parser) parseDirective() ast.Statement {
 	return stmt
 }
 
+// isUnnamedModuleInstance: `Name<...>(...)[...];` or `Name(...)[...];` with
+// Name not a primitive — a module instance written the way a primitive may
+// be, without `module <name> =`. As an expression it is a comparison chain
+// or a call followed by an index, so without this check it fell into
+// expression parsing and produced a cascade of "No prefix parse function"
+// errors (eight per line). Recognised by a ')' directly followed by '[' at
+// the top level before the statement ends.
+func (p *parser) isUnnamedModuleInstance() bool {
+	if p.currentTokenType() != token.IDENT {
+		return false
+	}
+	if t := p.peekTokenType(1); t != token.LT && t != token.LPAREN {
+		return false
+	}
+	depth := 0
+	for i := 1; ; i++ {
+		switch p.peekTokenType(i) {
+		case token.LPAREN, token.LBRACKET:
+			depth++
+		case token.RPAREN:
+			depth--
+			if depth == 0 && p.peekTokenType(i+1) == token.LBRACKET {
+				return true
+			}
+		case token.RBRACKET:
+			depth--
+		case token.SEMI, token.LBRACE, token.RBRACE, token.EOF:
+			return false
+		}
+	}
+}
+
+// reportUnnamedModuleInstance reports the statement once and skips past its
+// ';', so the next line parses normally.
+func (p *parser) reportUnnamedModuleInstance() ast.Statement {
+	name := p.currentToken().Literal
+	p.addError(fmt.Sprintf("module instance needs a name: write `module <name> = %s<...>(...)[...];` "+
+		"(only primitives — R, C, L, VCVS, VCCS, CCVS, CCCS, current_source, voltage_source — may be written without one)", name))
+	for p.hasTokens() && p.currentTokenType() != token.SEMI && p.currentTokenType() != token.RBRACE &&
+		p.currentTokenType() != token.EOF {
+		p.nextToken()
+	}
+	if p.currentTokenType() == token.SEMI {
+		p.nextToken()
+	}
+	return nil
+}
+
 func isPhysicalPrimitive(name string) bool {
 	switch name {
 	case "L", "C", "R", "VCVS", "VCCS", "CCVS", "CCCS", "current_source", "voltage_source":

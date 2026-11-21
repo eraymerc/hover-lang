@@ -18,18 +18,19 @@ import (
 // into a machine-wide lock rather than a project one.
 //
 // It ships as ONE package — one archive, one hash, one index entry — whose
-// root holds the four top-level directories. That is a packaging decision,
-// not a language one: the compiler still resolves `import <math>` through the
-// ordinary package table, because the installed tree is EXPANDED into one
-// package root per top-level directory (see stdlibRootsIn).
+// root holds all of the top-level directories (math, semiconductors,
+// passives, …). That is a packaging decision, not a language one: the
+// compiler still resolves `import <math>` through the ordinary package table,
+// because the installed tree is EXPANDED into one package root per top-level
+// directory (see stdlibRootsIn).
 //
-// The alternative was four packages, which the first segment of an angle
-// import makes the more literal reading — `import <math>` naming a package
-// called "math". One package wins on the things that actually matter here:
-// the four are versioned, released and tested together, so four separate
-// versions could only ever be in lockstep or wrong; and a single archive
-// means --setup makes one request instead of four, on the one code path
-// every new install must survive.
+// The alternative was one package per directory, which the first segment of
+// an angle import makes the more literal reading — `import <math>` naming a
+// package called "math". One package wins on the things that actually matter
+// here: the directories are versioned, released and tested together, so
+// separate versions could only ever be in lockstep or wrong; and a single
+// archive means --setup makes one request instead of one per directory, on
+// the one code path every new install must survive.
 //
 // The cost is that `math` cannot be upgraded without upgrading the rest.
 // Given they are one release artifact built from one source tree, that is
@@ -38,16 +39,6 @@ import (
 
 // StdlibPackageName is the single package `hover --setup` installs.
 const StdlibPackageName = "stdlib"
-
-// StdlibPackages are the top-level directories inside that package, each of
-// which becomes an importable package root. Used for diagnostics, and as the
-// expected contents when validating an install.
-var StdlibPackages = []string{
-	"electromechanical",
-	"math",
-	"optoelectronics",
-	"semiconductors",
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // THE MACHINE-WIDE PROJECT
@@ -320,13 +311,13 @@ func PackageRootsForFile(entryFile string) (map[string]string, error) {
 // stdlibRootsIn expands one installed standard-library tree into the package
 // roots the compiler resolves against.
 //
-// This is the whole of the "one package, four import roots" trick: the
-// archive holds math/, semiconductors/, optoelectronics/ and
-// electromechanical/, and each becomes a package root under its own name. So
+// This is the whole of the "one package, many import roots" trick: every
+// top-level directory in the archive (math/, semiconductors/, passives/, …)
+// becomes a package root under its own name. So
 // `import <math>` resolves to <cache>/math with no knowledge anywhere in the
 // compiler that math arrived inside something called stdlib.
 //
-// Subdirectories are read from disk rather than taken from StdlibPackages, so
+// Subdirectories are read from disk rather than taken from a list, so
 // a stdlib release that adds a top-level directory works against an older
 // compiler — the package table is built from what was actually installed.
 //
@@ -386,11 +377,4 @@ func MachineCacheDirs() map[string]bool {
 		}
 	}
 	return keep
-}
-
-// StdlibImportNames are the names an import may use to reach the standard
-// library: the four directories, plus "stdlib" itself. A failed import of one
-// of these should say `hover --setup`, not `hover hpm install`.
-func StdlibImportNames() []string {
-	return append([]string{StdlibPackageName}, StdlibPackages...)
 }

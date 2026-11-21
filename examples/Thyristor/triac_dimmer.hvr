@@ -21,21 +21,21 @@
 //           = 162.635 V                                  (alpha = 90 deg)
 //
 //  Measured over 60-100 ms (ndf2):
-//      Vrms(lamp) = 529 Ohm * I(aload)rms = 161.996 V    (ideal - 0.39 %)
-//      conduction: on at 90.00 deg and 270.00 deg; off at 176.41 deg and
-//                  356.43 deg, i.e. 3.6 deg before each voltage zero,
-//                  where the lamp current has fallen to ~38 mA (the card's
-//                  IH; 20.8 V of mains)
-//      on-state: 0.76 V at 0.6 A
+//      Vrms(lamp) = 529 Ohm * I(aload)rms = 161.989 V    (ideal - 0.40 %)
+//      conduction: on at 90.00 deg and 270.00 deg; off at 176.40 deg and
+//                  356.39 deg, i.e. 3.6 deg before each voltage zero,
+//                  where the lamp current has fallen to ~39 mA (the card's
+//                  IH; 20.6 V of mains)
+//      on-state: 0.77 V at 0.6 A
 //  The 0.39 % is the triac's on-state drop plus that early drop-out.
 //
-//  Convergence (HOVER_TRACE_STEP=1, 100 ms, ndf2): 3562 accepted steps,
-//  6.2 Newton iterations per step. Each firing costs 580-730 iterations over
-//  110-125 steps; each drop-out at IH 970-1260 over ~70 steps, including one
-//  to four 100-iteration plain-Newton failures rescued by trust-region
+//  Convergence (HOVER_TRACE_STEP=1, 100 ms, ndf2): 3544 accepted steps,
+//  5.8 Newton iterations per step. Each firing costs 480-700 iterations over
+//  95-120 steps; each drop-out at IH 520-1170 over 40-70 steps, including
+//  two to five 100-iteration plain-Newton failures rescued by trust-region
 //  retries — the open item of this model, as in scr_phase_bridge.hvr.
-//  (With TT = 10 us instead of the card's 2 us the drop-outs cost 300-430,
-//  at the price of a 7 us turn-on delay and a 21 us rise.)
+//  (With TT = 10 us instead of the card's 2 us the drop-outs cost 280-670,
+//  at the price of a 6 us turn-on delay and a 21 us rise.)
 
 .save(main.l1, main.mt2, main.g, I(main.aload));
 .tran(0, 100m, 50u);

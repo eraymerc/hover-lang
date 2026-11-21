@@ -14,14 +14,17 @@ import <semiconductors/thyristor> as dev;
 //  ── What the values give (measured on this card, Vt = 0.026 V) ─────────────
 //
 //    turn-off: 10 A (300 V, 30 Ohm) is turned off by a 20 us gate pulse of
-//              -1.8 A and not by -1.6 A: turn-off gain ~5.5-6 (estimate from
-//              the alphas: 6.3). Compare SCR800V25A, which needs ~-6 A.
+//              -1.7 A and not by -1.6 A: turn-off gain ~6 (estimate from
+//              the alphas: 6.3). Compare SCR800V25A, which needs -5.5 A.
 //    turn-on:  a 1 A, 20 us gate pulse latches it, like any SCR.
+//    IGT ~5.4 mA, IH ~29 mA; VT 1.16 V at 10 A, 1.53 V at 20 A — a GTO's
+//              on-state drop is higher than an SCR's of the same rating
+//              (anode shorts, short lifetime)
 //
 //  ── Fit ─────────────────────────────────────────────────────────────────────
 //
 //    IS = 1e-12, BFP = 0.25 (alpha_p 0.2), BFN = 20 (alpha_n 0.95)
-//    RGK = 100, RG = 0.5, RS = 10m, TT = 1u
+//    RGK = 100, RG = 0.5, RS = 35m (on-state slope), TT = 1u
 //    CJ = 500p, VJ = 0.7, MJ = 0.4, VBO = VRB = 700 V
 //
 //  Not modelled: the GTO's turn-off tail and its current-filamentation limit
@@ -31,7 +34,7 @@ import <semiconductors/thyristor> as dev;
 
 analog module GTO600V20A<>()[wire gate, wire anode, wire cathode] {
     module x = dev.SCR<1e-12, 0.25, 20.0,            // IS, BFP, BFN
-                       100.0, 0.5, 10m,              // RGK, RG, RS
+                       100.0, 0.5, 35m,              // RGK, RG, RS
                        1u,                           // TT
                        500p, 0.7, 0.4,               // CJ, VJ, MJ
                        700.0, 700.0,                 // VBO, VRB

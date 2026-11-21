@@ -27,7 +27,7 @@ struct VMSnapshot {
     // Indexed, not named: a snapshot is taken and restored several times per
     // step (solver checkpoints, every .zcd probe), and the name-keyed maps it
     // used to hold cost a string allocation and a hash per entry each time.
-    std::vector<double>                     state_vals;    // `state` variables, VM::state_vals order
+    std::vector<unsigned char>              state_vals;    // `state` variables' bytes, VM::state_vals layout
     Eigen::VectorXd                         last_solution;
     Eigen::VectorXd                         b_static;
     std::vector<double>                     cs_last_vals;  // current sources, System::current_sources iteration order

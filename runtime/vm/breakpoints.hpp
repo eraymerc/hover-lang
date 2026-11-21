@@ -175,6 +175,12 @@ double vm_bp_compare_chain(VM *vm, int form, double t, double x, double p,
 // starts on one. Only when vm->bp.enabled.
 double vm_breakpoint_step(VM *vm, double dt, double max_dt);
 
+// What the logic drives into the circuit as it stands: every driven source
+// (vm_drive_vector) and every logic value analog code reads (phase_zcd_watch).
+// Restores everything it touches. Compared before and after a landed
+// breakpoint's logic pass and a clock tick's (vm/clock.cpp).
+Eigen::VectorXd circuit_drive(VM *vm);
+
 // After a converged step: true when analog code passed a flip inside the step
 // that it was not landed on — the solver then restores its checkpoint and
 // retries; the retry's vm_breakpoint_step lands on the flip.

@@ -43,8 +43,11 @@
 // ampere-scale error in the next charge current (examples/DCMotor/h_bridge.hvr
 // drifted 4 % off its fine-step answer). The hidden-element scheme never had
 // this problem: q was an unknown, so it was always the accepted q.
-// Solvers without Newton (euler_fixed, gauss_siedel) commit their single
-// evaluation, which reproduces the hidden element's one-step lag exactly.
+// euler_fixed has no Newton loop and commits its single evaluation, which
+// reproduces the hidden element's one-step lag exactly. gauss_siedel iterates,
+// so it commits at its converged point like the Newton solvers: committing its
+// last in-loop evaluation (one damped iterate short) gave idt() decks an error
+// that did not fall at first order with dt.
 // ─────────────────────────────────────────────────────────────────────────────
 
 #include <vector>

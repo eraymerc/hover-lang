@@ -17,7 +17,7 @@ import <semiconductors/bjt> as dev;
 //  Parameters go in with normal positive SPICE signs; the PNP model handles
 //  polarity internally, so the card transcribes directly.
 //
-//  Same deviations as the other parts: Re = 1 mOhm (card says none), Cjs = 2p
+//  Same deviations as the other parts: Re = 0 (card says none), Cjs = 2p
 //  (required — see 2N2222.hvr), Var/Rbm/Irb = 0, Vt fixed at 0.026 V, and the
 //  card's Itf=.65 Vtf=5 Xtf=1.7 transit-time modulation not modelled.
 //
@@ -36,7 +36,7 @@ analog module Q2N2907<>()[wire base, wire collector, wire emitter] {
                        54.81f, 1.829,           // Ise, Ne
                        0.0, 2.0,                // Isc, Nc
                        10.0, 0.0, 0.0,          // Rb, Rbm, Irb
-                       1m, 0.715,               // Re, Rc
+                       0.0, 0.715,              // Re, Rc
                        19.82p, 0.75, 0.3357,    // Cje, Vje, Mje
                        14.76p, 0.75, 0.5383,    // Cjc, Vjc, Mjc
                        0.5, 603.7p, 111.3n,     // Fc, Tf, Tr

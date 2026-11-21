@@ -103,9 +103,9 @@ from <math> import sqrt, pnjlim, jexp, vcrit_of, q_dep, rb_of;
 //  Rb/Re/Rc remain worth having for physical reasons — Re is series feedback,
 //  Rb sets the input impedance a base drive sees — and they do condition the
 //  internal nodes. But they are not load-bearing for convergence the way an
-//  earlier version of this comment claimed. Do not pass zero for them all the
-//  same: R<0> is a literal short, and for Rb a zero-valued synthesized
-//  resistor is the same thing, collapsing the internal node onto its terminal.
+//  earlier version of this comment claimed. Zero is fine for any of them when
+//  the card has none: R<0> is an ideal short (the compiler merges ci/ei into
+//  the terminal), and a zero Rb makes rbx a 0 V source.
 //
 //  ── Charge storage: real, via ddt() ─────────────────────────────────────────
 //

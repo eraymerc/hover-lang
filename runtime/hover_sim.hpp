@@ -52,6 +52,7 @@
 // the branch taken — a finite difference would have returned a secant there.
 // ─────────────────────────────────────────────────────────────────────────────
 
+#include <cstddef>
 #include <type_traits>
 
 namespace hvr {
@@ -214,6 +215,7 @@ public:
     void init_system(double dt);
     int  register_node(const char *name);
     int  register_branch(const char *name);
+    void alias_node(const char *alias, const char *target);  // net merged by R<0>
     void finalize_system();
     int  resolve_node(const char *name) const;
     int  resolve_branch(const char *name) const;
@@ -366,10 +368,14 @@ public:
     // The VM's named-value table: the logged signals.
     void   set_value(const char *key, double v);
     double value(const char *key) const;
-    // `state` variables for snapshots (save_state_vars / restore_state_vars),
-    // by index. The table grows on demand; an index never written reads 0.
-    void   set_state_var(int k, double v);
-    double state_var(int k) const;
+    // `state` variables for snapshots (save_state_vars / restore_state_vars):
+    // raw bytes, packed back to back in the order the generated code puts
+    // them. state_begin rewinds to the start; each put/get moves past
+    // `size` bytes. The buffer grows on demand; a get past its end leaves
+    // the variable untouched.
+    void   state_begin();
+    void   state_put(const void *src, size_t size);
+    void   state_get(void *dst, size_t size);
 
 private:
     struct Impl;

@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-//  HVR Testbench — mains transformer + bridge rectifier + reservoir capacitor
+//  HVR Testbench — Mains Transformer, Bridge Rectifier and Reservoir Capacitor
 //  Validates: <magnetics> Transformer feeding <parts/diode> 1N4007s into a
 //             <passives> Capacitor — the classic linear power supply
 // ─────────────────────────────────────────────────────────────────────────────

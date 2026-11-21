@@ -89,12 +89,10 @@ void GaussSiedel::run(VM *vm) {
             fprintf(stderr, "[GS] warning: did not converge at t=%.3e\n", vm->time);
         }
 
-        slots_commit(vm->slots);
+        vm_commit_slots_at(vm, x_guess);
         solver_advance_time(vm->solver, x_guess);
         vm->time += dt;
         vm->analog_dt = 0.0;
-        logger_log_step(&vm->logger, vm->time, vm->solver->sys, vm->solver->last_solution);
-        if (vm->phase_log) vm->phase_log(vm);
-        logger_log_signals(&vm->logger, vm->values);
+        vm_log_accepted(vm);
     }
 }

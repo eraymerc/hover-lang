@@ -154,26 +154,33 @@ void sort_list(VMBreakpointList &l) {
 // The step's own logic pass, run here, at the start of the attempt, with
 // reporting on: what the logic evaluates at t_n is exactly what tells where it
 // next flips. It IS the step's pass — the solver's vm_run_digital that follows
-// skips the generated logic phases once (Sim::logic_ran_early) and runs only
-// the clock ticks. The attempt's checkpoint was taken before this, so a
+// skips the generated logic phases once (Sim::logic_ran_early). A clock tick
+// due at t_n (`tick`) runs here as well, first: the logic reads its outputs,
+// and the flips it reports depend on them (vm_run_logic_clocked, clock.cpp —
+// until 2026-11-21 the ticks ran after this pass, in the solver's call, and
+// a PWM fed by a clocked modulator reported its edges from the previous
+// tick's values for one step). The attempt's checkpoint was taken before this, so a
 // rejected attempt rolls it back as before. It reads the solution at t_n, as
 // the solver's pass would; the read-view is put back afterwards, so the
 // solver's api_update_solution shifts the same vectors as without this (the
 // first iterate's nr_prev() is unchanged).
-void run_logic_early(VM *vm) {
+void run_logic_early(VM *vm, bool tick) {
     VMBreakpoints &bp = vm->bp;
     Eigen::VectorXd &view = vm->api->last_solution;
     std::swap(bp.view_saved, view);
     view = vm->solver->last_solution;
+    if (tick) vm_tick_clocks(vm);   // before reporting: a clocked module's comparisons only sample
     bp.logic_next.clear();
     bp.collect = true;
-    vm->in_probe = true;   // no clock ticks here: they run in the solver's call
+    vm->in_probe = true;   // the ticks ran above; none in vm_run_digital
     vm_run_digital(vm);
     vm->in_probe = false;
     bp.collect = false;
     std::swap(bp.view_saved, view);
     bp.skip_structural = bp.skip_digital = true;
 }
+
+}  // namespace
 
 // What the logic drives into the circuit as it stands: the sources it drives
 // (vm_drive_vector) and the logic values analog code reads (phase_zcd_watch)
@@ -189,6 +196,8 @@ Eigen::VectorXd circuit_drive(VM *vm) {
     }
     return drive;
 }
+
+namespace {
 
 // dt such that t + dt == e in floating point (it nearly always is e - t).
 double step_to(double t, double e) {
@@ -329,23 +338,27 @@ double vm_breakpoint_step(VM *vm, double dt, double max_dt) {
     // here changed what it drives into the circuit — the drive vector and the
     // logic values analog code reads — exactly as a clock tick (clock.cpp).
     // A flag that is only saved, or a branch that writes the same value,
-    // changes nothing the solution depends on.
-    const bool decide = landed && !landed_analog && bp.logic;
+    // changes nothing the solution depends on. A clock tick due here runs in
+    // this pass, and is decided the same way, before the ticks against after
+    // the pass (vm_tick_restart, which also carries a change to a retry).
+    const bool tick = bp.logic && !vm->clocks.empty() && vm_clocks_due(vm);
+    const bool decide = (landed && !landed_analog && bp.logic) || tick;
     Eigen::VectorXd drive_before;
     if (decide) drive_before = circuit_drive(vm);
     if (bp.logic) {
-        run_logic_early(vm);
+        run_logic_early(vm, tick);
         for (int i = 0; i < bp.logic_next.n; i++)
             if (bp.logic_next.t[i] > t_min) cand.add(bp.logic_next.t[i]);
     }
-    if (landed) {
-        if (decide) {
-            const Eigen::VectorXd drive_after = circuit_drive(vm);
-            bp.restart = !(drive_before.size() == drive_after.size() &&
-                           (drive_before.array() == drive_after.array()).all());
-        } else {
-            bp.restart = true;
-        }
+    if (landed && (landed_analog || !bp.logic)) {
+        bp.restart = true;
+    } else if (tick) {
+        // A retry from the same t keeps a restart its first attempt decided.
+        bp.restart = (!landed && bp.restart) || vm_tick_restart(vm, drive_before);
+    } else if (decide) {
+        const Eigen::VectorXd drive_after = circuit_drive(vm);
+        bp.restart = !(drive_before.size() == drive_after.size() &&
+                       (drive_before.array() == drive_after.array()).all());
     }
 
     const double dt_clock = vm->clocks.empty() ? dt : vm_limit_step(vm, dt);

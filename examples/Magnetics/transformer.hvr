@@ -1,6 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
-//  HVR Testbench — linear transformer, T-model (<magnetics> Transformer)
-//  Validates: magnetising inductance, leakage, winding resistances, load
+//  HVR Testbench — Linear Transformer (T-Model)
+//  Validates: <magnetics> Transformer —
+//             magnetising inductance, leakage, winding resistances, load
 //             regulation, against ngspice's coupled inductors
 // ─────────────────────────────────────────────────────────────────────────────
 //

@@ -1,6 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
-//  HVR Testbench — three coupled windings (<magnetics> CoupledInductors3)
-//  Validates: three self inductances, three pairwise couplings, winding
+//  HVR Testbench — Three Coupled Windings
+//  Validates: <magnetics> CoupledInductors3 —
+//             three self inductances, three pairwise couplings, winding
 //             resistances, against ngspice with three K elements
 // ─────────────────────────────────────────────────────────────────────────────
 //

@@ -64,6 +64,17 @@ const NATIVE_SECONDS = {
   'MOSFET/mosfet_h_bridge.hvr': 6.3,
   'MOSFET/h_bridge_inverter.hvr': 26.6,
   'PMSM/foc.hvr': 26.5,
+  // Measured 2026-11-14 (one run each, machine not idle).
+  'Thyristor/scr_latch_hold.hvr': 2.3,
+  'IGBT/igbt_double_pulse.hvr': 2.6,
+  'BLDC/six_step.hvr': 3.5,
+  'IGBT/igbt_output_characteristics.hvr': 3.6,
+  'IGBT/igbt_half_bridge.hvr': 4.1,
+  'InductionMachine/dol_start.hvr': 4.1,
+  'Thyristor/triac_dimmer.hvr': 4.4,
+  'DCMachine/chopper.hvr': 5.0,
+  'Thyristor/scr_phase_bridge.hvr': 8.0,
+  'Magnetics/flyback.hvr': 10.5,
 };
 
 // Above this native time the picker marks a deck as slow.

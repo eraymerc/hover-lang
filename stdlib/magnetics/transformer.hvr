@@ -70,7 +70,7 @@
 //  t = 0: a mains transformer deck should not carry `.op;` unless its source
 //  starts at a zero crossing). Core loss is not modelled; to first order it is
 //  a resistor across the primary terminals. Saturation: <magnetics>
-//  SaturableTransformer. Use ndf2 or bdf2 (coupled.hvr explains trapezoidal).
+//  SaturableTransformer.
 //
 //  ── Verified ───────────────────────────────────────────────────────────────
 //

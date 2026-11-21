@@ -53,11 +53,6 @@ void EulerFixed::run(VM *vm) {
         slots_commit(vm->slots);
         vm->time += dt;
 
-        logger_log_step(&vm->logger, vm->time,
-                        vm->solver->sys,
-                        vm->solver->last_solution);
-        
-        if (vm->phase_log) vm->phase_log(vm);
-        logger_log_signals(&vm->logger, vm->values);
+        vm_log_accepted(vm);
     }
 }

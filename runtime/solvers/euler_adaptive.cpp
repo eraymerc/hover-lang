@@ -224,9 +224,7 @@ void EulerAdaptive::run(VM *vm) {
 
         if (step.converged) {
             reject_run.clear();
-            logger_log_step(&vm->logger, vm->time, vm->solver->sys, vm->solver->last_solution);
-            if (vm->phase_log) vm->phase_log(vm);
-            logger_log_signals(&vm->logger, vm->values);
+            vm_log_accepted(vm);
 
             if (lte_r >= 0.0) {
                 if (lte_floor.exhausted(dt, lte_r, max_dt)) {
@@ -266,8 +264,8 @@ void EulerAdaptive::run(VM *vm) {
             // step after an event — step_limits.hpp).
             vm->time_step = 0.5 * dt;
             step_trace("euler_adaptive", attempt, vm->time, dt, step.iters, "reject");
-            if (reject_run.exhausted(vm->time_step)) {
-                fprintf(stderr, "[Adaptive] FATAL: Failed to converge at t=%.3e\n", vm->time);
+            if (reject_run.exhausted(vm->time_step, lte_min_step(max_dt))) {
+                reject_run.fatal("Adaptive", vm->time, vm->time_step, lte_min_step(max_dt));
                 vm_fail(vm);
                 dump_convergence_row(vm, conv.worst_row, conv.worst_step, conv.worst_tol);
                 dump_failure(vm, "euler_adaptive", dt, step.alpha, last_x, last_history);

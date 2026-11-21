@@ -245,8 +245,21 @@ void Trapezoidal::run(VM *vm) {
         }
 
         if (converged) {
+            // THE NEXT STEP'S HISTORY IS f AT THIS POINT. trap_base is built from
+            // B_static at the top of the next step, so the analog phase AND the
+            // drive pass are evaluated here, at the accepted solution, under this
+            // step's companion. Left as the Newton loop leaves them, B_static
+            // holds the sources at the iterate BEFORE the final solve, and a
+            // ddt()-driven source there is off by alpha*dq/dx times the last
+            // Newton step: on a step that converged in one iteration that is
+            // the whole step, alpha*L*(I_n - I_{n-1}), so the trapezoidal rule
+            // ran with no history for it (a 1 A R-L step drifted 1.7 mA, worse
+            // with smaller dt). The slots (truncation error below, commit)
+            // read this same evaluation.
+            api_peek_solution(vm->api, x_guess);
+            vm_run_analog(vm);
+            vm_run_phase_b(vm);
             // TRUNCATION ERROR (lte.hpp), before anything is committed.
-            vm_eval_slots_at(vm, x_guess);
             LteMethod lm = force_euler ? lte_be() : lte_trap();
             LteStep ls{&lhist, &x_guess, &state_rows, n_nodes, dt, rtol, atol, abstol,
                        vm->slots.size() > 0 ? &vm->slots.s_now : nullptr,
@@ -263,9 +276,7 @@ void Trapezoidal::run(VM *vm) {
             slots_commit(vm->slots);
             lhist.accept(x_guess, dt);
             solver_advance_time(vm->solver, x_guess);
-            logger_log_step(&vm->logger, vm->time, vm->solver->sys, vm->solver->last_solution);
-            if (vm->phase_log) vm->phase_log(vm);
-            logger_log_signals(&vm->logger, vm->values);
+            vm_log_accepted(vm);
 
             // THE JACOBIAN IS RE-FORMED ONCE PER ACCEPTED STEP.
             //
@@ -338,8 +349,8 @@ void Trapezoidal::run(VM *vm) {
             vm->time_step = dt * 0.25; // Aggressive back-off
             step_trace("trap", attempt, vm->time, dt, iters, "reject");
 
-            if (reject_run.exhausted(vm->time_step)) {
-                fprintf(stderr, "[Trap] FATAL: Failed to converge at t=%.3e\n", vm->time);
+            if (reject_run.exhausted(vm->time_step, lte_min_step(max_dt))) {
+                reject_run.fatal("Trap", vm->time, vm->time_step, lte_min_step(max_dt));
                 vm_fail(vm);
                 dump_convergence_row(vm, conv.worst_row, conv.worst_step, conv.worst_tol);
                 dump_failure(vm, "trapezoidal", dt, alpha, x_guess, x_anchor);

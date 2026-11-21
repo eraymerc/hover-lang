@@ -17,7 +17,7 @@ import <semiconductors/bjt> as dev;
 //  small-signal behaviour, and this model does not represent breakdown, so
 //  it stands in for those too.
 //
-//  Same deviations as 2N2222.hvr: Re = 1 mOhm, Cjs = 2p, Var/Rbm/Irb = 0,
+//  Same deviations as 2N2222.hvr: Re = 0, Cjs = 2p, Var/Rbm/Irb = 0,
 //  Vt fixed at 0.026 V, no Itf/Vtf/Xtf.
 //
 //  Note the low Ikf (82 mA): high-injection roll-off starts early on this
@@ -32,7 +32,7 @@ analog module QBC547<>()[wire base, wire collector, wire emitter] {
                        68.09f, 1.5,             // Ise, Ne
                        0.0, 2.0,                // Isc, Nc
                        10.0, 0.0, 0.0,          // Rb, Rbm, Irb
-                       1m, 0.9,                 // Re, Rc
+                       0.0, 0.9,                // Re, Rc
                        13.28p, 0.75, 0.3552,    // Cje, Vje, Mje
                        6.5p, 0.75, 0.3416,      // Cjc, Vjc, Mjc
                        0.5, 411.1p, 33.42n,     // Fc, Tf, Tr

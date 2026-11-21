@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-//  HVR Testbench — centre-tapped transformer, two-diode full-wave rectifier
+//  HVR Testbench — Centre-Tapped Transformer, Two-Diode Full-Wave Rectifier
 //  Validates: <magnetics> CenterTapTransformer (both halves, the tap, the
 //             per-half ratio) with <parts/diode> 1N4007s
 // ─────────────────────────────────────────────────────────────────────────────

@@ -15,19 +15,20 @@ import <semiconductors/thyristor> as dev;
 //    IH   ~28 mA (gate open; supply ramped down). On 230 V mains into a
 //         529 Ohm lamp the current drops out at 176.3 deg of each half-cycle,
 //         ~38 mA, 3.7 deg before the voltage zero
-//    VT   0.76 V at 0.6 A, 1.15 V at 11 A (the peak of 8 A RMS)
+//    VT   0.77 V at 0.6 A, 1.37 V at 11 A (the peak of 8 A RMS; data sheets
+//         of this class: ~0.85 V + 50 mOhm, 1.4-1.55 V at 11 A)
 //    VBO  700 V in both directions
 //
 //  ── Fit ─────────────────────────────────────────────────────────────────────
 //
-//    IS = 1e-12, BFP = 1, BFN = 10, RGK = 33, RG = 1, RS = 10m, TT = 2u,
+//    IS = 1e-12, BFP = 1, BFN = 10, RGK = 33, RG = 1, RS = 50m, TT = 2u,
 //    CJ = 500p, VJ = 0.7, MJ = 0.4 — the SCR800V25A section, scaled down in
-//    area (higher RS, lower CJ).
+//    area (higher RS, lower CJ). RS is each section's on-state slope.
 // ─────────────────────────────────────────────────────────────────────────────
 
 analog module TRIAC600V8A<>()[wire gate, wire mt2, wire mt1] {
     module x = dev.TRIAC<1e-12, 1.0, 10.0,           // IS, BFP, BFN
-                         33.0, 1.0, 10m,             // RGK, RG, RS
+                         33.0, 1.0, 50m,             // RGK, RG, RS
                          2u,                         // TT
                          500p, 0.7, 0.4,             // CJ, VJ, MJ
                          700.0, 700.0,               // VBO, VRB

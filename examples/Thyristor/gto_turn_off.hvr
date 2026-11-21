@@ -13,12 +13,12 @@
 //    GTO600V20A   alpha_p = 0.2, alpha_n = 0.95: turn-off gain 6.3, so 10 A
 //                 needs ~1.6 A of negative gate current. It turns off:
 //                 I(ag) drops from 9.96 A to 0 within ~15 us of the pulse.
-//                 (Measured threshold: -1.8 A turns it off, -1.6 A does not.)
+//                 (Measured threshold: -1.7 A turns it off, -1.6 A does not.)
 //    SCR800V25A   alpha_p = 0.5, alpha_n = 0.91: gain 2.2, needs ~4.5 A.
 //                 -2 A does nothing; it stays at 9.97 A. (Measured threshold:
-//                 between -5 A and -6 A.)
+//                 -5.5 A turns it off, -5 A does not.)
 //
-//  Convergence (HOVER_TRACE_STEP=1, ndf2): 565 accepted steps, 3.3 Newton
+//  Convergence (HOVER_TRACE_STEP=1, ndf2): 543 accepted steps, 2.7 Newton
 //  iterations per step (max 10), no Newton rejections or trust-region
 //  retries.
 

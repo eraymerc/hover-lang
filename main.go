@@ -303,7 +303,6 @@ func main() {
 		os.Exit(1)
 	}
 	loader.SetPackageRoots(pkgRoots)
-	loader.SetStdlibPackageNames(hpm.StdlibImportNames())
 	loader.SetMachineInstalledPackages(machineInstalledPackageNames)
 
 	loadResult, err := loader.Load(entryFile)
@@ -349,7 +348,9 @@ func main() {
 
 		if path == loadResult.EntryPath {
 			fmt.Printf("[Lexer]  %d tokens from %s\n", tokenCount, path)
-			fmt.Printf("[Parser] OK — %d top-level statements\n", len(program.Statements))
+			if len(parseErrors) == 0 {
+				fmt.Printf("[Parser] OK — %d top-level statements\n", len(program.Statements))
+			}
 		} else {
 			fmt.Printf("[Lexer]  %d tokens from %s (imported)\n", tokenCount, path)
 		}

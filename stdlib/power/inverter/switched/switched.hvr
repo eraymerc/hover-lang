@@ -98,18 +98,59 @@ from <math> import exp, log1p;
 //
 //  Coss = 0 gives the ideal, PLECS-like commutation (the node jumps straight
 //  to the diode clamp) and is the fastest, because every node slew costs
-//  steps: on the H-bridge benchmark 50k steps at Coss = 0 against 79k at 1 pF
-//  (2026-11-14; before time breakpoints landed the dead-time edges it was 67k
-//  against ~120k for any Coss from 3 pF to 1 nF).
+//  steps. Measured 2026-11-21, 0.3 s each, default Coss against 10 pF:
+//  examples/DCMachine/chopper.hvr 183k against 351k steps, and
+//  examples/BLDC/six_step.hvr 37k against 277k (100 pF: 363k and 562k), with
+//  the averaged outputs equal to 0.1 %. On the H-bridge benchmark: 50k steps
+//  at Coss = 0 against 79k at 1 pF (2026-11-14).
 //
-//  Until 2026-11-13 the default was 100 pF, as a guard for the solver rather
-//  than for the physics: on a twin of examples/MOSFET/h_bridge_inverter.hvr
-//  (one capacitor straight across the output, nothing from the filter to
-//  ground) Coss = 0 stalled the Newton, and Coss = 1 pF collapsed the step to
-//  1e-32 s. ngspice ran both; they were solver defects, since fixed
-//  (docs/hoveR_sorunlar.txt items 38 and 39). Coss = 0 now runs that twin at
-//  24 V and 310 V, 1 pF runs the benchmark at both, and a 310 V benchmark
-//  matches ngspice to 5 digits at Coss = 0 and at 100 pF.
+//  ── WARNING: an output floating between the legs needs a capacitance ──────
+//
+//  The switches are ideal in timing but not in conductance: an open switch is
+//  Roff, not infinity, and with Coss = 0 nothing else holds a node that no
+//  closed switch or conducting diode reaches. That happens in an H-bridge
+//  whose filter/load sits between the legs (nothing from it to ground) when
+//  both legs are in dead time at (near) zero load current — no diode
+//  conducts, and the whole output network is tied to the rest of the circuit
+//  only through the four Roff (1e-6 S). Its common mode has no capacitance,
+//  while the load capacitor stamps C/dt into the same rows: at dt = 1e-14 s a
+//  1000 uF load gives 1e11 S against 1e-6 S, past what double precision can
+//  resolve, and the step fails ("Failed to converge"; Newton steps of 1e14 V
+//  on the floating node). Small steps are what dead-time edges bring, so it
+//  shows up at light load, typically during a soft start (u ~ 0: both legs'
+//  edges land together).
+//
+//  This is the formulation, not a Hover defect: an ngspice twin (same
+//  B-source switch and diode, same edges) stops with "timestep too small" at
+//  the same node, under trap and gear (2026-11-21, HCA inverter: LC +
+//  125 Ohm || 1000 uF between the legs of a 200 V bridge). Tools that take
+//  ideal switches everywhere (PLECS and the like) are, as far as we know,
+//  piecewise-linear state-space solvers, in which a floating node's absolute
+//  potential is not an unknown at all.
+//
+//  Any of these fixes it, each verified in Hover and in the ngspice twin:
+//    - a capacitor from the output network to ground, e.g. C<10p>() [vo, gnd]
+//      at the filter output. It ties the common mode with a capacitance that
+//      scales with dt like the load's, and since the filter output does not
+//      slew, it costs little (on the HCA deck it took fewer steps than either
+//      option below). It stands for the load's and the cable's capacitance
+//      to earth;
+//    - Coss >= 10 pF on the bridge (10 pF and 100 pF both run), at the step
+//      cost above;
+//    - a ground-referenced output: sense or drive the load through an ideal
+//      two-port (VCVS + ammeter + CCCS), exact for the differential mode.
+//
+//  History: until 2026-11-13 the default was 100 pF, as a guard for the
+//  solver rather than for the physics: on a twin of
+//  examples/MOSFET/h_bridge_inverter.hvr (one capacitor straight across the
+//  output, nothing from the filter to ground) Coss = 0 stalled the Newton,
+//  and Coss = 1 pF collapsed the step to 1e-32 s. ngspice ran both; they were
+//  solver defects, since fixed (docs/hoveR_sorunlar.txt items 38 and 39) —
+//  there the common mode was reached through conducting diodes. Coss = 0 now
+//  runs that twin at 24 V and 310 V, 1 pF runs the benchmark at both, and a
+//  310 V benchmark matches ngspice to 5 digits at Coss = 0 and at 100 pF.
+//  The Roff-only common mode in the warning above is the case that does not
+//  cover.
 //
 //  Give it a value for what it models. A small power MOSFET or IGBT has
 //  ~100 pF, physically harmless at amps (the node slews in nanoseconds) but
@@ -139,7 +180,7 @@ from <math> import exp, log1p;
 //    Roff   off-state resistance (leakage), > 0          1 MOhm
 //    Vf     diode threshold voltage                      0.8 V
 //    Rd     diode slope resistance, > 0                  10 mOhm
-//    Coss   capacitance across each switch, may be 0     0
+//    Coss   capacitance across each switch, may be 0     0 (see WARNING)
 //
 //  The three wrappers draw dc_p and dc_n as bus terminals and do not assume
 //  either is ground; a floating bus (split capacitors, an isolated source) is

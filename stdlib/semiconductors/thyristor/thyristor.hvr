@@ -10,7 +10,7 @@ import <semiconductors/bjt> as bjt;
 //  gate contact on p2. Split along the middle it is two transistors that feed
 //  each other's base (Ebers' two-transistor analogy, 1952):
 //
-//      anode ──────────── PNP Q1 emitter            (J1 = p1-n1)
+//      anode ──[RS]────── PNP Q1 emitter            (J1 = p1-n1)
 //                           Q1 base      = n1 = Q2 collector
 //                           Q1 collector = p2 = Q2 base   (J2 = n1-p2)
 //      gate ──[RG]──────────────────── p2
@@ -54,11 +54,12 @@ import <semiconductors/bjt> as bjt;
 //      makes the turn-on a dynamic event rather than an algebraic jump. The
 //      turn-OFF at IH is the same fold run backwards, and there the
 //      integrator is usually taking steps far longer than TT: Newton needs
-//      one to four 100-iteration attempts (rescued by trust-region retries)
-//      at most drop-outs, 500-1300 iterations per commutation in the 230 V
-//      examples. That cost is the open item of this model; ngspice on the
-//      same circuit spends comparable effort (6.6 iterations per timepoint
-//      against Hover's 6.5) and aborts outright on 1 ns gate edges.
+//      up to five 100-iteration attempts (rescued by trust-region retries)
+//      at most drop-outs, 300-1200 iterations per commutation in the 230 V
+//      examples (a firing costs 360-700). That cost is the open item of
+//      this model; ngspice on the same circuit spends comparable effort
+//      (4.4 iterations per timepoint against Hover's 5.1 per step) and
+//      aborts outright on 1 ns gate edges.
 //
 //  Static behaviour — how the parameters set the data-sheet numbers
 //  ────────────────────────────────────────────────────────────────
@@ -68,7 +69,9 @@ import <semiconductors/bjt> as bjt;
 //    gate trigger current   IGT ~ V_GT / RGK  (+ the small base current)
 //    holding current        IH  ~ V_GT / RGK * BFN / ((1 + BFN) alpha_p - 1)
 //    latch condition        (1 + BFN) alpha_p > 1, i.e. alpha_n + alpha_p > 1
-//    on-state voltage       VT  ~ V_J1 + V_CE(sat),Q2 + ~3 RS * I
+//    on-state voltage       VT  ~ V_J1 + V_CE(sat),Q2 + RS * I
+//                               (the junction part is 0.75-0.87 V from
+//                               0.6 to 80 A with the 25 A card's IS)
 //
 //  These are active-region estimates. They land within ~25 % of what the
 //  cards measure, on the high side for IH (SCR400V0A8: 1.9 mA estimated,
@@ -102,11 +105,13 @@ import <semiconductors/bjt> as bjt;
 //    BFP   -    forward gain of the p-n-p section (alpha_p = BFP/(1+BFP))
 //    BFN   -    forward gain of the n-p-n section
 //    RGK   Ohm  gate-cathode shunt (cathode emitter shorts), > 0
-//    RG    Ohm  gate spreading resistance, > 0
-//    RS    Ohm  ohmic resistance of each section (anode and cathode
-//               emitters, the inner layers' and the bases' contacts);
-//               on-state slope ~3 RS. Keep >= ~10 mOhm: see "Ohmic
-//               resistance" in the body
+//    RG    Ohm  gate spreading resistance, >= 0
+//    RS    Ohm  on-state series (slope) resistance, >= 0: one resistor
+//               in series with the anode, outside the regenerative loop;
+//               everything inside the loop is an ideal short. See "Ohmic
+//               resistance" in the body. (Until 2026-11-14 RS was the
+//               resistance of EACH of six sections, slope ~3 RS: a card
+//               written for that model needs about 3x its RS here.)
 //    TT    s    transit time of both sections, forward and reverse — the
 //               stored charge behind turn-on delay, reverse recovery and
 //               turn-off time (> 0, see above)
@@ -130,67 +135,97 @@ analog module SCR<double IS,  double BFP, double BFN,
                   double VT>()
     [wire gate, wire anode, wire cathode]
 {
-    // n1, p2: the two inner layers.
-    wire n1, p2;
+    // n1, p2: the two inner layers. ai: the anode emitter (p1) behind RS.
+    wire n1, p2, ai;
 
     R<RGK>() [p2, cathode];
 
-    // ── Ohmic resistance: RS in every section, never 1 mOhm ─────────────────
-    // The transistors' Re and Rc are R<> primitives and R<0> is rejected, so
-    // the library's habit is to pass 1 mOhm for "none". Not here. In a
-    // thyristor bridge, or any chain of devices that are all blocking, the
-    // nodes between them are decided by GMIN-level currents (1e-12 S * 300 V ~
-    // 3e-10 A), and a 1 kS resistor at 300 V carries G * V * eps ~ 7e-11 A of
-    // roundoff in its own KCL row — the same order. Measured on two forward-
-    // blocking SCRs in series across 230 V mains: 18.4 Newton iterations per
-    // step with trust-region rescues at 1 mOhm sections, 3.5 at 10 mOhm, 3.0
-    // at 100 mOhm; a full bridge stopped at its first firing. The bound is
-    // G << GMIN/eps ~ 4.5 kS, whatever the voltage.
+    // ── Ohmic resistance: one terminal resistance, nothing inside the loop ──
+    // RS is the device's on-state slope resistance and it appears exactly
+    // once, in series with the anode: from the anode terminal to the anode
+    // emitter p1 (node ai). Every section INSIDE the regenerative loop is
+    // zero — the transistors' Re and Rc are R<0> (an ideal short: the
+    // compiler merges the two nets), their Rb is 0 (rbx becomes a 0 V
+    // source), and so are the breakdown junctions' Rs. In silicon most of
+    // the on-state slope is the conductivity-modulated n1 base, i.e. inside
+    // the structure; electrically a series resistance is a series resistance,
+    // and where it is lumped only matters for the gate and for convergence.
     //
-    // So RS is the resistance of each ohmic section — the anode (p1) and
-    // cathode (n2) emitters, the two inner layers' contacts and the two base
-    // contacts — and the on-state slope resistance comes out near 3 RS
-    // (measured on the part cards and quoted there). Keep RS >= ~10 mOhm:
-    // the 230 V SCR bridge example takes 5.8 Newton iterations per step at
-    // 10 mOhm and 10.2 at 5 mOhm (300-900 vs 1100-1450 per switching event).
-    // For a power part that floor costs on-state voltage: the 25 A card
-    // reaches 2.4 V at 50 A where a real one is ~1.6 V. That is the language
-    // limitation (no zero-resistance section without a node) showing through,
-    // and it is reported as such rather than tuned around.
+    // Why not a resistance in every section (the model until 2026-11-14):
+    // small NON-zero sections inside the loop are a trap. A blocking
+    // thyristor's inner nodes, and the nodes between devices that are all
+    // blocking, are decided by GMIN-level currents (1e-12 S * 300 V ~ 3e-10
+    // A), and a few-mOhm section stamps hundreds of siemens whose KCL row
+    // carries G * V * eps ~ 1e-10 A of roundoff at 300 V — the same order
+    // (bound: G << GMIN/eps ~ 4.5 kS, whatever the voltage). Measured on two
+    // forward-blocking SCRs in series across 230 V mains: 18.4 Newton
+    // iterations per step with trust-region rescues at 1 mOhm sections, 3.5
+    // at 10 mOhm, 3.0 at 100 mOhm, 3.1 with every section R<0>. On the 230 V
+    // SCR bridge (examples/Thyristor/scr_phase_bridge.hvr, ndf2), per
+    // accepted step: 33 at 1 mOhm sections, 18-19 at 2-3, 9.6 at 5, 6.3 at
+    // 10, 4.8 at 0 — and the 25 A card's realistic on-state voltage (1.6 V
+    // at 50 A, three sections in the main path) needed exactly the slow
+    // 5 mOhm.
+    //
+    // Why at the anode and not the cathode: the anode side is outside the
+    // loop AND outside the gate circuit. The gate current and the cathode
+    // short RGK return to the cathode, so a cathode-side resistance would put
+    // I_A * RS into the gate-cathode loop (0.75 V at 50 A and 15 mOhm — more
+    // than V_GT): a gate driver that holds the gate at the cathode terminal
+    // would draw a turn-off current out of p2, and RGK's current, hence IH
+    // and the GTO turn-off gain, would move with RS. At the anode RS changes
+    // the on-state voltage and nothing else — IGT, IH and the turn-off gain
+    // are those of RS = 0 — and the one node it adds, ai, is pinned by the
+    // outside circuit through RS itself, not by GMIN. Measured on the same
+    // bridge after the change: 4.2-5.3 iterations per accepted step for every
+    // RS from 0 to 20 mOhm (ndf2; 4.7-5.0 with bdf2), with no trend.
+    //
+    // What is left: RS is still a resistor, and when the ANODE TERMINAL is
+    // itself a node only leakage decides — the lower device of a series
+    // pair that is all blocking — RS joins two such nodes. On the series
+    // pair above: 3.0 iterations per step at RS = 0 and from 5 mOhm up,
+    // 3.9-4.2 at 2-3 mOhm, 6.8 at 1 mOhm (5.8 with 1 mOhm on the lower
+    // device alone, 3.0 with it on the upper one alone); the six-section
+    // model took 20.4, 6.2 and 3.9 at 1, 5 and 15 mOhm. Real on-state slopes
+    // of the parts this model is fitted to lie above that range.
+    R<RS>() [anode, ai];
 
     // ── p-n-p section: emitter p1, base n1, collector p2 ────────────────────
     // Its J1 is the reverse-blocking junction. Br = 1: in saturation J2
     // injects back, and the reverse gain only shapes VT. No depletion charge
-    // here: J2's is carried once, on the n-p-n below.
+    // here: J2's is carried once, on the n-p-n below. No Rb/Re/Rc: see above.
     module qp = bjt.PNP<IS, 1.0, 1.0,                  // Is, Nf, Nr
                         BFP, 1.0,                      // Bf, Br
                         0.0, 0.0,                      // Vaf, Var
                         0.0, 0.0,                      // Ikf, Ikr
                         0.0, 1.5,                      // Ise, Ne
                         0.0, 2.0,                      // Isc, Nc
-                        RS, 0.0, 0.0,                  // Rb, Rbm, Irb
-                        RS, RS,                        // Re, Rc
+                        0.0, 0.0, 0.0,                 // Rb, Rbm, Irb
+                        0.0, 0.0,                      // Re, Rc
                         0.0, 0.75, 0.33,               // Cje, Vje, Mje
                         0.0, 0.75, 0.33,               // Cjc, Vjc, Mjc
                         0.5, TT, TT,                   // Fc, Tf, Tr
                         0.0, VT>()                     // Cjs, Vt
-                       [n1, p2, anode];
+                       [n1, p2, ai];
 
     // ── n-p-n section: collector n1, base p2, emitter n2 = cathode ──────────
-    // Its base resistance is RS like every section (the transistors' Rb is a
-    // synthesized V = Rb * I branch, and 1 mOhm there amplifies roundoff into
-    // the branch current exactly as a 1 kS conductance would: measured, the
-    // half-wave rectifier deck took 4.7 Newton iterations per step with 1 mOhm
-    // base resistances and 3.2 with RS). RG, the gate spreading resistance,
-    // is the separate resistor from the gate terminal to p2 below.
+    // No Rb/Re/Rc either. Its base resistance in particular stays 0, not a
+    // token 1 mOhm: the transistors' Rb is a synthesized V = Rb * I branch,
+    // and 1 mOhm there amplifies roundoff into the branch current exactly as
+    // a 1 kS conductance would (measured, a half-wave rectifier deck took 4.7
+    // Newton iterations per step with 1 mOhm base resistances and 3.2 with
+    // 10 mOhm). The gate's real resistances are RG, the gate spreading
+    // resistance from the gate terminal to p2 below, and the cathode short
+    // RGK above: both are ohms to kilo-ohms, part of the device (they set IGT
+    // and IH), and nowhere near the roundoff bound.
     module qn = bjt.NPN<IS, 1.0, 1.0,                  // Is, Nf, Nr
                         BFN, 1.0,                      // Bf, Br
                         0.0, 0.0,                      // Vaf, Var
                         0.0, 0.0,                      // Ikf, Ikr
                         0.0, 1.5,                      // Ise, Ne
                         0.0, 2.0,                      // Isc, Nc
-                        RS, 0.0, 0.0,                  // Rb, Rbm, Irb
-                        RS, RS,                        // Re, Rc
+                        0.0, 0.0, 0.0,                 // Rb, Rbm, Irb
+                        0.0, 0.0,                      // Re, Rc
                         0.0, 0.75, 0.33,               // Cje, Vje, Mje
                         CJ, VJ, MJ,                    // Cjc, Vjc, Mjc  (J2)
                         0.5, TT, TT,                   // Fc, Tf, Tr
@@ -203,19 +238,20 @@ analog module SCR<double IS,  double BFP, double BFN,
     // Breakdown-only junctions: the forward branch is suppressed (Is = IS *
     // 1e-6 with N = 10, under 1e-11 A at the < 2.5 V these junctions ever see
     // forward), so the forward J1/J2 currents remain the transistors'. Only
-    // the Bv term acts. RS is their series resistance, as everywhere.
-    module bo = dev.Diode<IS * 1.0e-6, 10.0, RS,       // Is, N, Rs
+    // the Bv term acts. No series resistance (inside the loop, see above);
+    // J1's is taken from ai, so VRB is the junction's, behind RS.
+    module bo = dev.Diode<IS * 1.0e-6, 10.0, 0.0,      // Is, N, Rs
                           0.0, 0.0, 2.0,               // Ikf, Isr, Nr
                           VBO, 1m,                     // Bv, Ibv
                           0.0, 0.75, 0.33, 0.5,        // Cjo, Vj, M, Fc
                           0.0, VT>()                   // Tt, Vt
                          [p2, n1];
-    module rb = dev.Diode<IS * 1.0e-6, 10.0, RS,
+    module rb = dev.Diode<IS * 1.0e-6, 10.0, 0.0,
                           0.0, 0.0, 2.0,
                           VRB, 1m,
                           0.0, 0.75, 0.33, 0.5,
                           0.0, VT>()
-                         [anode, n1];
+                         [ai, n1];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -250,7 +286,9 @@ analog module SCR<double IS,  double BFP, double BFN,
 //  kink: there the injection is zero and nothing depends on its slope, and a
 //  smoothing constant would be one more number with no physical meaning.
 //
-//  Parameters: those of SCR (one set, both sections identical).
+//  Parameters: those of SCR (one set, both sections identical). RS sits at
+//  each section's own anode — MT2 for S1, MT1 for S2 — so the main current
+//  passes exactly one RS in either direction.
 //  Ports: gate, MT2 (the "anode" side), MT1 (the gate reference).
 //
 //  Not modelled, beyond SCR's list: quadrant-dependent IGT; commutating

@@ -32,6 +32,7 @@ struct Sim::Impl {
     Phase phases[kSlots] = {};
     std::vector<Phase> clock_phases;  // parallel to vm.clocks
     double tick_dt = 0.0;             // period of the clock whose phase is running, else 0
+    size_t state_cursor = 0;          // byte offset of state_put/state_get into vm.state_vals
     std::vector<CurrentSourceRecord *> isrc;  // current_source_handle -> record
 };
 
@@ -54,6 +55,7 @@ VM &internal::vm(Sim &sim) { return sim.impl_->vm; }
 void Sim::init_system(double dt) { system_init_empty(&impl_->sys, dt); }
 int Sim::register_node(const char *name) { return impl_->sys.register_node(name); }
 int Sim::register_branch(const char *name) { return impl_->sys.register_branch(name); }
+void Sim::alias_node(const char *alias, const char *target) { impl_->sys.alias_node(alias, target); }
 void Sim::finalize_system() { system_finalize(&impl_->sys); }
 int Sim::resolve_node(const char *name) const { return impl_->sys.resolve_node(name); }
 int Sim::resolve_branch(const char *name) const { return impl_->sys.resolve_branch(name); }
@@ -249,14 +251,19 @@ double Sim::I_prev(const char *element) const { return api_I_prev(&impl_->api, e
 void Sim::set_voltage_source(const char *name, double v) { api_set_voltage_source(&impl_->api, name, v); }
 void Sim::set_current_source(const char *name, double i) { api_set_current_source(&impl_->api, name, i); }
 void Sim::set_value(const char *key, double v) { impl_->vm.values[key] = v; }
-void Sim::set_state_var(int k, double v) {
-    std::vector<double> &s = impl_->vm.state_vals;
-    if (k >= (int)s.size()) s.resize(k + 1, 0.0);
-    s[k] = v;
+void Sim::state_begin() { impl_->state_cursor = 0; }
+void Sim::state_put(const void *src, size_t size) {
+    std::vector<unsigned char> &s = impl_->vm.state_vals;
+    size_t &at = impl_->state_cursor;
+    if (at + size > s.size()) s.resize(at + size);
+    std::memcpy(s.data() + at, src, size);
+    at += size;
 }
-double Sim::state_var(int k) const {
-    const std::vector<double> &s = impl_->vm.state_vals;
-    return (k >= 0 && k < (int)s.size()) ? s[k] : 0.0;
+void Sim::state_get(void *dst, size_t size) {
+    const std::vector<unsigned char> &s = impl_->vm.state_vals;
+    size_t &at = impl_->state_cursor;
+    if (at + size <= s.size()) std::memcpy(dst, s.data() + at, size);
+    at += size;
 }
 
 int Sim::node_handle(const char *net) const {
